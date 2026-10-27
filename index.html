@@ -264,6 +264,7 @@ p+p{margin-top:6px}
 .tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 .tag{display:inline-flex!important;flex-direction:row!important;align-items:center;gap:5px;border:1px solid var(--line-2);border-radius:999px;padding:3px 10px;font:500 11px var(--mono)!important;letter-spacing:.04em!important;text-transform:none!important;color:var(--ink-2)!important;cursor:pointer}
 .tag input{accent-color:var(--brand)}
+.tag.on{border-color:var(--brand);color:var(--ink)!important;background:var(--brand-t)}
 .tag:has(input:checked){border-color:var(--down);color:var(--down)!important;background:var(--down-t)}
 @media (max-width:1600px){ .brand span{display:none} nav a{padding:7px 13px;letter-spacing:.18em} header{gap:12px} }
 @media (max-width:1380px){ .trade{grid-template-columns:300px minmax(0,1fr) 380px} .hide-md{display:none} nav a{padding:7px 12px;letter-spacing:.16em} header{gap:12px} .brand b{letter-spacing:.3em} }
@@ -307,7 +308,7 @@ p+p{margin-top:6px}
     <nav aria-label="Views">
       <a href="#trade" aria-current="page" data-v="trade">Deck</a>
       <a href="#paper" data-v="paper">Paper</a>
-      <a href="#journal" data-v="journal">Journal</a>
+      <a href="#journal" data-v="journal">Journal<span class="badge" id="jBadge" hidden title="trades waiting for a review"></span></a>
       <a href="#review" data-v="review">Review</a>
       <a href="#research" data-v="research">Rules</a>
     </nav>
@@ -473,6 +474,7 @@ p+p{margin-top:6px}
         <div class="box"><div class="ph"><h2>Active rules</h2><div class="r"><span class="pill brand" id="polVer"></span></div></div><div class="bd" id="policy"></div></div>
         <div class="box"><div class="ph"><h2>Setup catalog</h2></div><div class="bd" id="catalog"></div></div>
       </div>
+      <div class="box" style="margin-top:14px"><div class="ph"><h2>Data sources<small>where every number comes from</small></h2><div class="r"><span class="pill dim" id="schStatus">—</span></div></div><div class="bd" id="dataSrc"></div></div>
       <div class="grid2" style="margin-top:14px">
         <div class="box"><div class="ph"><h2>Kronos forecast test<small>shadow · never trades</small></h2><div class="r"><span class="pill dim" id="kxStatus">—</span></div></div><div class="bd" id="kronos"></div></div>
         <div class="box"><div class="ph"><h2>Knowledge cards<small>Chart cites these</small></h2></div><div class="bd" id="cards" style="max-height:420px;overflow:auto"></div></div>
@@ -691,6 +693,9 @@ function render(){
   const streakTxt = plan && (plan.objections||[]).find(o => /STOP FOR TODAY|A setups only|cooldown/i.test(o));
   const st = $("#streak"); st.textContent = streakTxt ? (/STOP FOR TODAY/.test(streakTxt) ? "STOP FOR TODAY" : "A setups only") : "streak ok";
   st.className = "pill " + (streakTxt ? (/STOP/.test(streakTxt) ? "down" : "warn") : "dim");
+  const sw = (S.data || {}).schwab || {};
+  if (sw.state === "connected" && sw.days_left < 1 && !$("#banner").classList.contains("show")) { $("#banner").classList.add("show"); $("#bannerText").innerHTML = 'Schwab live data needs a 1-minute reconnect today (Rules → Data sources), or the desk falls back to delayed quotes.'; }
+  const jb = $("#jBadge"); jb.hidden = !S.unreviewed_today; jb.textContent = S.unreviewed_today || "";
   renderPlan(plan); renderPositions();
   Core.update(S, plan);
   if (!$("#v-paper").hidden) renderPaperLive();
@@ -743,7 +748,7 @@ function renderPlan(p){
     ["Setup", `${esc(p.setup||"—")} <small>${esc(p.setup_note||"")}</small>`],
     ["Trigger", esc(p.trigger_rule||"—")],
     ["Invalid", p.invalidation != null ? `<span class="d">${Number(p.invalidation).toFixed(2)}</span> <small>underlying, 1m close</small>` : "—"],
-    ["Contract", c ? `${esc(p.ticker)} ${esc(c.label)} 0DTE <small>bid ${Number(c.bid).toFixed(2)} · ask ${Number(c.ask).toFixed(2)} · Δ ${c.delta ?? "unknown"}${c.delta_src === "estimated" ? " est." : ""} · delayed quote</small>` : `<small>${esc(p.contract_note||"unavailable")}</small>`],
+    ["Contract", c ? `${esc(p.ticker)} ${esc(c.label)} 0DTE <small>bid ${Number(c.bid).toFixed(2)} · ask ${Number(c.ask).toFixed(2)} · Δ ${c.delta ?? "unknown"}${c.delta_src === "estimated" ? " est." : ""} · ${/live/i.test(c.feed || "") ? "live quote (Schwab)" : "delayed quote"}</small>` : `<small>${esc(p.contract_note||"unavailable")}</small>`],
   ];
   if (c) rows.push(
     ["Buy ≤", `${usd(p.premium_limit)} <small>≈ $${(p.premium_limit*100).toFixed(0)} per contract · don’t chase above</small>`],
@@ -789,6 +794,7 @@ async function send(text, explain=true){
   $("#sendStatus").textContent = "Working…"; $("#sendBtn").disabled = true;
   try{
     const r = await api("api/command", {text, ticker, explain});
+    if (r.review) setTimeout(() => reviewCard(r.review), 300);
     if (r.coach_pending){
       pending = true; $("#sendStatus").textContent = r.plan ? "Plan is up. Chart is writing a short explanation…" : "Sent to Chart. Waiting for a reply…";
       setTimeout(()=>{ if (pending) $("#sendStatus").textContent = "Chart hasn’t answered yet. Any plan shown above is still the one to use."; }, 90000);
@@ -825,6 +831,27 @@ $("#fillForm").onsubmit = e => {
 function setMute(){ $("#muteBtn").setAttribute("aria-pressed", String(muted)); $("#muteBtn").textContent = muted ? "Sounds off" : "Sounds on"; }
 $("#muteBtn").onclick = () => { muted = !muted; store.set("muted", muted); setMute(); };
 setMute();
+
+/* ---------- quick review right after each closed trade (saves to the Journal) ---------- */
+function reviewCard(rv){
+  const d = document.createElement("div"); d.className = "msg desk reviewcard";
+  d.innerHTML = `<span class="who">DESK · quick review · ${esc(rv.trade)}</span>
+    <div style="font:12.5px var(--sans);color:var(--ink);margin-bottom:6px">Followed the plan?</div>
+    <div class="tags" data-g="plan">${["yes","partly","no"].map(x => `<button type="button" class="tag" data-v="${x}">${x}</button>`).join("")}</div>
+    <div style="font:12.5px var(--sans);color:var(--ink);margin:8px 0 4px">Any mistakes?</div>
+    <div class="tags" data-g="mis">${MISTAKES.map(t => `<label class="tag"><input type="checkbox" value="${t}">${t}</label>`).join("")}</div>
+    <input class="rv-exit" placeholder="Why I exited (one line)…" style="width:100%;margin-top:8px;font:12.5px var(--sans)">
+    <div style="display:flex;gap:6px;margin-top:8px;align-items:center"><button type="button" class="rv-save">Save to journal</button><button type="button" class="rv-skip">Later</button><span class="m rv-s" style="font-size:11px"></span></div>`;
+  let plan = "";
+  d.querySelectorAll('[data-g="plan"] .tag').forEach(b => b.onclick = () => { plan = b.dataset.v; d.querySelectorAll('[data-g="plan"] .tag').forEach(x => x.classList.toggle("on", x === b)); });
+  d.querySelector(".rv-skip").onclick = () => { d.querySelector(".rv-s").textContent = "OK, it's waiting in the Journal tab."; setTimeout(() => d.remove(), 1500); };
+  d.querySelector(".rv-save").onclick = async () => {
+    const fields = {followed_plan: plan, exit_reason: d.querySelector(".rv-exit").value, mistakes: [...d.querySelectorAll('[data-g="mis"] input:checked')].map(x => x.value).join(", ")};
+    try { await api("api/trade_note", {id: rv.id, fields}); d.querySelector(".rv-s").textContent = "Saved to your journal."; setTimeout(() => d.remove(), 1600); poll(); }
+    catch(e){ d.querySelector(".rv-s").textContent = "Not saved: " + e.message; }
+  };
+  $("#chat").appendChild(d); const rs = $("#rscroll"); rs.scrollTop = rs.scrollHeight;
+}
 
 /* ---------- shared tables ---------- */
 function stats(rows){
@@ -1001,7 +1028,7 @@ const CATALOG = [
 async function loadResearch(){
   $("#catalog").innerHTML = `<table><thead><tr><th>Setup</th><th>Status</th><th>Definition</th></tr></thead><tbody>${CATALOG.map(c=>`<tr><td>${c[0]}</td><td style="white-space:nowrap">${c[1]}</td><td class="m">${c[2]}</td></tr>`).join("")}</tbody></table>`;
   api("api/knowledge").then(cs => { $("#cards").innerHTML = cs.map(c => `<div style="padding:8px 0;border-bottom:1px solid rgba(58,18,25,.5)"><b class="mono">[${esc(c.id)}]</b> ${esc(c.title)} <span class="pill ${c.status === "research" ? "warn" : c.status === "shadow" ? "brand" : "dim"}" style="height:18px">${esc(c.status)}</span><div class="m" style="margin-top:4px;font-size:12px">${esc(c.summary)}</div></div>`).join(""); }).catch(()=>{});
-  loadKronos();
+  loadKronos(); loadData();
   try{
     const p = await api("api/policy");
     $("#polVer").textContent = p.version;
@@ -1251,6 +1278,7 @@ window.Voice = (() => {
   async function handle(raw){
     const low = raw.toLowerCase().trim();
     if (/^(stop|cancel|never ?mind|close|goodbye|that's all)\b/.test(low)) { confirmText = null; speak("Okay.", () => close()); return; }
+    if (reviewPending){ return saveSpokenReview(raw); }
     if (confirmText){
       if (/^(yes|yeah|yep|confirm|correct|do it|log it)\b/.test(low)) { const t = confirmText; confirmText = null; return run(t, false); }
       confirmText = null; speak("Okay, not logged. Say it again if you want.", null); return;
@@ -1264,10 +1292,21 @@ window.Voice = (() => {
     }
     run(text, true);
   }
+  let reviewPending = null;
+  const MIS_WORDS = [["chas", "chased"], ["early", "early entry"], ["no stop", "no stop set"], ["moved", "moved stop"], ["oversiz", "oversized"], ["too big", "oversized"],
+    ["revenge", "revenge trade"], ["held too long", "held too long"], ["too long", "held too long"], ["cut", "cut winner early"], ["chop", "ignored chop"], ["against the trend", "against trend"]];
+  async function saveSpokenReview(raw){
+    const low = raw.toLowerCase(), rv = reviewPending; reviewPending = null;
+    const plan = /\b(partly|kind of|sort of|mostly)\b/.test(low) ? "partly" : /\b(didn'?t|did not|no|nope|broke)\b/.test(low) ? "no" : /\b(yes|yeah|yep|followed|did)\b/.test(low) ? "yes" : "";
+    const mistakes = [...new Set(MIS_WORDS.filter(([w]) => low.includes(w)).map(([, t]) => t))].join(", ");
+    try { await api("api/trade_note", {id: rv.id, fields: {exit_reason: raw, followed_plan: plan, mistakes}}); speak(`Saved to your journal${mistakes ? ", tagged " + mistakes : ""}.`, null); poll(); }
+    catch(e){ speak("I couldn't save that. It's waiting in the Journal tab.", null); }
+  }
   async function run(text, explain){
     thinking = true; say("Thinking");
     const r = await send(text, explain);
     thinking = false;
+    if (r && r.review) { reviewPending = r.review; speak(spoken(r) + ". Quick review: why did you exit, and did you follow the plan?", () => listen()); return; }
     const s = spoken(r);
     if (r && r.coach_pending && !s) { say("Waiting for Chart"); el("jvReply").textContent = "Sent to Chart. I’ll read the answer when it arrives."; return; }
     if (r && r.coach_pending) { awaitingChart = true; }
@@ -1348,6 +1387,29 @@ window.Voice = (() => {
   return {onChart, isOpen: () => open, normalize, spoken};
 })();
 const Voice = window.Voice;
+
+/* ---------- data sources + Schwab connect (Rules page) ---------- */
+async function loadData(){
+  let st = {};
+  try { st = await api("api/schwab/status"); } catch(e){ st = {state: "unknown", why: e.message}; }
+  const pill = $("#schStatus"); pill.textContent = "Schwab: " + st.state;
+  pill.className = "pill " + (st.state === "connected" ? (st.days_left < 1.5 ? "warn" : "up") : st.state === "expired" ? "down" : "dim");
+  const live = st.state === "connected";
+  const rows = [["Candles (levels, VWAP, EMAs, setups)", live ? "Schwab live" : "Yahoo (free, unofficial, can lag or rate-limit)"],
+    ["Option quotes + greeks", live ? "Schwab live" : "Alpaca indicative (delayed)"], ["Last price", "Alpaca IEX (one exchange)"],
+    ["Watchlist", live ? "Schwab → Alpaca → Yahoo" : "Alpaca → Yahoo"], ["Paper orders", "Alpaca paper only"], ["Chart on the Deck", "TradingView's own feed"]];
+  let connect = "";
+  if (st.state === "off") connect = `<p class="m" style="margin-top:10px">To get live data: open a Schwab account and a free developer app (developer.schwab.com, callback URL <span class="mono">${esc(st.callback || "https://127.0.0.1")}</span>), then add <span class="mono">SCHWAB_APP_KEY</span> and <span class="mono">SCHWAB_APP_SECRET</span> to Chart's Secrets yourself.</p>`;
+  else if (!live) connect = `<div style="margin-top:12px"><p>1. <a href="api/schwab/login" target="_blank" rel="noopener" style="color:var(--brand)">Open Schwab login ↗</a>, log in yourself and press Done. You'll land on a page that won't load. That's expected.</p>
+    <p>2. Copy that page's whole address (it has <span class="mono">?code=</span>) and paste it here within 30 seconds:</p>
+    <form id="schForm" class="wladd" style="padding:6px 0 0"><input id="schUrl" placeholder="https://127.0.0.1/?code=…" style="text-transform:none" autocomplete="off"><button type="submit">Connect</button></form><p class="m" id="schMsg"></p></div>`;
+  else connect = `<p class="m" style="margin-top:10px">Connected. Schwab makes you log in again every 7 days: ${st.days_left} day(s) left. The desk will remind you the day before.${st.last_error ? " Last issue: " + esc(st.last_error) : ""}</p>`;
+  $("#dataSrc").innerHTML = `<table><tbody>${rows.map(r => `<tr><td>${r[0]}</td><td class="${/live/.test(r[1]) ? "u" : ""}">${r[1]}</td></tr>`).join("")}</tbody></table>${connect}<p class="m" style="margin-top:8px;font-size:11.5px">The Schwab connection is read-only market data. The desk can't place orders or see your Schwab account.</p>`;
+  const f = $("#schForm");
+  if (f) f.onsubmit = async e => { e.preventDefault(); $("#schMsg").textContent = "Connecting…";
+    try { const r = await api("api/schwab/connect", {url: $("#schUrl").value}); $("#schMsg").textContent = r.message; loadData(); }
+    catch(x){ $("#schMsg").textContent = x.message; } };
+}
 
 /* ---------- Kronos shadow test (Rules page) ---------- */
 async function loadKronos(){

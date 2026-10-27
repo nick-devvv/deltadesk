@@ -4,7 +4,8 @@
   python3 server.py            -> http://localhost:8765  (public link via Tailscale Funnel + ?k=DESK_TOKEN)
 
 Env: DESK_TOKEN (link secret), CHAT_WEBHOOK + CHAT_WEBHOOK_KEY (Chart's Grok webhook),
-     ALPACA_KEY + ALPACA_SECRET (PAPER keys only), PORT (default 8765), QUIVER_KEY (optional, Quiver data).
+     ALPACA_KEY + ALPACA_SECRET (PAPER keys only), PORT (default 8765), QUIVER_KEY (optional, Quiver data),
+     SCHWAB_APP_KEY + SCHWAB_APP_SECRET (+ SCHWAB_CALLBACK, default https://127.0.0.1) optional live market data.
 
 Main endpoints:
   GET  /api/state?since=N    everything the page shows + new events (poll every 2 s)
@@ -16,6 +17,7 @@ Main endpoints:
   POST /api/events           {"date","events":[{"time":"08:30","name":"CPI"}]} from the 9 AM routine
   GET/POST /api/watchlist     other tickers: quotes, earnings date; {"add":"NVDA"} / {"remove":"NVDA"}
   GET  /api/alt?t=NVDA        optional Quiver data (QUIVER_KEY): congress trades, short volume, WSB, lobbying, contracts
+  GET  /api/schwab/status|login, POST /api/schwab/connect   optional live Schwab market data (market data only)
   GET  /legacy               the old desk page (custom indicator chart)
   Legacy: /api/read /api/bars /api/last /api/plan /api/chat
 Real money: only Nick, in Robinhood. The only orders this server sends are Alpaca PAPER orders.
@@ -39,6 +41,7 @@ import core  # noqa: E402
 import engine  # noqa: E402
 import store  # noqa: E402
 import watchlist  # noqa: E402
+import schwab  # noqa: E402
 import altdata  # noqa: E402
 
 PORT = int(os.environ.get("PORT", "8765"))
@@ -85,6 +88,21 @@ def send_to_chart(message, context):
         return f"Couldn't reach Chart: {e}"
 
 
+def unreviewed_today():
+    day = core.now_et().strftime("%Y-%m-%d")
+    n = 0
+    for p in store.positions(ledger="real", day=day):
+        if p["status"] != "CLOSED":
+            continue
+        try:
+            notes = json.loads(p.get("notes") or "{}") if isinstance(p.get("notes"), str) else (p.get("notes") or {})
+        except ValueError:
+            notes = {}
+        if not any(notes.get(k) for k in store.REVIEW_FIELDS):
+            n += 1
+    return n
+
+
 def state(since):
     sess = core.session_info()
     pos = store.positions(status="OPEN") + store.positions(status="PENDING")
@@ -101,6 +119,9 @@ def state(since):
         "positions": pos, "watches": watches, "last_plan": store.kv_get("last_plan"),
         "events": store.events_since(since), "seq": store.last_seq(),
         "ai_calls_today": ai_calls_today(), "chat_connected": bool(CHAT_WEBHOOK),
+        "data": {"candles": engine.data_source(), "options": "Schwab live" if schwab.ready() else "Alpaca indicative (delayed)",
+                 "schwab": schwab.status()},
+        "unreviewed_today": unreviewed_today(),
     })
 
 
@@ -169,6 +190,12 @@ class H(BaseHTTPRequestHandler):
                 return self._json(store.q("SELECT * FROM lessons ORDER BY created DESC"))
             if u.path == "/api/policy":
                 return self._json(core.policy())
+            if u.path == "/api/schwab/status":
+                return self._json(dict(schwab.status(), callback=schwab.callback(), candles=engine.data_source()))
+            if u.path == "/api/schwab/login":
+                if not schwab.configured():
+                    return self._send(400, "Add SCHWAB_APP_KEY and SCHWAB_APP_SECRET to Chart's Secrets first.", "text/plain")
+                return self._send(302, b"", "text/plain", {"Location": schwab.login_url()})
             if u.path == "/api/kronos":
                 import kronos_shadow
                 store.x(kronos_shadow.SCHEMA)
@@ -244,12 +271,17 @@ class H(BaseHTTPRequestHandler):
                     asked = note is None
                     if note:
                         store.event("system", note)
-                return self._json({"reply": r.get("reply"), "plan": r.get("plan"), "coach_pending": asked,
+                return self._json({"reply": r.get("reply"), "plan": r.get("plan"), "coach_pending": asked, "review": r.get("review"),
                                    "seq": store.last_seq()})
             if u.path == "/api/reply":
                 text = str(b.get("reply") or b.get("text") or b.get("message") or "")[:6000]
                 store.event("chart", text, "")
                 return self._json({"ok": True})
+            if u.path == "/api/schwab/connect":
+                ok, msg = schwab.connect(str(b.get("url", ""))[:2000])
+                if ok:
+                    store.event("system", "Schwab live data connected (renew every 7 days on the Rules page)")
+                return self._json({"ok": ok, "message": msg, "status": schwab.status()}, 200 if ok else 400)
             if u.path == "/api/trade_note":
                 r = store.trade_note(str(b.get("id", "")), b.get("fields") or {})
                 return self._json({"ok": r is not None, "notes": r}, 200 if r is not None else 404)
@@ -305,7 +337,7 @@ def start_kronos():
     if os.environ.get("KRONOS") != "1":
         return None
     import subprocess
-    env = {k: v for k, v in os.environ.items() if not k.startswith(("ALPACA", "DESK_TOKEN", "CHAT_WEBHOOK", "QUIVER"))}
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("ALPACA", "DESK_TOKEN", "CHAT_WEBHOOK", "QUIVER", "SCHWAB"))}
 
     def run():
         while True:

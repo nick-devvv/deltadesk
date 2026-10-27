@@ -75,7 +75,10 @@ def handle(text, selected="SPY"):
         if len(opens) > 1:
             return {"reply": "You have more than one open trade: " + ", ".join(f"{p['ticker']} {p['contract']}" for p in opens) +
                     ". Say which, e.g. OUT SPY 765C 1 at 1.10", "handled": True}
-        return {"reply": engine.log_real_out(opens[0]["id"], int(qty) if qty else None, float(price)), "handled": True}
+        pid = opens[0]["id"]
+        reply = engine.log_real_out(pid, int(qty) if qty else None, float(price))
+        closed = (store.pos_get(pid) or {}).get("status") == "CLOSED"
+        return {"reply": reply, "handled": True, "review": {"id": pid, "trade": f"{opens[0]['ticker']} {opens[0]['contract']}"} if closed else None}
 
     # ---------- watch controls ----------
     if re.search(r"\bstop watch(ing)?\b|\bunwatch\b", low):
@@ -167,6 +170,34 @@ def cards_for(text, k=3):
     return [{"id": c["id"], "title": c["title"], "status": c["status"], "summary": c["summary"]} for c in out]
 
 
+def _schwab_ready():
+    try:
+        import schwab
+        return schwab.ready()
+    except Exception:
+        return False
+
+
+def rules_summary():
+    """Nick's current trading rules in one compact block, sent with every Chart question (always up to date)."""
+    p = core.policy()
+    d, c, se = p["discipline"], p["contract"], p["session"]
+    return {
+        "version": p["version"],
+        "stops": {w["name"].lower(): f"-{round(w.get('stop_pct', 0.2) * 100)}%" for w in p["windows"]},
+        "stop_ceiling": "20% all-in (spread + fees); if a contract can't fit, skip it",
+        "management": {w["name"].lower(): {"breakeven_at": f"x{w['be']}", "t1": f"x{w['t1_lo']}", "flat_exit_min": w["flat_min"]} for w in p["windows"]},
+        "after_t1": "2 contracts: sell 1, lock the stop at the breakeven level, trail the rest under each 1m higher low (lower high for puts); 1 contract: lock + trail",
+        "size": "A = 2 contracts, B = 1, chop day max 1; paper C = watch only",
+        "delta": f"{c['abs_delta_min']}-{c['abs_delta_max']} (aim {c.get('abs_delta_target', 0.45)}), premium ${c['premium_min']}-${c['premium_max']}, spread <= {round(c['max_spread_pct'] * 100)}%",
+        "streak": f"{d['a_only_after_consecutive_losses']} losses in a row = A setups only + {d['cooldown_min_after_loss']} min cooldown; {d['stop_day_after_consecutive_losses']} in a row = STOP FOR TODAY",
+        "limits": f"max {d['max_trades_day']} trades/day; chop day max {d['chop_day_max_trades']}; no dollar limits",
+        "session": f"no trades {se['orb_start']}-{se['orb_end']} (ORB), entries {se['first_entry']}-{se['last_entry']}, all out {se['all_out']} ET",
+        "no_chase": "skip if price is > 1.5x the average 5m candle past the level; same setup can't refire for 20 min",
+        "never": "Chart never places or clicks orders; real money is Nick's, in Robinhood",
+    }
+
+
 def coach_context(selected="SPY", text=""):
     """Compact state for Chart. No raw bars, no secrets."""
     s = engine.snapshot(selected)
@@ -189,4 +220,8 @@ def coach_context(selected="SPY", text=""):
         "watchlist_quote": None if selected in core.policy()["instruments"] else watchlist.quote(selected),
         "alt_data": None if selected in core.policy()["instruments"] else _alt(selected),
         "cards": cards_for(text),
+        "rules": rules_summary(),
+        "training": {"library": ["Nick's Playbook", "Desk v2 rules map", "Desk knowledge pack", "Desk commands"],
+                     "precedence": "desk numbers in this context > rules (this field) > Desk v2 rules map > Playbook",
+                     "data": {"candles": engine.data_source(), "options_feed": "Schwab live" if _schwab_ready() else "Alpaca indicative (delayed)"}},
     }

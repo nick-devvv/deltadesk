@@ -40,7 +40,11 @@
         "lessons": {"type": "array", "description": "ACTIVE and PROPOSED lessons"},
         "recent_events": {"type": "array", "items": {"type": "string"}},
         "desk_plans_for_ticker": {"type": "boolean", "description": "true for SPY/QQQ; false for watchlist tickers (Chart answers, no desk plan)"},
-        "watchlist_quote": {"type": ["object", "null"], "description": "for watchlist tickers: last, chg_pct, spark, earnings {date, days}"}
+        "watchlist_quote": {"type": ["object", "null"], "description": "for watchlist tickers: last, chg_pct, spark, earnings {date, days}"},
+        "alt_data": {"type": ["object", "null"], "description": "Quiver smart-money data for watchlist tickers when QUIVER_KEY is set"},
+        "cards": {"type": "array", "description": "3 most relevant knowledge cards {id, title, status, summary}"},
+        "rules": {"type": "object", "description": "Nick's current rules (stops by window, management, size, delta, streak, limits, session, no-chase). Always current; wins over older notes."},
+        "training": {"type": "object", "description": "library page names, source precedence, and data feeds (candles, options_feed live/delayed)"}
       }
     }
   }

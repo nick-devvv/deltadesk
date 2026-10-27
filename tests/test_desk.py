@@ -333,7 +333,7 @@ def test_coach_context_is_compact_and_secret_free(desk_env, monkeypatch):
     commands.handle("confirm SPY calls", "SPY")
     ctx = commands.coach_context("SPY")
     schema = json.loads((ROOT / "grok" / "SESSION_CONTEXT_SCHEMA.json").read_text())
-    for k in ("policy", "session", "ticker", "price", "read", "active_plan", "open_real", "budget_real", "lessons", "desk_plans_for_ticker", "watchlist_quote"):
+    for k in ("policy", "session", "ticker", "price", "read", "active_plan", "open_real", "budget_real", "lessons", "desk_plans_for_ticker", "watchlist_quote", "cards", "rules", "training"):
         assert k in ctx and k in schema["properties"]["context"]["properties"], k
     blob = json.dumps(ctx, default=str)
     assert "SHOULD-NOT-LEAK" not in blob and "APCA" not in blob
@@ -528,3 +528,53 @@ def test_adx_trend_vs_chop_and_setup_cooldown(desk_env, monkeypatch):
     assert engine._setup_cooldown("SPY", {"family": "ORB_RETEST", "side": "P"}) is None
     clock.t = DAY.replace(hour=10, minute=45)
     assert engine._setup_cooldown("SPY", st) is None
+
+
+def test_chart_gets_current_rules_and_training(desk_env, monkeypatch):
+    clock = desk_env
+    wire(monkeypatch, clock, up_day)
+    clock.t = DAY.replace(hour=10, minute=5)
+    ctx = commands.coach_context("SPY", "is this a vwap pullback? spread looks wide")
+    r = ctx["rules"]
+    assert r["stops"] == {"morning": "-20%", "midday": "-12%", "afternoon": "-10%"}
+    assert "0.4-0.55" in r["delta"] and "STOP FOR TODAY" in r["streak"] and "15:25" in r["session"]
+    assert {c["id"] for c in ctx["cards"]} & {"K22", "K06", "K02"}
+    assert "Desk v2 rules map" in ctx["training"]["library"] and "delayed" in ctx["training"]["data"]["options_feed"]
+
+
+def test_schwab_market_data_only_and_parsing(monkeypatch, tmp_path):
+    import json as _j
+    import schwab
+    monkeypatch.setenv("SCHWAB_APP_KEY", "k"); monkeypatch.setenv("SCHWAB_APP_SECRET", "s")
+    monkeypatch.setattr(schwab, "TOKEN_FILE", tmp_path / "tok.json")
+    assert schwab.status()["state"] == "not connected" and not schwab.ready()
+    assert "client_id=k" in schwab.login_url() and "127.0.0.1" in schwab.login_url()
+    with pytest.raises(RuntimeError):
+        schwab._get("/trader/v1/accounts", {})                # trading/account endpoints are refused in code
+    monkeypatch.setattr(schwab, "_token_request", lambda form: {"access_token": "A", "refresh_token": "R", "expires_in": 1800})
+    ok, msg = schwab.connect("https://127.0.0.1/?code=CO.abc%40&session=x")
+    assert ok and schwab.ready() and schwab.status()["days_left"] == 7.0
+    assert schwab.connect("https://127.0.0.1/")[0] is False
+    chain_json = {"callExpDateMap": {"2026-10-28:0": {"600.0": [{"symbol": "SPY   261028C00600000", "strikePrice": 600.0, "bid": 1.10, "ask": 1.14,
+                  "delta": 0.47, "volatility": 14.2, "quoteTimeInLong": 1793200000000, "totalVolume": 900, "openInterest": 5000}],
+                  "601.0": [{"symbol": "SPY   261028C00601000", "strikePrice": 601.0, "bid": 0.7, "ask": 0.73, "delta": -999.0, "volatility": 14.0}]}}}
+    monkeypatch.setattr(schwab, "_get", lambda path, params: (chain_json, None) if "chains" in path else
+                        ({"SPY   261028C00600000": {"quote": {"bidPrice": 1.2, "askPrice": 1.24}}}, None))
+    rows, err = schwab.chain("SPY", "C", "2026-10-28")
+    assert rows[0]["symbol"] == "SPY261028C00600000" and rows[0]["delta"] == 0.47 and abs(rows[0]["iv"] - 0.142) < 1e-9
+    assert rows[1]["delta"] is None                               # -999 means unknown, never a real delta
+    q, _ = schwab.option_quote("SPY261028C00600000")
+    assert q == {"bid": 1.2, "ask": 1.24, "ts": None, "feed": "Schwab live"}
+    monkeypatch.setattr(engine.schwab, "ready", lambda: True)
+    assert engine.option_quote("SPY261028C00600000")[0]["feed"] == "Schwab live"
+
+
+def test_out_returns_review_card(desk_env, monkeypatch):
+    clock = desk_env
+    wire(monkeypatch, clock, up_day)
+    clock.t = DAY.replace(hour=10, minute=5)
+    commands.handle("IN SPY 601C 2 at 1.00", "SPY")
+    r = commands.handle("OUT 1 at 1.10", "SPY")
+    assert r["review"] is None                                    # still 1 open: no review yet
+    r = commands.handle("OUT 1 at 1.20", "SPY")
+    assert r["review"] and r["review"]["trade"] == "SPY 601C"

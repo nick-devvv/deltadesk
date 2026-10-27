@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 
 import broker
+import schwab
 import core
 import desk
 import store
@@ -19,7 +20,19 @@ BUF = 0.0003  # 0.03% of price: invalidation buffer beyond a level
 
 
 # ======================= market snapshot =======================
+def data_source():
+    return "Schwab live" if schwab.ready() else "Yahoo"
+
+
 def _bars(ticker):
+    """Candles: Schwab (live, when connected) first, Yahoo as the fallback."""
+    if schwab.ready():
+        try:
+            m1, daily = schwab.bars_1m(ticker), schwab.bars_daily(ticker)
+            if m1 is not None and len(m1) and daily is not None and len(daily):
+                return m1, daily
+        except Exception:
+            pass
     import chartdata
     m1 = chartdata._dl(ticker, "5d", "1m", True)
     daily = chartdata._dl(ticker, "2y", "1d", False)
@@ -208,7 +221,10 @@ def grade(s, side):
 def pick_contract(ticker, side, price, budget, grade_, chop, structural=None):
     p = core.policy()["contract"]
     exp = core.now_et().strftime("%Y-%m-%d")
-    rows, err = broker.chain(ticker, side, exp)
+    rows, err = schwab.chain(ticker, side, exp) if schwab.ready() else (None, None)
+    if not rows:
+        rows, err2 = broker.chain(ticker, side, exp)
+        err = err2 or err
     if not rows:
         return None, f"no option chain ({err})"
     cands, rejected = [], 0
@@ -241,6 +257,17 @@ def pick_contract(ticker, side, price, budget, grade_, chop, structural=None):
             return c, None
     c = cands[0][2]
     return None, f"too expensive for the risk cap: cheapest fit {c['symbol']} ask {c['ask']}"
+
+
+def option_quote(symbol):
+    """Live Schwab quote when connected, else Alpaca's delayed indicative quote."""
+    if schwab.ready():
+        q, err = schwab.option_quote(symbol)
+        if q:
+            return q, None
+    if broker.configured():
+        return broker.option_quote(symbol)
+    return None, "no option data source"
 
 
 def occ_to_label(sym):
@@ -359,8 +386,8 @@ def build_plan(ticker, side, level=None, mode="check", ledger="real"):
         plan["objections"].append(block)
     bud = ledger_budget(ledger)
     plan["budget"] = bud
-    if not broker.configured():
-        plan.update(contract=None, contract_note="option quotes unavailable (no Alpaca keys)")
+    if not broker.configured() and not schwab.ready():
+        plan.update(contract=None, contract_note="option quotes unavailable (no Alpaca keys, Schwab not connected)")
         return plan
     sz_grade = g if ledger == "paper" or g != "C" else "B"  # for Nick a C never blocks: small size (chop cap applies)
     c, why = pick_contract(ticker, side, px, bud["left"], sz_grade, chop or g == "C")
@@ -374,7 +401,7 @@ def build_plan(ticker, side, level=None, mode="check", ledger="real"):
         return plan
     plan.update(contract={"symbol": c["symbol"], "label": occ_to_label(c["symbol"]), "bid": c["bid"],
                           "ask": c["ask"], "delta": c["delta"], "delta_src": c.get("delta_src", "broker" if c["delta"] is not None else None),
-                          "quote_ts": c["ts"], "feed": "indicative"},
+                          "quote_ts": c["ts"], "feed": c.get("feed", "indicative")},
                 premium_limit=core.cents_up(c["ask"] + 0.02), exit=c["exit"], qty=c["qty"],
                 risk_per_contract=c["risk_per_contract"], size_note=c["size_note"])
     if c["qty"] == 0 and plan["state"] == "READY":
@@ -522,7 +549,7 @@ def manage(p):
     pl = p["plan"]
     if pl.get("manual"):
         return  # watchlist ticker (earnings/swing): journal only, Nick manages it with Chart
-    qd, err = broker.option_quote(p["symbol"]) if broker.configured() else (None, "no keys")
+    qd, err = option_quote(p["symbol"])
     now = core.hm(core.now_et())
     sess = core.session_info()
     s = snapshot(p["ticker"])
@@ -730,7 +757,7 @@ def check_watches():
             new, text = "TRIGGER MET", f"{w['ticker']} TRIGGER MET at {b1.index[-1].strftime('%H:%M')} ET: 1m close {c:.2f} {'above' if up else 'below'} {lvl:.2f}"
             cq = pl.get("contract")
             if cq:
-                qd, _ = broker.option_quote(cq["symbol"])
+                qd, _ = option_quote(cq["symbol"])
                 if qd and pl.get("premium_limit") and qd["ask"] > pl["premium_limit"]:
                     new, text = "EXPIRED", f"{w['ticker']} ENTRY EXPIRED: {cq['label']} ask {qd['ask']:.2f} above your limit {pl['premium_limit']:.2f}. Don't chase."
                 elif qd:
@@ -788,7 +815,9 @@ def tick():
         if sess["time"] >= "16:05" and not store.kv_get(f"summary:{sess['date']}") and not sess["holiday"]:
             store.journal_set(sess["date"], summary=day_summary(sess["date"]))
             store.kv_set(f"summary:{sess['date']}", True)
-            store.event("journal", f"Journal for {sess['date']} written (paper + real).", "", sess["date"])
+            todo = [p for p in store.positions(ledger="real", day=sess["date"]) if p["status"] == "CLOSED" and not (p.get("notes") or "").strip("{} ")]
+            store.event("journal", f"Journal for {sess['date']} written (paper + real)." +
+                        (f" {len(todo)} of your trades need a 10-second review: Journal tab." if todo else ""), "", sess["date"])
         _state.update(last_tick=store.ts(), errors=0)
     except Exception as e:
         _state.update(errors=_state["errors"] + 1, last_error=f"{type(e).__name__}: {e}")

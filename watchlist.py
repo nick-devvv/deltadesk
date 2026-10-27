@@ -105,6 +105,28 @@ def _yahoo_fail(e):
     _backoff.update(until=time.time() + 600, why=f"{type(e).__name__}")
 
 
+def _from_schwab(ts):
+    import schwab
+    if not schwab.ready():
+        return {}, None
+    q, err = schwab.quotes(ts)
+    rows = {}
+    for t in ts:
+        v = q.get(t)
+        if v and v.get("last"):
+            last, prev = float(v["last"]), v.get("prev")
+            spark = []
+            try:
+                b = schwab.bars_1m(t, days=1)
+                if b is not None and len(b):
+                    spark = [round(float(x), 2) for x in b["Close"].iloc[::15].tolist()][-48:]
+            except Exception:
+                pass
+            rows[t] = {"ticker": t, "last": round(last, 2), "chg_pct": round((last / prev - 1) * 100, 2) if prev else None,
+                       "spark": spark, "src": "Schwab live"}
+    return rows, err
+
+
 def _from_alpaca(ts):
     import broker
     if not broker.configured():
@@ -158,7 +180,12 @@ def quotes(max_age=30):
     with _lock:
         if time.time() - _q["at"] < max_age and set(_q["rows"]) >= set(ts):
             return [_q["rows"][t] for t in ts]
-    rows, err = _from_alpaca(ts)
+    rows, err = _from_schwab(ts)
+    missing = [t for t in ts if t not in rows]
+    if missing:
+        more, err1 = _from_alpaca(missing)
+        rows.update(more)
+        err = err1 or err
     missing = [t for t in ts if t not in rows]
     if missing:
         more, err2 = _from_yahoo(missing)
