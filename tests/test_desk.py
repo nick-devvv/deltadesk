@@ -414,3 +414,22 @@ def test_kronos_shadow_scores_against_baselines(desk_env, monkeypatch):
     assert m[15]["n"] == 1 and m[15]["mae_kronos"] < m[15]["mae_nochange"] and m[15]["dir_kronos"] == 100.0
     assert "collecting" in ks.verdict(m)
     assert not store.q("SELECT * FROM orders")
+
+
+def test_watchlist_alpaca_first_and_keeps_last_good_quote(monkeypatch, tmp_path):
+    import watchlist
+    monkeypatch.setattr(watchlist, "WL_FILE", tmp_path / "wl.json")
+    watchlist.save(["NVDA", "TSLA"])
+    monkeypatch.setattr(watchlist, "earnings", lambda t: None)
+    monkeypatch.setattr(broker, "configured", lambda: True)
+    monkeypatch.setattr(broker, "snapshots", lambda ts: ({"NVDA": {"last": 142.0, "prev": 140.0}, "TSLA": {"last": 250.0, "prev": 255.0}}, None))
+    monkeypatch.setattr(broker, "bars_multi", lambda ts, start, tf="15Min": ({"NVDA": [139, 141, 142]}, None))
+    calls = []
+    monkeypatch.setattr(watchlist, "_download", lambda *a, **k: calls.append(1) or (_ for _ in ()).throw(RuntimeError("YFRateLimitError")))
+    rows = {r["ticker"]: r for r in watchlist.quotes(max_age=0)}
+    assert rows["NVDA"]["chg_pct"] == 1.43 and rows["TSLA"]["chg_pct"] == -1.96 and rows["NVDA"]["src"] == "Alpaca IEX"
+    assert not calls                                            # Yahoo not touched when Alpaca has everything
+    monkeypatch.setattr(broker, "snapshots", lambda ts: ({}, "HTTP 500"))
+    rows = {r["ticker"]: r for r in watchlist.quotes(max_age=0)}
+    assert rows["NVDA"]["stale"] and rows["NVDA"]["last"] == 142.0   # both sources down: last good quote, marked stale
+    assert calls and not watchlist._yahoo_ok()                  # Yahoo failure -> 10 minute pause, not a retry storm

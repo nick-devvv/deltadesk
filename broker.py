@@ -64,6 +64,32 @@ def stock_last(ticker):
     return ({"price": t.get("p"), "ts": t.get("t"), "feed": "IEX (one exchange)"} if t.get("p") else None), err
 
 
+def snapshots(tickers):
+    """Last trade + today's and yesterday's daily bars for many tickers in ONE call (IEX, free with paper keys)."""
+    syms = ",".join(tickers)
+    j, err = _req("GET", DATA, f"/v2/stocks/snapshots?symbols={urllib.parse.quote(syms)}&feed=iex")
+    if not j:
+        return {}, err or "no snapshot data"
+    out = {}
+    for t, v in j.items():
+        if not isinstance(v, dict):
+            continue
+        last = (v.get("latestTrade") or {}).get("p") or (v.get("dailyBar") or {}).get("c")
+        prev = (v.get("prevDailyBar") or {}).get("c")
+        out[t] = {"last": last, "prev": prev, "ts": (v.get("latestTrade") or {}).get("t")}
+    return out, None
+
+
+def bars_multi(tickers, start_iso, timeframe="15Min"):
+    """Intraday bars for many tickers in one call: {ticker: [close, ...]} (IEX)."""
+    q = urllib.parse.urlencode({"symbols": ",".join(tickers), "timeframe": timeframe, "start": start_iso,
+                                "feed": "iex", "limit": 10000})
+    j, err = _req("GET", DATA, f"/v2/stocks/bars?{q}")
+    if not j:
+        return {}, err
+    return {t: [b["c"] for b in bs] for t, bs in (j.get("bars") or {}).items()}, None
+
+
 def option_quote(symbol):
     j, err = _req("GET", DATA, f"/v1beta1/options/quotes/latest?symbols={symbol}&feed=indicative")
     qd = ((j or {}).get("quotes") or {}).get(symbol)

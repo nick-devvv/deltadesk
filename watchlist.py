@@ -85,38 +85,98 @@ def earnings(t):
                 days = (d - core.now_et().date()).days
                 if days >= -1:
                     info = {"date": d.isoformat(), "days": days}
-    except Exception:
-        info = None
+    except Exception as e:
+        if "Rate" in type(e).__name__ or "Too Many" in str(e):
+            _yahoo_fail(e)
+        info = (hit or (0, None))[1]
     _er[t] = (time.time(), info)
     return info
 
 
-def quotes(max_age=30):
-    ts = tickers()
-    with _lock:
-        if time.time() - _q["at"] < max_age and set(_q["rows"]) == set(ts):
-            return [_q["rows"][t] for t in ts]
+_backoff = {"until": 0, "why": None}
+
+
+def _yahoo_ok():
+    return time.time() >= _backoff["until"]
+
+
+def _yahoo_fail(e):
+    """Yahoo throttles busy computers (rate limit). Back off 10 minutes instead of retrying every 30 s."""
+    _backoff.update(until=time.time() + 600, why=f"{type(e).__name__}")
+
+
+def _from_alpaca(ts):
+    import broker
+    if not broker.configured():
+        return {}, "no Alpaca keys"
+    snap, err = broker.snapshots(ts)
+    if not snap:
+        return {}, err
+    start = core.now_et().replace(hour=4, minute=0, second=0, microsecond=0).isoformat()
+    spark, _ = broker.bars_multi(ts, start, "15Min")
     rows = {}
+    for t in ts:
+        v = snap.get(t)
+        if not v or not v.get("last"):
+            continue
+        last, prev = float(v["last"]), float(v["prev"]) if v.get("prev") else None
+        rows[t] = {"ticker": t, "last": round(last, 2), "chg_pct": round((last / prev - 1) * 100, 2) if prev else None,
+                   "spark": [round(float(x), 2) for x in (spark.get(t) or [])][-48:], "src": "Alpaca IEX"}
+    return rows, None
+
+
+def _from_yahoo(ts):
+    if not _yahoo_ok():
+        return {}, f"Yahoo paused ({_backoff['why']})"
     try:
         daily = _download(ts, period="7d", interval="1d")
-        intra = _download(ts, period="1d", interval="5m", prepost=True)
+        intra = _download(ts, period="1d", interval="15m", prepost=True)
     except Exception as e:
-        return [{"ticker": t, "error": f"quotes unavailable ({type(e).__name__})"} for t in ts]
+        _yahoo_fail(e)
+        return {}, f"Yahoo unavailable ({type(e).__name__})"
+    rows = {}
     for t in ts:
         d, m = daily.get(t), intra.get(t)
         try:
             closes = d["Close"].dropna()
-            last = float(m["Close"].dropna().iloc[-1]) if m is not None and len(m["Close"].dropna()) else float(closes.iloc[-1])
+            mc = m["Close"].dropna() if m is not None else closes.iloc[:0]
+            last = float(mc.iloc[-1]) if len(mc) else float(closes.iloc[-1])
             today = core.now_et().date()
             prev = float(closes.iloc[-2]) if closes.index[-1].date() == today and len(closes) > 1 else float(closes.iloc[-1])
-            spark = [round(float(x), 2) for x in (m["Close"].dropna().iloc[-48:] if m is not None else closes)]
             rows[t] = {"ticker": t, "last": round(last, 2), "chg_pct": round((last / prev - 1) * 100, 2),
-                       "spark": spark, "earnings": earnings(t)}
+                       "spark": [round(float(x), 2) for x in (mc if len(mc) else closes)][-48:], "src": "Yahoo"}
         except Exception:
-            rows[t] = {"ticker": t, "error": "no data"}
+            pass
+    if not rows:
+        _yahoo_fail(RuntimeError("empty"))
+    return rows, None
+
+
+def quotes(max_age=30):
+    """Alpaca first (one call, not rate-limited like Yahoo), Yahoo as fallback. Keeps the last good quote."""
+    ts = tickers()
     with _lock:
-        _q.update(at=time.time(), rows=rows)
-    return [rows[t] for t in ts]
+        if time.time() - _q["at"] < max_age and set(_q["rows"]) >= set(ts):
+            return [_q["rows"][t] for t in ts]
+    rows, err = _from_alpaca(ts)
+    missing = [t for t in ts if t not in rows]
+    if missing:
+        more, err2 = _from_yahoo(missing)
+        rows.update(more)
+        err = err2 or err
+    out = {}
+    with _lock:
+        for t in ts:
+            r = rows.get(t)
+            if r:
+                r["earnings"] = earnings(t) if _yahoo_ok() else (_er.get(t) or (0, None))[1]
+                out[t] = r
+            elif t in _q["rows"] and _q["rows"][t].get("last") is not None:
+                out[t] = dict(_q["rows"][t], stale=True)          # last good quote, marked stale
+            else:
+                out[t] = {"ticker": t, "error": err or "no data"}
+        _q.update(at=time.time(), rows=out)
+    return [out[t] for t in ts]
 
 
 def quote(t):

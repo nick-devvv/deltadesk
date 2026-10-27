@@ -212,6 +212,7 @@ p+p{margin-top:6px}
 .wlrow[aria-pressed=true]{background:var(--brand-t);box-shadow:inset 2px 0 0 var(--brand)}
 .wlrow b{font-weight:600}
 .wlrow svg{width:100%;height:18px}
+.wlrow.stale .n{opacity:.5}
 .wlrow .n{text-align:right;font-variant-numeric:tabular-nums}
 .wlrow .x{color:var(--ink-3);text-align:center;border-radius:3px}
 .wlrow .x:hover{color:var(--down)}
@@ -316,6 +317,7 @@ p+p{margin-top:6px}
           </div>
           <div class="tabpane" id="pane-watch" role="tabpanel">
             <div class="wl" id="wl"><div class="empty" style="padding:6px 16px">Loading watchlist…</div></div>
+            <div class="m mono" id="wlSrc" style="font-size:10px;padding:4px 16px 0;letter-spacing:.06em"></div>
             <form class="wladd" id="wlAdd" autocomplete="off"><label class="sr" for="wlInput">Add ticker</label><input id="wlInput" maxlength="6" placeholder="Add ticker, e.g. NVDA" spellcheck="false" autocapitalize="characters"><button type="submit">Add</button></form>
           </div>
           <div class="tabpane" id="pane-feed" role="tabpanel" hidden>
@@ -537,14 +539,17 @@ function renderWatch(){
   if (!WL.length){ el.innerHTML = '<div class="empty" style="padding:6px 8px">No tickers yet. Add one below.</div>'; return; }
   el.innerHTML = WL.map(q => {
     const er = q.earnings && q.earnings.days <= 14 ? `<span class="er ${q.earnings.days <= 0 ? "now" : ""}" title="Next earnings ${q.earnings.date} (Yahoo)">${q.earnings.days <= 0 ? "ER NOW" : "ER " + q.earnings.days + "D"}</span>` : "";
-    return `<button type="button" class="wlrow" data-t="${esc(q.ticker)}" aria-pressed="${q.ticker === ticker}">
+    return `<button type="button" class="wlrow${q.stale ? " stale" : ""}" data-t="${esc(q.ticker)}" aria-pressed="${q.ticker === ticker}" title="${q.stale ? "last good quote (live source busy)" : esc(q.src || "")}">
       <span><b>${esc(q.ticker)}</b>${er}</span><span>${q.error ? `<span class="m">${esc(q.error)}</span>` : spark(q.spark)}</span>
       <span class="n">${q.last != null ? q.last.toFixed(2) : "—"}</span>
       <span class="n ${tone(q.chg_pct)}">${q.chg_pct != null ? (q.chg_pct > 0 ? "+" : q.chg_pct < 0 ? "−" : "") + Math.abs(q.chg_pct).toFixed(2) + "%" : "—"}</span>
       <span class="x" data-rm="${esc(q.ticker)}" role="button" aria-label="Remove ${esc(q.ticker)}" title="Remove">×</span></button>`; }).join("");
 }
 async function loadWatch(){
-  try{ const j = await api("api/watchlist"); WL = j.quotes || []; renderWatch(); if (!isMain(ticker)) render(); }
+  try{ const j = await api("api/watchlist"); WL = j.quotes || []; renderWatch();
+    const src = [...new Set(WL.filter(q => q.src).map(q => q.src))].join(" + "), bad = WL.filter(q => q.error).length, st = WL.filter(q => q.stale).length;
+    $("#wlSrc").textContent = (src ? src : "no live source") + " · " + new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",hour:"2-digit",minute:"2-digit",hour12:false}).format(new Date()) + (st ? ` · ${st} stale` : "") + (bad ? ` · ${bad} unavailable: ${WL.find(q => q.error).error}` : "");
+    if (!isMain(ticker)) render(); }
   catch(e){ $("#wl").innerHTML = `<div class="empty" style="padding:6px 8px">Watchlist unavailable: ${esc(e.message)}</div>`; }
 }
 $("#wl").addEventListener("click", async e => {

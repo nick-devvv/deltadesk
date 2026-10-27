@@ -42,7 +42,7 @@ def status(state, **kw):
 
 def rth_5m(ticker):
     import chartdata
-    df = chartdata._dl(ticker, "60d", "5m", True)
+    df = chartdata._dl(ticker, "7d", "5m", True)   # ~400 RTH bars; small request
     if df is None or df.empty:
         return None
     df = df.tz_convert(core.ET) if df.index.tz is not None else df.tz_localize(core.ET)
@@ -153,6 +153,13 @@ def load_predictor():
     return predict_fn
 
 
+def _until_next_bar():
+    """Wake once per 5-minute bar (20 s after it completes) instead of polling Yahoo every 30 s."""
+    now = core.now_et()
+    nxt = now.replace(second=0, microsecond=0) + timedelta(minutes=5 - now.minute % 5, seconds=20)
+    return max(30, (nxt - now).total_seconds())
+
+
 def main():
     store.x(SCHEMA)
     status("loading", model=MODEL, rev=REV)
@@ -165,7 +172,8 @@ def main():
     while True:
         sess = core.session_info()
         try:
-            if sess["state"] in ("OPEN", "NO NEW ENTRIES", "ALL OUT", "AFTER HOURS") and not sess["holiday"]:
+            scoring_window = sess["state"] != "AFTER HOURS" or sess["time"] <= "16:30"
+            if sess["state"] in ("OPEN", "NO NEW ENTRIES", "ALL OUT", "AFTER HOURS") and not sess["holiday"] and scoring_window:
                 for t in TICKERS:
                     bars = rth_5m(t)
                     score(t, bars)
@@ -174,7 +182,7 @@ def main():
             status("running", model=MODEL, rev=REV, verdict=verdict(metrics()))
         except Exception as e:
             status("running", model=MODEL, rev=REV, last_error=f"{type(e).__name__}: {e}"[:300])
-        time.sleep(30)
+        time.sleep(_until_next_bar())
 
 
 if __name__ == "__main__":
