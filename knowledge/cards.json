@@ -1,36 +1,303 @@
 [
- {"id":"K01","title":"How the desk decides (4 layers)","tags":["plan","why","confirm","indicator","rsi","macd","agree","grade"],"status":"reference","source":"Master prompt Part 27",
-  "summary":"1) Hard gates (data fresh, session, spread, contract, 20% stop fits, events, streak) are never waived. 2) The selected setup's own trigger decides. 3) Other clues (RSI, MACD, extension, room to level) only rank/explain; they are not votes. EMA/MACD/RSI are the same price history, not 3 confirmations. 4) A good chart still needs a liquid, affordable contract. No fake confidence %."},
- {"id":"K02","title":"Spread eats the stop","tags":["spread","contract","bid","ask","cheap","premium","liquidity"],"status":"reference","source":"Master prompt Part 12",
-  "summary":"A 0.90/1.00 quote marks a 1.00 buy near 0.90 at once: 10% gone before price moves, half the 20% stop. Prefer tight spreads; skip >10%. Mid touching T1 does not mean you could sell there; use the bid. A cheap premium dip may just mean the setup is failing or the quote is stale."},
- {"id":"K03","title":"0DTE greeks in plain words","tags":["delta","gamma","theta","decay","iv","greeks","afternoon"],"status":"reference","source":"OIC via master prompt Part 12",
-  "summary":"Near expiry, ATM gamma is high: small underlying moves swing the premium fast both ways. Theta decay is nonlinear and accelerates into the close (it does not 'start at 2 PM'). Delta is not the chance the trade works. Change in premium is roughly delta*move + 0.5*gamma*move^2 + vega*IV change + theta*time; use it to explain, not to predict fills."},
- {"id":"K04","title":"Robinhood close-out and stops","tags":["robinhood","3:30","close","expiration","stop order","all out"],"status":"reference","source":"Robinhood help (master prompt S8,S9)",
-  "summary":"Robinhood may start closing at-risk expiring options from 3:30 PM ET, so the desk is all out at 3:25. Robinhood supports sell-to-close stop-market and stop-limit orders; neither guarantees the stop price. Nick places his own stop every trade."},
- {"id":"K05","title":"ORB research (what it does and doesn't prove)","tags":["orb","opening range","breakout","retest","9:45"],"status":"research","source":"Zarattini/Barbon/Aziz 2024; QQQ opening strategy paper (S13,S22)",
-  "summary":"Published ORB results use active stocks or 'trade the first 5m candle direction' with zero slippage and leverage. They are leads, not proof of our 15-min ORB retest on 0DTE options. Our ORB_BREAK / ORB_RETEST rules are tested on the desk's own paper results."},
- {"id":"K06","title":"VWAP trend research","tags":["vwap","reclaim","trend","whipsaw"],"status":"research","source":"QQQ VWAP trend paper (S23)",
-  "summary":"Long above / short below session VWAP on QQQ won only ~17% of trades; profit came from rare big winners, with zero slippage. Each VWAP cross is NOT a good 0DTE entry: repeated crosses = whipsaw (desk caps at 2 crosses/hour). Selective pullbacks are a separate test."},
- {"id":"K07","title":"SPY intraday momentum (noise bands)","tags":["momentum","trend day","spy","noise","late day"],"status":"research","source":"SPY intraday momentum paper 2007-2024 (S21)",
-  "summary":"Time-of-day movement bands on SPY with half-hour decisions; best headline uses up to 4x leverage. Useful as context for trend days, not a 1-minute entry model or an options result. Don't import its leverage or late-day exits (desk is all out 3:25)."},
- {"id":"K08","title":"Candles: measure, don't believe","tags":["candle","engulfing","pin bar","rejection","doji","inside bar","pattern","wick"],"status":"reference","source":"Marshall et al.; Lo/Mamaysky/Wang (S10-S12); Part 16",
-  "summary":"Classic candle rules failed in tested daily data. Use candles as measured features: body %, close location, wick vs body, range vs recent volatility, relative volume. Only completed candles count. A wick doesn't prove a 'liquidity sweep'. Inside bar = compression; the break is a separate event. Never call an entry before the candle closes (Nick's Oct 22 lesson)."},
- {"id":"K09","title":"Context that actually helps","tags":["context","chop","trend","levels","room","volatility","gap"],"status":"reference","source":"Master prompt Part 17",
-  "summary":"Distance to next level vs invalidation distance (room to T1), VWAP crosses + overlapping candles (chop), trend efficiency, ORB width vs normal, gap vs prior close, event distance. UNCERTAIN/TRANSITION is a valid day type. Levels and MAs are references, not walls. OI 'walls'/gamma flips are model guesses, not facts."},
- {"id":"K10","title":"Earnings plays","tags":["earnings","er","iv crush","expected move","straddle","report","overnight"],"status":"reference","source":"Options basics; desk earnings rules",
-  "summary":"Confirm date and BMO/AMC. Expected move = ATM straddle on the first expiry after the report / stock price. IV crush: premiums fall after the report even if you're right on direction; buying calls/puts into the print needs a move bigger than the expected move. A 20% stop cannot protect an overnight gap. Playing the post-report reaction (next morning ORB) avoids the crush."},
- {"id":"K11","title":"Smart-money data (Quiver)","tags":["congress","insider","smart money","short volume","wsb","quiver","lobbying"],"status":"reference","source":"Quiver Quantitative",
-  "summary":"Congress trades are disclosed weeks late; insider buys are rarer and more meaningful than sells; off-exchange short volume is routine market making, not proof of shorting; WSB mentions measure attention, not direction. Background only, never an entry trigger."},
- {"id":"K12","title":"Reviewing performance","tags":["review","journal","stats","profit factor","win rate","expectancy","losing streak","drawdown"],"status":"reference","source":"tradingview-mcp performance-analyst; master prompt Part 19-20",
-  "summary":"Look at: net expectancy ($ and R), average win vs loss, profit factor, max losing streak, drawdown, results by setup/time/ticker. High win rate with tiny winners can still lose. Small samples (20 trades) start a review, they don't prove an edge. Judge process (followed plan?) separately from outcome."},
- {"id":"K13","title":"How lessons become rules","tags":["lesson","learn","rule","change","improve","mistake"],"status":"reference","source":"Master prompt Part 20, 29",
-  "summary":"Observation -> hypothesis -> test on the same setups -> forward paper -> PROPOSED -> Nick approves. Two losses are an observation, not a rule. Never punish a correctly executed loss with a new restriction. Separate why it lost: signal, contract, execution, management, or process. Never propose a looser stop or bigger size."},
- {"id":"K14","title":"Backtest traps","tags":["backtest","overfit","test","history","forward"],"status":"reference","source":"Bailey et al. (S15); freqtrade/jesse bias checks",
-  "summary":"Trying many variants finds lucky ones (overfitting). Keep a log of every variant tried, test on untouched later data, use completed bars only, no fills before the bar closed, no midpoint fills, and if stop and target hit in one bar assume the worse. SPY and QQQ move together; they're not two independent tests."},
- {"id":"K15","title":"AI trading claims on Reddit","tags":["reddit","grok bot","ai trading","claims"],"status":"reference","source":"Master prompt Part 30",
-  "summary":"'$20K Grok bot' posts were paper accounts on small stocks, often followed by losing days. Vendor posts are promotions. Lessons worth keeping: timestamps, fresh quotes, conservative fills, honest live vs backtest. More AI agents don't replace verification."},
- {"id":"K16","title":"Kronos forecast (shadow test)","tags":["kronos","forecast","model","prediction"],"status":"shadow","source":"Kronos repo/paper (S34-S37)",
-  "summary":"Pre-trained candlestick model (trained on daily/hourly data, not proven on SPY/QQQ 1-minute). The desk runs it in the background and scores it against simple baselines. It has no say in trades until it beats them over weeks. A shaded range is not a guaranteed probability."},
- {"id":"K17","title":"Chart analysis checklist","tags":["levels","analysis","chart","checklist","key levels"],"status":"reference","source":"tradingview-mcp chart-analysis skill; Nick's Playbook",
-  "summary":"Price vs recent range; PDH/PDL/PDC, PMH/PML, ORB, VWAP, 9/21 EMA, 200s; trend on 15m/5m; room to the next level; what would invalidate; one-line bias with the reason. Use the desk's read numbers first; open Legend only for the option chain or if data is stale."}
+ {
+  "id": "K01",
+  "title": "How the desk decides (4 layers)",
+  "tags": [
+   "plan",
+   "why",
+   "confirm",
+   "indicator",
+   "rsi",
+   "macd",
+   "agree",
+   "grade"
+  ],
+  "status": "reference",
+  "source": "Master prompt Part 27",
+  "summary": "1) Hard gates (data fresh, session, spread, contract, 20% stop fits, events, streak) are never waived. 2) The selected setup's own trigger decides. 3) Other clues (RSI, MACD, extension, room to level) only rank/explain; they are not votes. EMA/MACD/RSI are the same price history, not 3 confirmations. 4) A good chart still needs a liquid, affordable contract. No fake confidence %."
+ },
+ {
+  "id": "K02",
+  "title": "Spread eats the stop",
+  "tags": [
+   "spread",
+   "contract",
+   "bid",
+   "ask",
+   "cheap",
+   "premium",
+   "liquidity"
+  ],
+  "status": "reference",
+  "source": "Master prompt Part 12",
+  "summary": "A 0.90/1.00 quote marks a 1.00 buy near 0.90 at once: 10% gone before price moves, half the 20% stop. Prefer tight spreads; skip >10%. Mid touching T1 does not mean you could sell there; use the bid. A cheap premium dip may just mean the setup is failing or the quote is stale."
+ },
+ {
+  "id": "K03",
+  "title": "0DTE greeks in plain words",
+  "tags": [
+   "delta",
+   "gamma",
+   "theta",
+   "decay",
+   "iv",
+   "greeks",
+   "afternoon"
+  ],
+  "status": "reference",
+  "source": "OIC via master prompt Part 12",
+  "summary": "Near expiry, ATM gamma is high: small underlying moves swing the premium fast both ways. Theta decay is nonlinear and accelerates into the close (it does not 'start at 2 PM'). Delta is not the chance the trade works. Change in premium is roughly delta*move + 0.5*gamma*move^2 + vega*IV change + theta*time; use it to explain, not to predict fills."
+ },
+ {
+  "id": "K04",
+  "title": "Robinhood close-out and stops",
+  "tags": [
+   "robinhood",
+   "3:30",
+   "close",
+   "expiration",
+   "stop order",
+   "all out"
+  ],
+  "status": "reference",
+  "source": "Robinhood help (master prompt S8,S9)",
+  "summary": "Robinhood may start closing at-risk expiring options from 3:30 PM ET, so the desk is all out at 3:25. Robinhood supports sell-to-close stop-market and stop-limit orders; neither guarantees the stop price. Nick places his own stop every trade."
+ },
+ {
+  "id": "K05",
+  "title": "ORB research (what it does and doesn't prove)",
+  "tags": [
+   "orb",
+   "opening range",
+   "breakout",
+   "retest",
+   "9:45"
+  ],
+  "status": "research",
+  "source": "Zarattini/Barbon/Aziz 2024; QQQ opening strategy paper (S13,S22)",
+  "summary": "Published ORB results use active stocks or 'trade the first 5m candle direction' with zero slippage and leverage. They are leads, not proof of our 15-min ORB retest on 0DTE options. Our ORB_BREAK / ORB_RETEST rules are tested on the desk's own paper results."
+ },
+ {
+  "id": "K06",
+  "title": "VWAP trend research",
+  "tags": [
+   "vwap",
+   "reclaim",
+   "trend",
+   "whipsaw"
+  ],
+  "status": "research",
+  "source": "QQQ VWAP trend paper (S23)",
+  "summary": "Long above / short below session VWAP on QQQ won only ~17% of trades; profit came from rare big winners, with zero slippage. Each VWAP cross is NOT a good 0DTE entry: repeated crosses = whipsaw (desk caps at 2 crosses/hour). Selective pullbacks are a separate test."
+ },
+ {
+  "id": "K07",
+  "title": "SPY intraday momentum (noise bands)",
+  "tags": [
+   "momentum",
+   "trend day",
+   "spy",
+   "noise",
+   "late day"
+  ],
+  "status": "research",
+  "source": "SPY intraday momentum paper 2007-2024 (S21)",
+  "summary": "Time-of-day movement bands on SPY with half-hour decisions; best headline uses up to 4x leverage. Useful as context for trend days, not a 1-minute entry model or an options result. Don't import its leverage or late-day exits (desk is all out 3:25)."
+ },
+ {
+  "id": "K08",
+  "title": "Candles: measure, don't believe",
+  "tags": [
+   "candle",
+   "engulfing",
+   "pin bar",
+   "rejection",
+   "doji",
+   "inside bar",
+   "pattern",
+   "wick"
+  ],
+  "status": "reference",
+  "source": "Marshall et al.; Lo/Mamaysky/Wang (S10-S12); Part 16",
+  "summary": "Classic candle rules failed in tested daily data. Use candles as measured features: body %, close location, wick vs body, range vs recent volatility, relative volume. Only completed candles count. A wick doesn't prove a 'liquidity sweep'. Inside bar = compression; the break is a separate event. Never call an entry before the candle closes (Nick's Oct 22 lesson)."
+ },
+ {
+  "id": "K09",
+  "title": "Context that actually helps",
+  "tags": [
+   "context",
+   "chop",
+   "trend",
+   "levels",
+   "room",
+   "volatility",
+   "gap"
+  ],
+  "status": "reference",
+  "source": "Master prompt Part 17",
+  "summary": "Distance to next level vs invalidation distance (room to T1), VWAP crosses + overlapping candles (chop), trend efficiency, ORB width vs normal, gap vs prior close, event distance. UNCERTAIN/TRANSITION is a valid day type. Levels and MAs are references, not walls. OI 'walls'/gamma flips are model guesses, not facts."
+ },
+ {
+  "id": "K10",
+  "title": "Earnings plays",
+  "tags": [
+   "earnings",
+   "er",
+   "iv crush",
+   "expected move",
+   "straddle",
+   "report",
+   "overnight"
+  ],
+  "status": "reference",
+  "source": "Options basics; desk earnings rules",
+  "summary": "Confirm date and BMO/AMC. Expected move = ATM straddle on the first expiry after the report / stock price. IV crush: premiums fall after the report even if you're right on direction; buying calls/puts into the print needs a move bigger than the expected move. A 20% stop cannot protect an overnight gap. Playing the post-report reaction (next morning ORB) avoids the crush."
+ },
+ {
+  "id": "K11",
+  "title": "Smart-money data (Quiver)",
+  "tags": [
+   "congress",
+   "insider",
+   "smart money",
+   "short volume",
+   "wsb",
+   "quiver",
+   "lobbying"
+  ],
+  "status": "reference",
+  "source": "Quiver Quantitative",
+  "summary": "Congress trades are disclosed weeks late; insider buys are rarer and more meaningful than sells; off-exchange short volume is routine market making, not proof of shorting; WSB mentions measure attention, not direction. Background only, never an entry trigger."
+ },
+ {
+  "id": "K12",
+  "title": "Reviewing performance",
+  "tags": [
+   "review",
+   "journal",
+   "stats",
+   "profit factor",
+   "win rate",
+   "expectancy",
+   "losing streak",
+   "drawdown"
+  ],
+  "status": "reference",
+  "source": "tradingview-mcp performance-analyst; master prompt Part 19-20",
+  "summary": "Look at: net expectancy ($ and R), average win vs loss, profit factor, max losing streak, drawdown, results by setup/time/ticker. High win rate with tiny winners can still lose. Small samples (20 trades) start a review, they don't prove an edge. Judge process (followed plan?) separately from outcome."
+ },
+ {
+  "id": "K13",
+  "title": "How lessons become rules",
+  "tags": [
+   "lesson",
+   "learn",
+   "rule",
+   "change",
+   "improve",
+   "mistake"
+  ],
+  "status": "reference",
+  "source": "Master prompt Part 20, 29",
+  "summary": "Observation -> hypothesis -> test on the same setups -> forward paper -> PROPOSED -> Nick approves. Two losses are an observation, not a rule. Never punish a correctly executed loss with a new restriction. Separate why it lost: signal, contract, execution, management, or process. Never propose a looser stop or bigger size."
+ },
+ {
+  "id": "K14",
+  "title": "Backtest traps",
+  "tags": [
+   "backtest",
+   "overfit",
+   "test",
+   "history",
+   "forward"
+  ],
+  "status": "reference",
+  "source": "Bailey et al. (S15); freqtrade/jesse bias checks",
+  "summary": "Trying many variants finds lucky ones (overfitting). Keep a log of every variant tried, test on untouched later data, use completed bars only, no fills before the bar closed, no midpoint fills, and if stop and target hit in one bar assume the worse. SPY and QQQ move together; they're not two independent tests."
+ },
+ {
+  "id": "K15",
+  "title": "AI trading claims on Reddit",
+  "tags": [
+   "reddit",
+   "grok bot",
+   "ai trading",
+   "claims"
+  ],
+  "status": "reference",
+  "source": "Master prompt Part 30",
+  "summary": "'$20K Grok bot' posts were paper accounts on small stocks, often followed by losing days. Vendor posts are promotions. Lessons worth keeping: timestamps, fresh quotes, conservative fills, honest live vs backtest. More AI agents don't replace verification."
+ },
+ {
+  "id": "K16",
+  "title": "Kronos forecast (shadow test)",
+  "tags": [
+   "kronos",
+   "forecast",
+   "model",
+   "prediction"
+  ],
+  "status": "shadow",
+  "source": "Kronos repo/paper (S34-S37)",
+  "summary": "Pre-trained candlestick model (trained on daily/hourly data, not proven on SPY/QQQ 1-minute). The desk runs it in the background and scores it against simple baselines. It has no say in trades until it beats them over weeks. A shaded range is not a guaranteed probability."
+ },
+ {
+  "id": "K17",
+  "title": "Chart analysis checklist",
+  "tags": [
+   "levels",
+   "analysis",
+   "chart",
+   "checklist",
+   "key levels"
+  ],
+  "status": "reference",
+  "source": "tradingview-mcp chart-analysis skill; Nick's Playbook",
+  "summary": "Price vs recent range; PDH/PDL/PDC, PMH/PML, ORB, VWAP, 9/21 EMA, 200s; trend on 15m/5m; room to the next level; what would invalidate; one-line bias with the reason. Use the desk's read numbers first; open Legend only for the option chain or if data is stale."
+ },
+ {
+  "id": "K18",
+  "title": "Option-chain levels (max pain, top OI)",
+  "tags": [
+   "max pain",
+   "open interest",
+   "oi",
+   "gamma",
+   "pin",
+   "wall"
+  ],
+  "status": "reference",
+  "source": "bandaru-trade-analysis (MIT); master prompt Part 17",
+  "summary": "Max pain and the strikes with the most open interest or volume can act as magnets near expiration, especially on 0DTE. They're context, not support/resistance guarantees. OI is yesterday's count and doesn't say who is long or short, so a 'gamma wall' is a model guess. Mention them as 'a level to watch', never as the reason to enter."
+ },
+ {
+  "id": "K19",
+  "title": "Squeeze (compression) setups",
+  "tags": [
+   "squeeze",
+   "ttm",
+   "compression",
+   "inside bar",
+   "tight range",
+   "bollinger",
+   "keltner"
+  ],
+  "status": "research",
+  "source": "bandaru-trade-analysis (MIT); master prompt Part 15 #6",
+  "summary": "TTM squeeze = Bollinger Bands inside Keltner Channels: volatility is compressed. The release can go either way. The trade is the completed break of a nearby level after the squeeze, not the squeeze itself. Being tested as a research setup, not active."
+ },
+ {
+  "id": "K20",
+  "title": "Why the desk shows no 'confidence %'",
+  "tags": [
+   "confidence",
+   "probability",
+   "score",
+   "sure",
+   "certain"
+  ],
+  "status": "reference",
+  "source": "celo-trader review; master prompt Part 27",
+  "summary": "Some bots fire when a made-up confidence score passes 78%. Those scores aren't calibrated win probabilities. The desk instead shows the state (WAIT/READY/PASS), the grade (how many things line up) and the reasons for and against. When the paper record by setup builds up, that's the real evidence."
+ }
 ]

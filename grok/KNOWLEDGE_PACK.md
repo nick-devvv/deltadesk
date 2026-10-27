@@ -69,3 +69,15 @@ _Source: Kronos repo/paper (S34-S37)_
 ## [K17] Chart analysis checklist  (reference)
 Price vs recent range; PDH/PDL/PDC, PMH/PML, ORB, VWAP, 9/21 EMA, 200s; trend on 15m/5m; room to the next level; what would invalidate; one-line bias with the reason. Use the desk's read numbers first; open Legend only for the option chain or if data is stale.
 _Source: tradingview-mcp chart-analysis skill; Nick's Playbook_
+
+## [K18] Option-chain levels (max pain, top OI)  (reference)
+Max pain and the strikes with the most open interest or volume can act as magnets near expiration, especially on 0DTE. They're context, not support/resistance guarantees. OI is yesterday's count and doesn't say who is long or short, so a 'gamma wall' is a model guess. Mention them as 'a level to watch', never as the reason to enter.
+_Source: bandaru-trade-analysis (MIT); master prompt Part 17_
+
+## [K19] Squeeze (compression) setups  (research)
+TTM squeeze = Bollinger Bands inside Keltner Channels: volatility is compressed. The release can go either way. The trade is the completed break of a nearby level after the squeeze, not the squeeze itself. Being tested as a research setup, not active.
+_Source: bandaru-trade-analysis (MIT); master prompt Part 15 #6_
+
+## [K20] Why the desk shows no 'confidence %'  (reference)
+Some bots fire when a made-up confidence score passes 78%. Those scores aren't calibrated win probabilities. The desk instead shows the state (WAIT/READY/PASS), the grade (how many things line up) and the reasons for and against. When the paper record by setup builds up, that's the real evidence.
+_Source: celo-trader review; master prompt Part 27_

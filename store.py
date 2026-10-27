@@ -151,3 +151,61 @@ def journal_set(day, notes=None, summary=None):
       "notes=excluded.notes, summary=excluded.summary, updated=excluded.updated",
       (day, json.dumps(n), json.dumps(s), ts()))
     return journal_get(day)
+
+
+# ---------------- journal analytics (calendar, breakdowns, per-trade review, CSV) ----------------
+REVIEW_FIELDS = ("entry_reason", "exit_reason", "went_well", "improve", "next_time", "followed_plan")
+
+
+def trade_note(pid, fields):
+    p = pos_get(pid)
+    if not p:
+        return None
+    try:
+        cur = json.loads(p.get("notes") or "{}") if isinstance(p.get("notes"), str) else (p.get("notes") or {})
+    except ValueError:
+        cur = {"text": p.get("notes")}
+    cur.update({k: str(v)[:2000] for k, v in fields.items() if k in REVIEW_FIELDS})
+    x("UPDATE positions SET notes=? WHERE id=?", (json.dumps(cur), pid))
+    return cur
+
+
+def calendar(ledger, month):
+    rows = q("SELECT date, COUNT(*) n, SUM(realized) pnl, SUM(CASE WHEN realized>0 THEN 1 ELSE 0 END) wins FROM positions "
+             "WHERE ledger=? AND status='CLOSED' AND date LIKE ? GROUP BY date ORDER BY date", (ledger, month + "%"))
+    return [{"date": r["date"], "trades": r["n"], "pnl": round(r["pnl"] or 0, 2), "wins": r["wins"]} for r in rows]
+
+
+def breakdown(ledger, since):
+    import core
+    rows = q("SELECT ticker, setup, grade, realized, opened FROM positions WHERE ledger=? AND status='CLOSED' AND date>=?", (ledger, since))
+    out = {}
+    for key, f in (("setup", lambda r: r["setup"] or "—"), ("time", lambda r: core.time_bucket((r["opened"] or "")[11:16] or "09:30")),
+                   ("ticker", lambda r: r["ticker"]), ("grade", lambda r: r["grade"] or "—")):
+        g = {}
+        for r in rows:
+            b = g.setdefault(f(r), {"n": 0, "wins": 0, "pnl": 0.0})
+            b["n"] += 1
+            b["wins"] += 1 if (r["realized"] or 0) > 0 else 0
+            b["pnl"] += r["realized"] or 0
+        out[key] = sorted(({"name": k, "n": v["n"], "win_rate": round(100 * v["wins"] / v["n"]), "pnl": round(v["pnl"], 2)}
+                           for k, v in g.items()), key=lambda z: -z["pnl"])
+    return out
+
+
+def export_csv(ledger):
+    import csv
+    import io
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["date", "ticker", "contract", "qty", "fill", "realized", "status", "setup", "grade", "opened", "closed",
+                "best_pct", "worst_pct", *REVIEW_FIELDS])
+    for p in q("SELECT * FROM positions WHERE ledger=? ORDER BY opened", (ledger,)):
+        try:
+            n = json.loads(p.get("notes") or "{}")
+            n = n if isinstance(n, dict) else {}
+        except ValueError:
+            n = {}
+        w.writerow([p["date"], p["ticker"], p["contract"], p["qty_init"], p["fill"], p["realized"], p["status"], p["setup"],
+                    p["grade"], p["opened"], p["closed"], p["mfe"], p["mae"], *[n.get(k, "") for k in REVIEW_FIELDS]])
+    return buf.getvalue()

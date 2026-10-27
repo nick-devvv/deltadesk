@@ -185,9 +185,17 @@ class H(BaseHTTPRequestHandler):
                 return self._json(altdata.ticker(t))
             if u.path == "/api/watchlist":
                 return self._json({"tickers": watchlist.tickers(), "quotes": clean(watchlist.quotes())})
+            if u.path == "/api/calendar":
+                return self._json(store.calendar(q.get("ledger", ["real"])[0], q.get("month", [core.now_et().strftime("%Y-%m")])[0][:7]))
+            if u.path == "/api/breakdown":
+                return self._json(store.breakdown(q.get("ledger", ["real"])[0], q.get("since", ["2000-01-01"])[0][:10]))
+            if u.path == "/api/export.csv":
+                led = q.get("ledger", ["real"])[0]
+                return self._send(200, store.export_csv(led), "text/csv; charset=utf-8",
+                                  {"Content-Disposition": f'attachment; filename="desk-{led}-trades.csv"'})
             if u.path == "/api/history":
                 led = q.get("ledger", ["paper"])[0]
-                rows = store.q("SELECT id,date,ticker,contract,qty_init,fill,realized,status,setup,grade,mfe,mae,opened,closed,verified "
+                rows = store.q("SELECT id,date,ticker,contract,qty_init,fill,realized,status,setup,grade,mfe,mae,opened,closed,verified,notes "
                                "FROM positions WHERE ledger=? ORDER BY opened DESC LIMIT 200", (led,))
                 return self._json(rows)
             if u.path == "/api/read":
@@ -242,9 +250,18 @@ class H(BaseHTTPRequestHandler):
                 text = str(b.get("reply") or b.get("text") or b.get("message") or "")[:6000]
                 store.event("chart", text, "")
                 return self._json({"ok": True})
+            if u.path == "/api/trade_note":
+                r = store.trade_note(str(b.get("id", "")), b.get("fields") or {})
+                return self._json({"ok": r is not None, "notes": r}, 200 if r is not None else 404)
+            if u.path == "/api/journal" and b.get("intraday"):
+                d = b.get("date") or core.now_et().strftime("%Y-%m-%d")
+                cur = store.journal_get(d)["notes"]
+                lst = cur.get("intraday_log") if isinstance(cur.get("intraday_log"), list) else []
+                lst.append({"t": core.hm(core.now_et()), "note": str(b["intraday"])[:500]})
+                return self._json(store.journal_set(d, notes={"intraday_log": lst[-200:]}))
             if u.path == "/api/journal":
                 d = b.get("date") or core.now_et().strftime("%Y-%m-%d")
-                notes = {k: str(v)[:5000] for k, v in (b.get("notes") or {}).items()}
+                notes = {k: str(v)[:5000] for k, v in (b.get("notes") or {}).items() if k != "intraday_log"}
                 return self._json(store.journal_set(d, notes=notes))
             if u.path == "/api/watchlist":
                 if b.get("add"):

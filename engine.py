@@ -166,6 +166,10 @@ def pick_contract(ticker, side, price, budget, grade_, chop, structural=None):
             rejected += 1
             continue
         d = c["delta"]
+        if d is None and c.get("iv"):
+            d = core.bs_delta(price, c["strike"], c["iv"], side)
+            if d is not None:
+                c["delta"], c["delta_src"] = d, "estimated"
         if d is not None and not (p["abs_delta_min"] <= abs(d) <= p["abs_delta_max"]):
             rejected += 1
             continue
@@ -315,7 +319,8 @@ def build_plan(ticker, side, level=None, mode="check", ledger="real"):
             plan["reason"] = why
         return plan
     plan.update(contract={"symbol": c["symbol"], "label": occ_to_label(c["symbol"]), "bid": c["bid"],
-                          "ask": c["ask"], "delta": c["delta"], "quote_ts": c["ts"], "feed": "indicative"},
+                          "ask": c["ask"], "delta": c["delta"], "delta_src": c.get("delta_src", "broker" if c["delta"] is not None else None),
+                          "quote_ts": c["ts"], "feed": "indicative"},
                 premium_limit=core.cents_up(c["ask"] + 0.02), exit=c["exit"], qty=c["qty"],
                 risk_per_contract=c["risk_per_contract"], size_note=c["size_note"])
     if c["qty"] == 0 and plan["state"] == "READY":

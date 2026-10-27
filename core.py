@@ -203,3 +203,30 @@ def budget_left(realized_day, unrealized, open_risk, realized_week):
 def week_start(d=None):
     d = d or now_et().date()
     return (d - timedelta(days=d.weekday())).isoformat()
+
+
+# ---------------- greeks fallback ----------------
+def bs_delta(spot, strike, iv, side, now=None, r=0.04):
+    """Black-Scholes delta, used ONLY when the broker sends no delta but does send implied volatility.
+    Time = minutes left to the 4:00 PM close (0DTE), floored at 5 minutes. Labeled 'estimated' everywhere."""
+    if not (spot and strike and iv) or iv <= 0:
+        return None
+    now = now or now_et()
+    close = now.replace(hour=16, minute=0, second=0, microsecond=0)
+    t = max((close - now).total_seconds(), 300) / (365 * 24 * 3600)
+    d1 = (math.log(spot / strike) + (r + iv * iv / 2) * t) / (iv * math.sqrt(t))
+    nd1 = 0.5 * (1 + math.erf(d1 / math.sqrt(2)))
+    return round(nd1 if side.upper().startswith("C") else nd1 - 1, 3)
+
+
+def time_bucket(hhmm):
+    """Time-of-day bucket for journal breakdowns."""
+    if hhmm < "10:30":
+        return "Open 9:30-10:30"
+    if hhmm < "12:00":
+        return "Morning 10:30-12"
+    if hhmm < "14:00":
+        return "Midday 12-2"
+    if hhmm < "15:00":
+        return "Afternoon 2-3"
+    return "Power hour 3-close"

@@ -433,3 +433,32 @@ def test_watchlist_alpaca_first_and_keeps_last_good_quote(monkeypatch, tmp_path)
     rows = {r["ticker"]: r for r in watchlist.quotes(max_age=0)}
     assert rows["NVDA"]["stale"] and rows["NVDA"]["last"] == 142.0   # both sources down: last good quote, marked stale
     assert calls and not watchlist._yahoo_ok()                  # Yahoo failure -> 10 minute pause, not a retry storm
+
+
+def test_journal_calendar_breakdown_review_csv(desk_env, monkeypatch):
+    clock = desk_env
+    wire(monkeypatch, clock, up_day)
+    clock.t = DAY.replace(hour=10, minute=5)
+    r1 = commands.handle("IN SPY 601C 2 at 1.00", "SPY")["position"]
+    commands.handle("OUT 2 at 1.20", "SPY")
+    clock.t = DAY.replace(hour=15, minute=5)
+    commands.handle("IN SPY 600P 1 at 1.00", "SPY")
+    commands.handle("OUT 1 at 0.80", "SPY")
+    cal = store.calendar("real", "2026-10")
+    assert cal == [{"date": "2026-10-28", "trades": 2, "pnl": 20.0, "wins": 1}]
+    b = store.breakdown("real", "2026-10-01")
+    times = {x["name"]: x for x in b["time"]}
+    assert times["Open 9:30-10:30"]["pnl"] == 40.0 and times["Power hour 3-close"]["pnl"] == -20.0
+    n = store.trade_note(r1["id"], {"went_well": "waited for the close", "followed_plan": "yes", "hack": "x"})
+    assert n == {"went_well": "waited for the close", "followed_plan": "yes"}
+    csv_text = store.export_csv("real")
+    assert "waited for the close" in csv_text and csv_text.count("\n") == 3
+
+
+def test_black_scholes_delta_fallback():
+    t = DAY.replace(hour=12, minute=0)
+    c = core.bs_delta(600, 600, 0.15, "C", t)
+    p = core.bs_delta(600, 600, 0.15, "P", t)
+    assert 0.45 < c < 0.56 and abs(c - p - 1) < 1e-6
+    assert core.bs_delta(600, 610, 0.15, "C", t) < 0.1          # far OTM 0DTE call ~ 0
+    assert core.bs_delta(600, 600, None, "C", t) is None

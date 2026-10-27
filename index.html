@@ -242,6 +242,24 @@ p+p{margin-top:6px}
 .jvtext p{margin-top:6px;font:15px/1.5 var(--sans);color:var(--ink);overflow-wrap:anywhere;max-height:7.5em;overflow:auto}
 .jvtext #jvHint{grid-column:1/3;font:12px var(--mono);color:var(--ink-3)}
 @media (max-width:700px){.jvtext{grid-template-columns:1fr}.jvtext #jvHint{grid-column:1}}
+
+.cal{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+.cal .dow{font:500 9.5px var(--mono);letter-spacing:.24em;color:var(--ink-3);text-transform:uppercase;text-align:center;padding-bottom:2px}
+.cal button{display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-height:58px;padding:6px 8px;border-radius:4px;border:1px solid var(--line);background:rgba(10,4,6,.6);text-transform:none;letter-spacing:0;font:11px var(--mono);color:var(--ink-3)}
+.cal button b{font:600 13px var(--mono);font-variant-numeric:tabular-nums}
+.cal button.win{background:rgba(57,208,138,.10);border-color:rgba(57,208,138,.35)} .cal button.win b{color:var(--up)}
+.cal button.loss{background:rgba(255,106,85,.10);border-color:rgba(255,106,85,.35)} .cal button.loss b{color:var(--down)}
+.cal button[aria-current=date]{box-shadow:var(--glow);border-color:var(--brand)}
+.cal .pad{visibility:hidden}
+.brk{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px 22px}
+.brk td{padding:6px 6px}
+.brk td:first-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:130px}
+.brk h3{font:600 9.5px var(--mono);letter-spacing:.28em;text-transform:uppercase;color:var(--ink-3);margin-bottom:4px}
+.trow{cursor:pointer}
+.review{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;padding:10px 0 14px}
+.review label{display:flex;flex-direction:column;gap:4px;font:500 9.5px var(--mono);letter-spacing:.22em;text-transform:uppercase;color:var(--ink-3)}
+.review textarea{min-height:48px;resize:vertical;font:12.5px var(--sans)}
+.review .full{grid-column:1/3}
 @media (max-width:1600px){ .brand span{display:none} nav a{padding:7px 13px;letter-spacing:.18em} header{gap:12px} }
 @media (max-width:1380px){ .trade{grid-template-columns:300px minmax(0,1fr) 380px} .hide-md{display:none} nav a{padding:7px 12px;letter-spacing:.16em} header{gap:12px} .brand b{letter-spacing:.3em} }
 @media (max-width:1100px){
@@ -408,9 +426,20 @@ p+p{margin-top:6px}
         <span class="m" id="jsave" aria-live="polite"></span>
       </div>
       <div class="grid2">
-        <div class="box"><div class="ph"><h2>Your trades (reported by you)</h2></div><div class="bd" id="jReal"></div></div>
-        <div class="box"><div class="ph"><h2>Paper trades (paper broker)</h2></div><div class="bd" id="jPaper"></div></div>
+        <section class="box"><div class="ph"><h2>P/L calendar<small id="calMonth"></small></h2>
+          <div class="r"><div class="seg" role="group" aria-label="Ledger"><button type="button" data-led="real" aria-pressed="true">You</button><button type="button" data-led="paper" aria-pressed="false">Paper</button></div>
+          <button type="button" id="calPrev" aria-label="Previous month">‹</button><button type="button" id="calNext" aria-label="Next month">›</button></div></div>
+          <div class="bd"><div class="cal" id="cal"></div></div></section>
+        <section class="box"><div class="ph"><h2>What's working<small>last 30 days</small></h2><div class="r"><a class="m mono" id="csvLink" href="api/export.csv?ledger=real" download style="font-size:10.5px;letter-spacing:.12em">EXPORT CSV ↓</a></div></div>
+          <div class="bd" id="brk"></div></section>
       </div>
+      <div class="grid2" style="margin-top:14px">
+        <div class="box"><div class="ph"><h2>Your trades<small>click a trade to review it</small></h2></div><div class="bd" id="jReal"></div></div>
+        <div class="box"><div class="ph"><h2>Paper trades<small>paper broker</small></h2></div><div class="bd" id="jPaper"></div></div>
+      </div>
+      <div class="box" style="margin-top:14px"><div class="ph"><h2>Intraday notes<small>timestamped, as it happens</small></h2></div><div class="bd">
+        <form class="wladd" id="qnForm" style="padding:0 0 8px" autocomplete="off"><label class="sr" for="qn">Quick note</label><input id="qn" placeholder="e.g. chopping at VWAP, waiting for ORB retest…" style="text-transform:none"><button type="submit">Add</button></form>
+        <div id="qnList" class="feed" style="padding:0;max-height:220px"></div></div></div>
       <div class="box notes" style="margin-top:14px"><div class="ph"><h2>Your notes</h2></div><div class="bd">
         <label for="n-thesis">Plan / thesis</label><textarea id="n-thesis" data-n="thesis" placeholder="What was the read before the open?"></textarea>
         <label for="n-exec">Execution</label><textarea id="n-exec" data-n="execution" placeholder="Did entries and exits follow the plan?"></textarea>
@@ -709,7 +738,7 @@ function renderPlan(p){
     ["Setup", `${esc(p.setup||"—")} <small>${esc(p.setup_note||"")}</small>`],
     ["Trigger", esc(p.trigger_rule||"—")],
     ["Invalid", p.invalidation != null ? `<span class="d">${Number(p.invalidation).toFixed(2)}</span> <small>underlying, 1m close</small>` : "—"],
-    ["Contract", c ? `${esc(p.ticker)} ${esc(c.label)} 0DTE <small>bid ${Number(c.bid).toFixed(2)} · ask ${Number(c.ask).toFixed(2)} · Δ ${c.delta ?? "unknown"} · delayed quote</small>` : `<small>${esc(p.contract_note||"unavailable")}</small>`],
+    ["Contract", c ? `${esc(p.ticker)} ${esc(c.label)} 0DTE <small>bid ${Number(c.bid).toFixed(2)} · ask ${Number(c.ask).toFixed(2)} · Δ ${c.delta ?? "unknown"}${c.delta_src === "estimated" ? " est." : ""} · delayed quote</small>` : `<small>${esc(p.contract_note||"unavailable")}</small>`],
   ];
   if (c) rows.push(
     ["Buy ≤", `${usd(p.premium_limit)} <small>≈ $${(p.premium_limit*100).toFixed(0)} per contract · don’t chase above</small>`],
@@ -836,19 +865,85 @@ $("#pauseBtn").onclick = async () => { await send(S && S.paper.enabled ? "pause 
 
 /* ---------- journal ---------- */
 let jt = null;
+let calLed = "real", calMonth = null, HIST = {real: [], paper: []};
+const REVIEW = [["entry_reason","Why I entered"],["exit_reason","Why I exited"],["followed_plan","Followed the plan? (yes / no / partly + why)"],["went_well","What went well"],["improve","What to improve"],["next_time","Next time I will…"]];
+function reviewForm(r){
+  let n = {}; try { n = typeof r.notes === "string" ? JSON.parse(r.notes || "{}") : (r.notes || {}); } catch(e){ n = {}; }
+  return `<tr class="revrow"><td colspan="6"><form class="review" data-id="${esc(r.id)}">${REVIEW.map(([k, l], i) =>
+    `<label class="${i === 2 ? "full" : ""}">${l}<textarea data-k="${k}">${esc(n[k] || "")}</textarea></label>`).join("")}
+    <span class="m mono full" data-s style="font-size:10.5px"></span></form></td></tr>`;
+}
+function tradeRows(list, led){
+  if (!list.length) return "";
+  return `<table><thead><tr><th>Time</th><th>Trade</th><th>Setup</th><th class="n">Qty</th><th class="n">Fill</th><th class="n">P/L</th></tr></thead><tbody>${list.map(r => {
+    const h = HIST[led].find(x => x.id === r.id) || r;
+    let n = {}; try { n = typeof h.notes === "string" ? JSON.parse(h.notes || "{}") : (h.notes || {}); } catch(e){}
+    const reviewed = REVIEW.some(([k]) => n[k]);
+    return `<tr class="trow" data-id="${esc(r.id)}" data-led="${led}" tabindex="0"><td class="mono">${esc(hhmm(r.opened))}</td><td>${esc(r.ticker)} ${esc(r.contract)} ${led === "real" ? (reviewed ? '<span class="pill up" style="height:16px">reviewed</span>' : '<span class="pill dim" style="height:16px">review</span>') : ""}</td><td>${esc(r.setup || "")} <span class="m">${esc(r.grade || "")}</span></td><td class="n">${r.qty_init}</td><td class="n">${usd(r.fill)}</td><td class="n ${tone(r.realized)}">${r.status === "CLOSED" ? money(r.realized) : esc(r.status)}</td></tr>`; }).join("")}</tbody></table>`;
+}
+async function loadCalendar(){
+  calMonth = calMonth || todayET().slice(0, 7);
+  const [y, m] = calMonth.split("-").map(Number);
+  $("#calMonth").textContent = new Date(y, m - 1, 15).toLocaleString("en-US", {month: "long", year: "numeric"}) + " · " + (calLed === "real" ? "you" : "paper");
+  let days = [];
+  try { days = await api(`api/calendar?ledger=${calLed}&month=${calMonth}`); } catch(e){}
+  const by = Object.fromEntries(days.map(d => [d.date, d]));
+  const cells = ["Mon","Tue","Wed","Thu","Fri"].map(d => `<div class="dow">${d}</div>`);
+  const first = new Date(y, m - 1, 1), last = new Date(y, m, 0).getDate();
+  let lead = (first.getDay() + 6) % 7; if (lead > 4) lead = 0;
+  for (let i = 0; i < lead; i++) cells.push('<button type="button" class="pad" tabindex="-1" aria-hidden="true"></button>');
+  for (let d = 1; d <= last; d++){
+    const dt = new Date(y, m - 1, d), wd = dt.getDay(); if (wd === 0 || wd === 6) continue;
+    const iso = `${calMonth}-${String(d).padStart(2,"0")}`, x = by[iso];
+    cells.push(`<button type="button" data-date="${iso}" class="${x ? (x.pnl > 0 ? "win" : x.pnl < 0 ? "loss" : "") : ""}" ${iso === $("#jdate").value ? 'aria-current="date"' : ""}>${d}${x ? `<b>${money(x.pnl)}</b><span>${x.trades} trade${x.trades === 1 ? "" : "s"} · ${x.wins}W</span>` : ""}</button>`);
+  }
+  $("#cal").innerHTML = cells.join("");
+  $("#cal").querySelectorAll("[data-date]").forEach(b => b.onclick = () => loadJournal(b.dataset.date));
+}
+async function loadBreakdown(){
+  $("#csvLink").href = `api/export.csv?ledger=${calLed}`;
+  try{
+    const b = await api(`api/breakdown?ledger=${calLed}&since=${since30()}`);
+    const t = (title, rows) => `<div><h3>${title}</h3>${rows.length ? `<table><tbody>${rows.map(r => `<tr><td>${esc(r.name)}</td><td class="n m">${r.n}</td><td class="n">${r.win_rate}%</td><td class="n ${tone(r.pnl)}">${money(r.pnl)}</td></tr>`).join("")}</tbody></table>` : '<div class="empty">No closed trades yet.</div>'}</div>`;
+    $("#brk").innerHTML = `<div class="brk">${t("By setup", b.setup)}${t("By time of day", b.time)}${t("By ticker", b.ticker)}${t("By grade", b.grade)}</div>`;
+  }catch(e){ $("#brk").innerHTML = `<div class="d">${esc(e.message)}</div>`; }
+}
 async function loadJournal(d){
   const day = d || $("#jdate").value || todayET();
   $("#jdate").value = day;
+  if (!calMonth || calMonth !== day.slice(0, 7)) calMonth = day.slice(0, 7);
+  loadCalendar(); loadBreakdown();
   try{
-    const j = await api("api/journal?date=" + day);
+    const [j, hr, hp] = await Promise.all([api("api/journal?date=" + day), api("api/history?ledger=real"), api("api/history?ledger=paper")]);
+    HIST = {real: hr, paper: hp};
     const L = j.live;
-    const list = led => { const x = L[led]; return x.trades ? histTable(x.list, false) + `<p class="m" style="margin-top:8px">${x.closed} closed · <span class="${tone(x.realized)}">${money(x.realized)}</span> · win rate ${x.win_rate ?? "—"}%</p>`
-      : `<div class="empty">${led==="paper" ? esc(L.no_trade_reason || "No paper trades.") : "No trades reported by you."}</div>`; };
+    const list = led => { const x = L[led]; return x.trades ? tradeRows(x.list, led) + `<p class="m" style="margin-top:8px">${x.closed} closed · <span class="${tone(x.realized)}">${money(x.realized)}</span> · win rate ${x.win_rate ?? "—"}%</p>`
+      : `<div class="empty">${led==="paper" ? esc(L.no_trade_reason || "No paper trades.") : "No trades reported by you this day."}</div>`; };
     $("#jReal").innerHTML = list("real"); $("#jPaper").innerHTML = list("paper");
     $$(".notes textarea").forEach(t => { if (document.activeElement !== t) t.value = (j.journal.notes||{})[t.dataset.n] || ""; });
+    const log = (j.journal.notes || {}).intraday_log || [];
+    $("#qnList").innerHTML = log.length ? log.slice().reverse().map(x => `<div class="ev"><time>${esc(x.t)}</time><span class="t">${esc(x.note)}</span></div>`).join("") : '<div class="empty">No intraday notes this day.</div>';
     $("#jsave").textContent = j.journal.updated ? "Saved " + hhmm(j.journal.updated) : "";
   }catch(e){ $("#jReal").innerHTML = `<div class="d">Couldn’t load the journal: ${esc(e.message)}</div>`; }
 }
+$("#jReal").addEventListener("click", e => {
+  const tr = e.target.closest(".trow"); if (!tr) return;
+  const nx = tr.nextElementSibling;
+  if (nx && nx.classList.contains("revrow")) { nx.remove(); return; }
+  const h = HIST.real.find(x => x.id === tr.dataset.id) || {id: tr.dataset.id};
+  tr.insertAdjacentHTML("afterend", reviewForm(h));
+  const f = tr.nextElementSibling.querySelector("form"); let tm = null;
+  f.addEventListener("input", () => { f.querySelector("[data-s]").textContent = "Saving…"; clearTimeout(tm);
+    tm = setTimeout(async () => { const fields = {}; f.querySelectorAll("textarea").forEach(t => fields[t.dataset.k] = t.value);
+      try { const r = await api("api/trade_note", {id: f.dataset.id, fields}); h.notes = r.notes; f.querySelector("[data-s]").textContent = "Saved"; } catch(x){ f.querySelector("[data-s]").textContent = "Not saved: " + x.message; } }, 700); });
+  f.querySelector("textarea").focus();
+});
+$("#jReal").addEventListener("keydown", e => { if (e.key === "Enter" && e.target.classList.contains("trow")) e.target.click(); });
+$$('[data-led]').forEach(b => { if (b.tagName !== "BUTTON") return; b.onclick = () => { calLed = b.dataset.led; $$('.seg [data-led]').forEach(x => x.setAttribute("aria-pressed", String(x.dataset.led === calLed))); loadCalendar(); loadBreakdown(); }; });
+$("#calPrev").onclick = () => { const [y, m] = calMonth.split("-").map(Number); const d = new Date(y, m - 2, 1); calMonth = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; loadCalendar(); };
+$("#calNext").onclick = () => { const [y, m] = calMonth.split("-").map(Number); const d = new Date(y, m, 1); calMonth = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; loadCalendar(); };
+$("#qnForm").onsubmit = async e => { e.preventDefault(); const v = $("#qn").value.trim(); if (!v) return; $("#qn").value = "";
+  try { await api("api/journal", {date: todayET(), intraday: v}); if ($("#jdate").value === todayET()) loadJournal(); } catch(x){ $("#qn").value = v; } };
 $("#jdate").onchange = () => loadJournal($("#jdate").value);
 $("#jtoday").onclick = () => loadJournal(todayET());
 $$(".notes textarea").forEach(t => t.addEventListener("input", () => {
@@ -879,6 +974,9 @@ const CATALOG = [
   ["Level / momentum flag", "research", "needs a tested flag definition before the paper engine uses it"],
   ["Fib pullback", "research", "needs causal swing detection"],
   ["Scalp mode (1m)", "research", "kept from the Playbook; not automated"],
+  ["Compression → expansion (TTM squeeze)", "research", "volatility squeeze release at a level; idea from bandaru-trade-analysis"],
+  ["Break of structure / FVG", "research", "needs causal swing detection; idea from celo-trader"],
+  ["Midday breakout / afternoon reversal", "research", "time-window variants; celo-trader reports they rarely fire"],
 ];
 async function loadResearch(){
   $("#catalog").innerHTML = `<table><thead><tr><th>Setup</th><th>Status</th><th>Definition</th></tr></thead><tbody>${CATALOG.map(c=>`<tr><td>${c[0]}</td><td style="white-space:nowrap">${c[1]}</td><td class="m">${c[2]}</td></tr>`).join("")}</tbody></table>`;
