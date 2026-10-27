@@ -392,3 +392,25 @@ def test_alt_data_off_without_key(monkeypatch):
     monkeypatch.delenv("QUIVER_KEY", raising=False)
     r = altdata.ticker("NVDA")
     assert r["enabled"] is False and "QUIVER_KEY" in r["note"]
+
+
+def test_kronos_shadow_scores_against_baselines(desk_env, monkeypatch):
+    """Kronos test plumbing with a fake model: forecasts once per bar, scores later, never touches orders."""
+    import kronos_shadow as ks
+    clock = desk_env
+    store.x(ks.SCHEMA)
+    idx = pd.date_range(DAY.replace(hour=5, minute=0), DAY.replace(hour=11, minute=0), freq="5min")
+    px = np.linspace(600, 603, len(idx))
+    bars = pd.DataFrame({"Open": px, "High": px + .1, "Low": px - .1, "Close": px, "Volume": 1e5}, index=idx)
+    step = float(px[1] - px[0])
+    perfect = lambda x_df, x_ts, y_ts, n: [float(x_df["close"].iloc[-1]) + step * (i + 1) for i in range(n)]
+    early = bars.iloc[:-3]
+    clock.t = DAY.replace(hour=10, minute=50)
+    assert len(ks.forecast("SPY", early, perfect)) == 3
+    assert ks.forecast("SPY", early, perfect) == []            # same bar: no duplicate
+    clock.t = DAY.replace(hour=11, minute=10)
+    assert ks.score("SPY", bars) == 3
+    m = ks.metrics()
+    assert m[15]["n"] == 1 and m[15]["mae_kronos"] < m[15]["mae_nochange"] and m[15]["dir_kronos"] == 100.0
+    assert "collecting" in ks.verdict(m)
+    assert not store.q("SELECT * FROM orders")

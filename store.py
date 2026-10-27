@@ -41,8 +41,9 @@ def conn():
     with _lock:
         if _conn is None:
             DB.parent.mkdir(parents=True, exist_ok=True)
-            _conn = sqlite3.connect(DB, check_same_thread=False, isolation_level=None)
+            _conn = sqlite3.connect(DB, check_same_thread=False, isolation_level=None, timeout=15)
             _conn.row_factory = sqlite3.Row
+            _conn.execute("PRAGMA journal_mode=WAL")  # the Kronos test process writes too
             _conn.executescript(SCHEMA)
         return _conn
 

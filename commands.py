@@ -148,7 +148,24 @@ def _alt(t):
         return None
 
 
-def coach_context(selected="SPY"):
+_CARDS = None
+
+
+def cards_for(text, k=3):
+    """Pick the k most relevant knowledge cards by tag match (no AI, no embeddings)."""
+    global _CARDS
+    if _CARDS is None:
+        try:
+            _CARDS = json.loads((core.HERE / "knowledge" / "cards.json").read_text())
+        except Exception:
+            _CARDS = []
+    low = (text or "").lower()
+    scored = sorted(((sum(1 for t in c["tags"] if t in low), c) for c in _CARDS), key=lambda x: -x[0])
+    out = [c for n, c in scored if n > 0][:k] or [c for c in _CARDS if c["id"] == "K01"]
+    return [{"id": c["id"], "title": c["title"], "status": c["status"], "summary": c["summary"]} for c in out]
+
+
+def coach_context(selected="SPY", text=""):
     """Compact state for Chart. No raw bars, no secrets."""
     s = engine.snapshot(selected)
     rd = s.get("read", {})
@@ -169,4 +186,5 @@ def coach_context(selected="SPY"):
         "desk_plans_for_ticker": selected in core.policy()["instruments"],
         "watchlist_quote": None if selected in core.policy()["instruments"] else watchlist.quote(selected),
         "alt_data": None if selected in core.policy()["instruments"] else _alt(selected),
+        "cards": cards_for(text),
     }

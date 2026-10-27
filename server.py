@@ -169,6 +169,15 @@ class H(BaseHTTPRequestHandler):
                 return self._json(store.q("SELECT * FROM lessons ORDER BY created DESC"))
             if u.path == "/api/policy":
                 return self._json(core.policy())
+            if u.path == "/api/kronos":
+                import kronos_shadow
+                store.x(kronos_shadow.SCHEMA)
+                st = store.kv_get("kronos_status") or {"state": "off", "hint": "set KRONOS=1 in the server env (setup steps in kronos_shadow.py)"}
+                m = kronos_shadow.metrics()
+                last = store.q("SELECT ticker, bar_ts, horizon, base, pred, pred_mom, actual, runtime_ms FROM forecasts ORDER BY made_at DESC LIMIT 6")
+                return self._json({"status": st, "metrics": m, "verdict": kronos_shadow.verdict(m), "last": last})
+            if u.path == "/api/knowledge":
+                return self._json(json.loads((core.HERE / "knowledge" / "cards.json").read_text()))
             if u.path == "/api/alt":
                 t = q.get("t", ["NVDA"])[0].upper()
                 if not watchlist.valid(t):
@@ -219,7 +228,7 @@ class H(BaseHTTPRequestHandler):
                     store.event("desk", r["reply"], "real", (r.get("plan") or {}).get("id", ""))
                 note, asked = None, False
                 if r.get("coach") and b.get("explain", True):
-                    ctx = commands.coach_context(tick)
+                    ctx = commands.coach_context(tick, text)
                     if r.get("plan"):
                         ctx["active_plan"] = r["plan"]
                     msg = text if not r["handled"] else f"Explain this plan in 2-4 lines using its numbers only: {text}"
@@ -274,9 +283,28 @@ def engine_loop():
         time.sleep(5)
 
 
+def start_kronos():
+    """Kronos runs in its own process, without broker keys or the desk token, and can never block the desk."""
+    if os.environ.get("KRONOS") != "1":
+        return None
+    import subprocess
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("ALPACA", "DESK_TOKEN", "CHAT_WEBHOOK", "QUIVER"))}
+
+    def run():
+        while True:
+            try:
+                subprocess.run([sys.executable, os.path.join(HERE, "kronos_shadow.py")], env=env, cwd=HERE)
+            except Exception:
+                pass
+            time.sleep(300)  # restart after a crash, slowly
+    threading.Thread(target=run, daemon=True).start()
+    return True
+
+
 if __name__ == "__main__":
     store.conn()
     core.policy()
     threading.Thread(target=engine_loop, daemon=True).start()
+    start_kronos()
     print(f"Nick's Desk running: http://localhost:{PORT}  policy {core.policy()['version']}", flush=True)
     ThreadingHTTPServer(("127.0.0.1", PORT), H).serve_forever()

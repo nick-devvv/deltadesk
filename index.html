@@ -241,6 +241,7 @@ p+p{margin-top:6px}
 .jvtext p{margin-top:6px;font:15px/1.5 var(--sans);color:var(--ink);overflow-wrap:anywhere;max-height:7.5em;overflow:auto}
 .jvtext #jvHint{grid-column:1/3;font:12px var(--mono);color:var(--ink-3)}
 @media (max-width:700px){.jvtext{grid-template-columns:1fr}.jvtext #jvHint{grid-column:1}}
+@media (max-width:1600px){ .brand span{display:none} nav a{padding:7px 13px;letter-spacing:.18em} header{gap:12px} }
 @media (max-width:1380px){ .trade{grid-template-columns:300px minmax(0,1fr) 380px} .hide-md{display:none} nav a{padding:7px 12px;letter-spacing:.16em} header{gap:12px} .brand b{letter-spacing:.3em} }
 @media (max-width:1100px){
   body{overflow:auto}
@@ -435,6 +436,10 @@ p+p{margin-top:6px}
       <div class="grid2">
         <div class="box"><div class="ph"><h2>Active rules</h2><div class="r"><span class="pill brand" id="polVer"></span></div></div><div class="bd" id="policy"></div></div>
         <div class="box"><div class="ph"><h2>Setup catalog</h2></div><div class="bd" id="catalog"></div></div>
+      </div>
+      <div class="grid2" style="margin-top:14px">
+        <div class="box"><div class="ph"><h2>Kronos forecast test<small>shadow · never trades</small></h2><div class="r"><span class="pill dim" id="kxStatus">—</span></div></div><div class="bd" id="kronos"></div></div>
+        <div class="box"><div class="ph"><h2>Knowledge cards<small>Chart cites these</small></h2></div><div class="bd" id="cards" style="max-height:420px;overflow:auto"></div></div>
       </div>
       <p class="m" style="margin-top:14px">The old desk chart with custom indicators is still here: <a href="legacy" style="color:var(--ink-2)">open the legacy page</a>.</p>
     </section>
@@ -872,6 +877,8 @@ const CATALOG = [
 ];
 async function loadResearch(){
   $("#catalog").innerHTML = `<table><thead><tr><th>Setup</th><th>Status</th><th>Definition</th></tr></thead><tbody>${CATALOG.map(c=>`<tr><td>${c[0]}</td><td style="white-space:nowrap">${c[1]}</td><td class="m">${c[2]}</td></tr>`).join("")}</tbody></table>`;
+  api("api/knowledge").then(cs => { $("#cards").innerHTML = cs.map(c => `<div style="padding:8px 0;border-bottom:1px solid rgba(58,18,25,.5)"><b class="mono">[${esc(c.id)}]</b> ${esc(c.title)} <span class="pill ${c.status === "research" ? "warn" : c.status === "shadow" ? "brand" : "dim"}" style="height:18px">${esc(c.status)}</span><div class="m" style="margin-top:4px;font-size:12px">${esc(c.summary)}</div></div>`).join(""); }).catch(()=>{});
+  loadKronos();
   try{
     const p = await api("api/policy");
     $("#polVer").textContent = p.version;
@@ -1218,6 +1225,26 @@ window.Voice = (() => {
   return {onChart, isOpen: () => open, normalize, spoken};
 })();
 const Voice = window.Voice;
+
+/* ---------- Kronos shadow test (Rules page) ---------- */
+async function loadKronos(){
+  try{
+    const k = await api("api/kronos"), st = k.status || {};
+    const pill = $("#kxStatus"); pill.textContent = st.state || "off";
+    pill.className = "pill " + (st.state === "running" ? "up" : st.state === "error" ? "down" : st.state === "loading" ? "warn" : "dim");
+    if (st.state !== "running" && st.state !== "loading"){
+      $("#kronos").innerHTML = `<p>Kronos is a pre-trained candlestick forecasting model. When it's on, it forecasts SPY/QQQ 5, 10 and 15 minutes ahead after every 5-minute bar and gets scored against two simple guesses (“no change” and “keep the last 15-minute move”). It never trades and never changes a plan.</p>
+        <p class="m" style="margin-top:8px">${st.state === "error" ? "Couldn’t start: " + esc(st.error || "") : "Off. Chart turns it on with the setup steps in kronos_shadow.py (KRONOS=1)."}</p>`;
+      return;
+    }
+    const rows = [5,10,15].map(h => { const m = k.metrics[h] || {}; const best = m.n ? Math.min(m.mae_kronos, m.mae_nochange, m.mae_momentum) : null;
+      const c = v => m.n ? `<td class="n ${v === best ? "u" : ""}">${v.toFixed(3)}</td>` : '<td class="n">—</td>';
+      return `<tr><td style="white-space:nowrap">${h} min</td><td class="n">${m.n || 0}</td>${c(m.mae_kronos)}${c(m.mae_nochange)}${c(m.mae_momentum)}<td class="n">${m.dir_kronos ?? "—"}${m.dir_kronos != null ? "%" : ""}</td><td class="n">${m.dir_momentum ?? "—"}${m.dir_momentum != null ? "%" : ""}</td></tr>`; }).join("");
+    $("#kronos").innerHTML = `<p><b>${esc(k.verdict)}</b></p>
+      <table style="margin-top:8px"><thead><tr><th>Ahead</th><th class="n">n</th><th class="n" title="average $ miss">Miss: Kronos</th><th class="n">No-change</th><th class="n">Momentum</th><th class="n" title="direction right">Dir: Kronos</th><th class="n">Momentum</th></tr></thead><tbody>${rows}</tbody></table>
+      <p class="m" style="margin-top:8px;font-size:11.5px">Miss = average $ miss on the underlying (lower is better; green = best). Dir = how often it called the direction right. ${esc(st.model || "")} · rev ${esc(st.rev || "")} · point forecast, not a probability.</p>`;
+  }catch(e){ $("#kronos").innerHTML = `<span class="m">Kronos status unavailable: ${esc(e.message)}</span>`; }
+}
 
 /* ---------- start ---------- */
 setTicker(ticker);
