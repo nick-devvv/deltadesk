@@ -1,0 +1,18 @@
+# secrets and personal data never go to GitHub
+.env
+*.env
+secrets*
+*token*
+journal/
+*.db
+*.db-wal
+*.db-shm
+desk-state.json
+schwab_token*.json
+config/watchlist.json
+# python / tooling
+__pycache__/
+*.pyc
+.pytest_cache/
+.taste-skill/
+.DS_Store

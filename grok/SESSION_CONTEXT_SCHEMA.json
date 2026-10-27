@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Desk -> Chart webhook body",
+  "description": "What the desk sends Chart on every coach call (commands.coach_context). Compact: no raw bars, no keys, no tokens other than the reply_to link.",
+  "type": "object",
+  "required": ["message", "context", "reply_to"],
+  "properties": {
+    "message": {"type": "string", "description": "Nick's text, or 'Explain this plan in 2-4 lines using its numbers only: ...'"},
+    "reply_to": {"type": "string", "description": "POST {\"reply\": \"...\"} here, unchanged (keep ?k=)."},
+    "context": {
+      "type": "object",
+      "properties": {
+        "policy": {"type": "object", "description": "version, stop_cap text, per_trade_cap/daily_loss/weekly_loss (null = no dollar limit), exit_profile"},
+        "session": {"type": "object", "description": "date, time ET, state (PREMARKET/ORB FORMING/OPEN/NO NEW ENTRIES/ALL OUT/AFTER HOURS/CLOSED), last_entry, all_out, early_close, window"},
+        "ticker": {"type": "string", "description": "SPY/QQQ, or a watchlist ticker"},
+        "price": {"type": ["number", "null"]},
+        "price_src": {"type": ["string", "null"], "description": "alpaca-iex (one exchange) or yahoo-1m"},
+        "bar_age_s": {"type": ["number", "null"]},
+        "read": {"type": "object", "description": "day_type, daily, vs_vwap, vs_200s, chop, trend (per timeframe), rsi, macd, rvol, setups, above/below levels"},
+        "active_plan": {
+          "type": ["object", "null"],
+          "description": "The plan to explain. Never change its numbers.",
+          "properties": {
+            "state": {"enum": ["WAIT", "READY", "PASS", "MANAGE", "DATA UNAVAILABLE"]},
+            "ticker": {"type": "string"}, "side": {"enum": ["C", "P"]},
+            "setup": {"type": "string"}, "setup_note": {"type": "string"}, "grade": {"enum": ["A", "B", "C"]},
+            "trigger_rule": {"type": "string"}, "trigger_level": {"type": "number"}, "invalidation": {"type": "number"},
+            "contract": {"type": ["object", "null"], "description": "label, bid, ask, delta (may be null), feed=indicative (delayed)"},
+            "premium_limit": {"type": "number", "description": "buy at or under"},
+            "qty": {"type": "integer"}, "risk_per_contract": {"type": "number"},
+            "exit": {"type": "object", "description": "stop, gross_20pct_boundary, be_trigger, be_stop, t1, t1_range, flat_by, all_out, window"},
+            "objections": {"type": "array", "items": {"type": "string"}},
+            "support": {"type": "array", "items": {"type": "string"}},
+            "reason": {"type": "string", "description": "why PASS"}
+          }
+        },
+        "open_real": {"type": "array", "description": "Nick's open trades as he reported them: ticker, contract, qty_open, fill, stop, t1"},
+        "open_paper": {"type": "array"},
+        "budget_real": {"type": "object", "description": "realized_day, realized_week, unrealized, open_risk, trades_today (left = null: no dollar limit)"},
+        "lessons": {"type": "array", "description": "ACTIVE and PROPOSED lessons"},
+        "recent_events": {"type": "array", "items": {"type": "string"}},
+        "desk_plans_for_ticker": {"type": "boolean", "description": "true for SPY/QQQ; false for watchlist tickers (Chart answers, no desk plan)"},
+        "watchlist_quote": {"type": ["object", "null"], "description": "for watchlist tickers: last, chg_pct, spark, earnings {date, days}"}
+      }
+    }
+  }
+}

@@ -1,0 +1,21 @@
+# Desk endpoints Chart may call
+
+Base: `http://127.0.0.1:8765` on Chart's computer. Add `?k=DESK_TOKEN` (or `&k=` when there's already a query). Chart reads `DESK_TOKEN` from its Secrets; it is never pasted into chat.
+
+| Call | Who | Purpose | Side effects |
+| --- | --- | --- | --- |
+| `POST /api/reply` `{"reply": "..."}` | Desk chat webhook | Deliver the answer to Nick | adds a CHART message |
+| `GET /api/read?t=SPY,QQQ` | 9 AM routine, questions | Levels, VWAP, EMAs, 200s, trend, chop, RVOL | none |
+| `POST /api/events` `{"date","events":[{"time":"HH:MM","name"}]}` | 9 AM routine | Today's scheduled releases. The engine blocks entries ±15 min around each. | writes config/events.json |
+| `GET /api/review[?date=]` | 4:20 PM routine | Day summary: real, paper, opportunities, no-trade reason | none |
+| `GET /api/lessons` | 4:20 PM routine | Existing lessons | none |
+| `POST /api/lessons` `{"text","setup","sample","evidence":[]}` | 4:20 PM routine | Propose a lesson (status PROPOSED) | adds a row |
+| `GET /api/journal?date=` | any | Journal and notes | none |
+| `GET /api/state` | debugging | Everything the page shows | none |
+
+**Chart never calls:**
+- `POST /api/command` with IN/OUT. Only Nick logs his trades.
+- Never `bot.py take`, `bot.py close`, or anything that sends an order. The paper engine does paper orders in code.
+- Any Robinhood order screen.
+
+**Errors:** a non-200 or `{"error": ...}` means stop and tell Nick in one line. Don't retry more than once.
