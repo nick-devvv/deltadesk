@@ -27,7 +27,7 @@ Status labels:
 ## Stops, targets, management
 | Playbook | Now | Status |
 | --- | --- | --- |
-| Stop by window: ×0.85 / ×0.88 / ×0.90 (15/12/10%) | **Strict 20% for every window**: trigger = fill × 0.80 + slippage + fees, and the trade is skipped if it can't fit. Earlier windows were tighter. | **open**: see Q1 below |
+| Stop by window: ×0.85 / ×0.88 / ×0.90 (15/12/10%) | **Morning 20%, midday 12%, afternoon 10%** (Nick, Oct 27). 20% is the all-in ceiling including spread and fees; a trade that can't fit is skipped. | changed |
 | Breakeven at ×1.10 / 1.08 / 1.06 | Same | code |
 | T1 ×1.20–1.30 / 1.15–1.20 / 1.12–1.15, SELL ALL | T1 at the low end. 2 contracts: sell 1 and trail the rest on the 1m swing (higher low / lower high). 1 contract: lock the stop at the BE level, then trail. Nick asked for trailing (Oct 27). | changed (trail_v2, PROPOSED) |
 | If flat: exit 5 / 3 / 3 min after entry | Same, measured from your fill time | code |
@@ -48,7 +48,7 @@ Status labels:
 ## Contracts
 | Playbook | Now | Status |
 | --- | --- | --- |
-| Delta 0.30–0.50 (Oct 21) → 0.45–0.70 (master) → "0.40+ normal" (Oct 26) | \|Δ\| 0.30–0.50, ranked closest to 0.40. Delta unknown → nearest ATM, labeled "unknown". | **open**: see Q2 below |
+| Delta 0.30–0.50 (Oct 21) → 0.45–0.70 (master) → "0.40+ normal" (Oct 26) | \|Δ\| 0.40–0.55, aim 0.45 (Nick OK Oct 27). No broker delta → Black-Scholes estimate from IV, labeled "est." | changed |
 | $0.10–$3.00 premiums (Oct 26) | Same range | code |
 | Spread ≤ ~10% | ≤ 10% of mid, else skipped | code |
 | "Use a limit at or under $x" | Buy ≤ = ask + $0.02, shown on every plan | code |
@@ -91,8 +91,4 @@ Status labels:
 | 5-minute proactive watch (paused Oct 23) | Bounded watches (default 15 min) in code, no AI | code |
 
 ## Questions for Nick
-- **Q1. Stop size by time of day.** The Playbook's stops got tighter later in the day (15% → 12% → 10%). Right now the desk uses a flat strict 20% all day. Keep the flat 20%, or go back to 15/12/10 with 20% as the ceiling?
-- **Q2. Delta.** Your notes say 0.30–0.50, 0.45–0.70 and "0.40+" in different places. The desk uses 0.30–0.50, aiming for about 0.40. Keep it?
-- **Q3. Trailing plan and streak numbers.** These are marked PROPOSED until you OK them:
-  - trail_v2: sell 1 of 2 at T1, then trail.
-  - Streak rule: 2 losses in a row means A setups only; 3 in a row means stop for the day.
+All answered on Oct 27: time-of-day stops 20/12/10%, delta 0.40–0.55, trailing (trail_v2) and streak rules approved.

@@ -260,6 +260,11 @@ p+p{margin-top:6px}
 .review label{display:flex;flex-direction:column;gap:4px;font:500 9.5px var(--mono);letter-spacing:.22em;text-transform:uppercase;color:var(--ink-3)}
 .review textarea{min-height:48px;resize:vertical;font:12.5px var(--sans)}
 .review .full{grid-column:1/3}
+
+.tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.tag{display:inline-flex!important;flex-direction:row!important;align-items:center;gap:5px;border:1px solid var(--line-2);border-radius:999px;padding:3px 10px;font:500 11px var(--mono)!important;letter-spacing:.04em!important;text-transform:none!important;color:var(--ink-2)!important;cursor:pointer}
+.tag input{accent-color:var(--brand)}
+.tag:has(input:checked){border-color:var(--down);color:var(--down)!important;background:var(--down-t)}
 @media (max-width:1600px){ .brand span{display:none} nav a{padding:7px 13px;letter-spacing:.18em} header{gap:12px} }
 @media (max-width:1380px){ .trade{grid-template-columns:300px minmax(0,1fr) 380px} .hide-md{display:none} nav a{padding:7px 12px;letter-spacing:.16em} header{gap:12px} .brand b{letter-spacing:.3em} }
 @media (max-width:1100px){
@@ -409,7 +414,7 @@ p+p{margin-top:6px}
       <p class="lead">Trades SPY/QQQ setups by itself in the Alpaca paper account (fake money) using the same rules, whether or not you trade. It runs in code, so it costs no AI credits.</p>
       <div class="metrics" id="paperMetrics"></div>
       <section class="box" style="margin-bottom:14px"><div class="ph"><h2>Paper equity<small>closed trades, cumulative P/L</small></h2></div><canvas id="eq" style="width:100%;height:190px;display:block" aria-label="Paper equity curve"></canvas></section>
-      <div class="toolbar"><button type="button" id="pauseBtn">Pause paper entries</button><span class="m" id="paperBroker"></span></div>
+      <div class="toolbar"><button type="button" id="pauseBtn">Pause paper entries</button><button type="button" id="killBtn" style="border-color:var(--down);color:var(--down)">Kill switch</button><span class="m" id="paperBroker"></span></div>
       <div class="grid2">
         <div class="box"><div class="ph"><h2>Open paper positions</h2></div><div class="bd" id="paperOpen"></div></div>
         <div class="box"><div class="ph"><h2>Today's setups, taken and skipped</h2></div><div class="bd" id="paperOpps"></div></div>
@@ -743,7 +748,7 @@ function renderPlan(p){
   if (c) rows.push(
     ["Buy ≤", `${usd(p.premium_limit)} <small>≈ $${(p.premium_limit*100).toFixed(0)} per contract · don’t chase above</small>`],
     ["Size", `${p.qty} contract${p.qty===1?"":"s"} <small>${p.risk_per_contract ? "$" + p.risk_per_contract.toFixed(2) + " max planned loss each" : ""}${p.size_note ? " · " + esc(p.size_note) : ""}</small>`],
-    ["Stop", ex.stop ? `<span class="d">${usd(ex.stop)}</span> <small>strict 20% (fill × 0.80 = ${usd(ex.gross_20pct_boundary)}, trigger above for costs)</small>` : "—"],
+    ["Stop", ex.stop ? `<span class="d">${usd(ex.stop)}</span> <small>strict ${Math.round((ex.stop_pct ?? 0.2) * 100)}% ${esc((ex.window || "").toLowerCase())} stop${(ex.stop_pct ?? 0.2) >= 0.2 ? " (costs reserved inside the 20%)" : " · 20% all-in ceiling"}</small>` : "—"],
     ["Breakeven", ex.be_trigger ? `at ${usd(ex.be_trigger)} → stop to ${usd(ex.be_stop)}` : "—"],
     ["T1", ex.t1 ? `<span class="u">${usd(ex.t1)}</span> <small>2 contracts: sell 1, trail the rest</small>` : "—"],
     ["If flat", ex.flat_by ? `out by ${ex.flat_by} if breakeven isn’t hit` : "—"],
@@ -861,16 +866,24 @@ function renderPaperLive(){
     return `<div class="pos"><b>${esc(p.ticker)} ${esc(p.contract)} × ${p.qty_open} @ ${usd(p.fill)}</b><span class="pl ${tone(u)}">${money(u)}</span><span class="meta">stop ${usd(p.plan.stop)} · T1 ${usd(p.plan.t1)} · ${esc(p.setup)} ${esc(p.grade)}</span></div>`; }).join("")
     : '<div class="empty">No open paper positions.</div>';
 }
+$("#killBtn").onclick = async () => {
+  const b = $("#killBtn");
+  if (b.dataset.arm !== "1"){ b.dataset.arm = "1"; b.textContent = "Tap again: close ALL paper trades"; setTimeout(() => { b.dataset.arm = ""; b.textContent = "Kill switch"; }, 4000); return; }
+  b.dataset.arm = ""; b.textContent = "Kill switch"; await send("kill switch", false); loadPaper();
+};
 $("#pauseBtn").onclick = async () => { await send(S && S.paper.enabled ? "pause paper" : "resume paper", false); loadPaper(); };
 
 /* ---------- journal ---------- */
 let jt = null;
 let calLed = "real", calMonth = null, HIST = {real: [], paper: []};
+const MISTAKES = ["chased","early entry","no stop set","moved stop","oversized","revenge trade","held too long","cut winner early","ignored chop","against trend"];
 const REVIEW = [["entry_reason","Why I entered"],["exit_reason","Why I exited"],["followed_plan","Followed the plan? (yes / no / partly + why)"],["went_well","What went well"],["improve","What to improve"],["next_time","Next time I will…"]];
 function reviewForm(r){
   let n = {}; try { n = typeof r.notes === "string" ? JSON.parse(r.notes || "{}") : (r.notes || {}); } catch(e){ n = {}; }
+  const tags = (n.mistakes || "").split(",").map(x => x.trim()).filter(Boolean);
   return `<tr class="revrow"><td colspan="6"><form class="review" data-id="${esc(r.id)}">${REVIEW.map(([k, l], i) =>
     `<label class="${i === 2 ? "full" : ""}">${l}<textarea data-k="${k}">${esc(n[k] || "")}</textarea></label>`).join("")}
+    <div class="full"><span class="lbl" style="color:var(--ink-3)">Mistakes</span><div class="tags">${MISTAKES.map(t => `<label class="tag"><input type="checkbox" value="${t}" ${tags.includes(t) ? "checked" : ""}>${t}</label>`).join("")}</div></div>
     <span class="m mono full" data-s style="font-size:10.5px"></span></form></td></tr>`;
 }
 function tradeRows(list, led){
@@ -905,7 +918,7 @@ async function loadBreakdown(){
   try{
     const b = await api(`api/breakdown?ledger=${calLed}&since=${since30()}`);
     const t = (title, rows) => `<div><h3>${title}</h3>${rows.length ? `<table><tbody>${rows.map(r => `<tr><td>${esc(r.name)}</td><td class="n m">${r.n}</td><td class="n">${r.win_rate}%</td><td class="n ${tone(r.pnl)}">${money(r.pnl)}</td></tr>`).join("")}</tbody></table>` : '<div class="empty">No closed trades yet.</div>'}</div>`;
-    $("#brk").innerHTML = `<div class="brk">${t("By setup", b.setup)}${t("By time of day", b.time)}${t("By ticker", b.ticker)}${t("By grade", b.grade)}</div>`;
+    $("#brk").innerHTML = `<div class="brk">${t("By setup", b.setup)}${t("By time of day", b.time)}${t("By ticker", b.ticker)}${t("By grade", b.grade)}${calLed === "real" ? t("Mistakes (most common first)", b.mistakes || []) : ""}</div>`;
   }catch(e){ $("#brk").innerHTML = `<div class="d">${esc(e.message)}</div>`; }
 }
 async function loadJournal(d){
@@ -935,6 +948,7 @@ $("#jReal").addEventListener("click", e => {
   const f = tr.nextElementSibling.querySelector("form"); let tm = null;
   f.addEventListener("input", () => { f.querySelector("[data-s]").textContent = "Saving…"; clearTimeout(tm);
     tm = setTimeout(async () => { const fields = {}; f.querySelectorAll("textarea").forEach(t => fields[t.dataset.k] = t.value);
+      fields.mistakes = [...f.querySelectorAll(".tag input:checked")].map(x => x.value).join(", ");
       try { const r = await api("api/trade_note", {id: f.dataset.id, fields}); h.notes = r.notes; f.querySelector("[data-s]").textContent = "Saved"; } catch(x){ f.querySelector("[data-s]").textContent = "Not saved: " + x.message; } }, 700); });
   f.querySelector("textarea").focus();
 });
@@ -967,6 +981,7 @@ async function loadReview(){
 /* ---------- rules ---------- */
 const CATALOG = [
   ["ORB break / retest", "automated (paper)", "5m close beyond the 9:30–9:45 range; extended breaks wait for the retest"],
+  ["PDH/PDL retest + 9 EMA pullback", "automated (paper)", "broke past the prior-day high/low (and premarket extreme), pulled back to it or the 5m 9 EMA, then closed back in the trend direction"],
   ["Failed break + reclaim", "automated (paper)", "5m close back inside the opening range after a break; trade the other way"],
   ["VWAP reclaim / loss", "automated (paper)", "first 5m close back across VWAP (at most 2 crosses in the last hour)"],
   ["Level retest (your call)", "your plans", "1m close through a level you name, e.g. PDH 765.50"],
@@ -975,8 +990,13 @@ const CATALOG = [
   ["Fib pullback", "research", "needs causal swing detection"],
   ["Scalp mode (1m)", "research", "kept from the Playbook; not automated"],
   ["Compression → expansion (TTM squeeze)", "research", "volatility squeeze release at a level; idea from bandaru-trade-analysis"],
-  ["Break of structure / FVG", "research", "needs causal swing detection; idea from celo-trader"],
-  ["Midday breakout / afternoon reversal", "research", "time-window variants; celo-trader reports they rarely fire"],
+  ["VWAP pullback in a trend (K22)", "research", "50 EMA rising, prior candle dips to VWAP, close back above, volume up; from celo-trader"],
+  ["Trend continuation (K23)", "research", "fresh higher low / lower high within 20 candles, close beyond it, RVOL ≥ 1.2; from celo-trader"],
+  ["Break of structure (K24)", "research", "5m close beyond the last confirmed swing; volume ≥ 1.5×; from celo-trader"],
+  ["Fair value gap retest (K25)", "research", "3-candle gap ≥ ½ average candle, retest with volume; from celo-trader"],
+  ["Midday breakdown, puts (K26)", "research", "10:30–1:00, lower high + below ORB low and VWAP; from celo-trader"],
+  ["Afternoon reversal, calls (K27)", "research", "1:00–3:30, higher low then close above swing high; from celo-trader"],
+  ["Channel trendline rejection (K28)", "research", "tag within 0.3% of a 2-pivot line and reject; skips 12:00–1:30; from celo-trader"],
 ];
 async function loadResearch(){
   $("#catalog").innerHTML = `<table><thead><tr><th>Setup</th><th>Status</th><th>Definition</th></tr></thead><tbody>${CATALOG.map(c=>`<tr><td>${c[0]}</td><td style="white-space:nowrap">${c[1]}</td><td class="m">${c[2]}</td></tr>`).join("")}</tbody></table>`;
@@ -986,11 +1006,11 @@ async function loadResearch(){
     const p = await api("api/policy");
     $("#polVer").textContent = p.version;
     const d = p.discipline, s = p.session, c = p.contract;
-    const w = p.windows.map(x=>`<tr><td>${esc(x.name)}</td><td class="mono">${x.start}–${x.end}</td><td class="n">×${x.be}</td><td class="n">×${x.t1_lo}–${x.t1_hi}</td><td class="n">${x.flat_min} min</td></tr>`).join("");
-    $("#policy").innerHTML = `<p><b>Stop: ${Math.round(p.risk.stop_cap_pct*100)}% of premium, strict.</b> The trigger sits a few cents above fill × 0.80 to cover spread and fees. Stops only ever tighten.</p>
+    const w = p.windows.map(x=>`<tr><td>${esc(x.name)}</td><td class="mono">${x.start}–${x.end}</td><td class="n d">−${Math.round((x.stop_pct ?? 0.2) * 100)}%</td><td class="n">×${x.be}</td><td class="n">×${x.t1_lo}–${x.t1_hi}</td><td class="n">${x.flat_min} min</td></tr>`).join("");
+    $("#policy").innerHTML = `<p><b>Stops by time of day: ${p.windows.map(w => w.name.toLowerCase() + " " + Math.round((w.stop_pct ?? p.risk.stop_cap_pct) * 100) + "%").join(" · ")}.</b> ${Math.round(p.risk.stop_cap_pct*100)}% is the hard all-in ceiling (spread + fees included): if a contract can't fit, it's skipped. Stops only ever tighten.</p>
       <p><b>No dollar limits.</b> Losing streak: ${d.a_only_after_consecutive_losses} in a row → A setups only + ${d.cooldown_min_after_loss} min cooldown; ${d.stop_day_after_consecutive_losses} in a row → stop for today. Max ${d.max_trades_day} trades a day.</p>
       <p class="m">Size: A = 2 contracts, B = 1 (chop days 1). Entries ${s.first_entry}–${s.last_entry} ET · all out ${s.all_out} · contracts $${c.premium_min.toFixed(2)}–$${c.premium_max.toFixed(2)}, |Δ| ${c.abs_delta_min}–${c.abs_delta_max}, spread ≤ ${Math.round(c.max_spread_pct*100)}%</p>
-      <table style="margin-top:10px"><thead><tr><th>Window</th><th>Time</th><th class="n">Breakeven</th><th class="n">T1</th><th class="n">If flat</th></tr></thead><tbody>${w}</tbody></table>`;
+      <table style="margin-top:10px"><thead><tr><th>Window</th><th>Time</th><th class="n">Stop</th><th class="n">Breakeven</th><th class="n">T1</th><th class="n">If flat</th></tr></thead><tbody>${w}</tbody></table>`;
   }catch(e){ $("#policy").innerHTML = `<div class="d">${esc(e.message)}</div>`; }
 }
 

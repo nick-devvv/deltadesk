@@ -39,6 +39,8 @@ def policy(reload=False):
 def validate_policy(p):
     r = p["risk"]
     assert 0 < r["stop_cap_pct"] <= 0.20, "stop cap must be within (0, 20%] (Nick's ceiling)"
+    for w in p["windows"]:
+        assert 0 < w.get("stop_pct", r["stop_cap_pct"]) <= r["stop_cap_pct"], "window stop can't be looser than the cap"
     assert r["daily_loss_usd"] is None or r["daily_loss_usd"] > 0
     for k in ("trend_A", "trend_B", "chop"):
         v = r["per_trade_cap"][k]
@@ -112,7 +114,7 @@ def cents_down(x):
     return math.floor(round(x * 100, 6)) / 100
 
 
-def stop_for(fill, spread=None, structural_stop=None):
+def stop_for(fill, spread=None, structural_stop=None, pct=None):
     """Initial premium stop under Nick's 20% planned-loss ceiling.
 
     Gross boundary = fill x 0.80. The trigger sits higher to reserve slippage s and fees C so that the
@@ -122,7 +124,9 @@ def stop_for(fill, spread=None, structural_stop=None):
     r = policy()["risk"]
     s = max(r["slippage_min"], (spread or 0) * r["slippage_spread_frac"])
     c = r["fees_per_contract_roundtrip"]
-    stop = cents_up(fill * (1 - r["stop_cap_pct"]) + s + c / 100)
+    stop = cents_up(fill * (1 - r["stop_cap_pct"]) + s + c / 100)      # 20% all-in ceiling (costs reserved)
+    if pct is not None and pct < r["stop_cap_pct"]:
+        stop = max(stop, cents_up(fill * (1 - pct)))                      # tighter time-of-day stop (gross % of fill)
     if structural_stop is not None and structural_stop > stop:
         stop = cents_up(structural_stop)
     return stop, round(s, 4)  # may be >= fill: then the trade cannot fit the 20% cap after costs (size -> 0)
@@ -164,12 +168,13 @@ def per_trade_cap(grade, chop_day):
 def exit_plan(fill, t_entry_hhmm, spread=None, structural_stop=None):
     """All fill-based management numbers for one trade."""
     w = window_for(t_entry_hhmm) or policy()["windows"][-1]
-    stop, slip = stop_for(fill, spread, structural_stop)
+    stop, slip = stop_for(fill, spread, structural_stop, w.get("stop_pct"))
     pick = policy()["exit_profile"]["t1_pick"]
     t1m = w["t1_lo"] if pick == "low" else (w["t1_lo"] + w["t1_hi"]) / 2
     flat_by = (datetime.strptime(t_entry_hhmm, "%H:%M") + timedelta(minutes=w["flat_min"])).strftime("%H:%M")
     return {
         "window": w["name"], "fill": round(fill, 2), "stop": stop, "slippage_reserve": slip,
+        "stop_pct": w.get("stop_pct", policy()["risk"]["stop_cap_pct"]),
         "gross_20pct_boundary": round(fill * (1 - policy()["risk"]["stop_cap_pct"]), 2),
         "be_trigger": cents_up(fill * w["be"]), "be_stop": round(fill, 2),
         "t1": cents_up(fill * t1m), "t1_range": [cents_up(fill * w["t1_lo"]), cents_up(fill * w["t1_hi"])],

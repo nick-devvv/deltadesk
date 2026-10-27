@@ -81,3 +81,63 @@ _Source: bandaru-trade-analysis (MIT); master prompt Part 15 #6_
 ## [K20] Why the desk shows no 'confidence %'  (reference)
 Some bots fire when a made-up confidence score passes 78%. Those scores aren't calibrated win probabilities. The desk instead shows the state (WAIT/READY/PASS), the grade (how many things line up) and the reasons for and against. When the paper record by setup builds up, that's the real evidence.
 _Source: celo-trader review; master prompt Part 27_
+
+## [K21] ORB retest (celo version vs ours)  (reference)
+Same idea as the desk's ORB_RETEST: record the 5m close beyond the 9:30-9:45 range, wait for the candle low/high to tag within ~0.15% of the level, enter on the close back beyond it. Extra filters they use: volume above normal (RVOL), price on the right side of VWAP, skip if price already ran >1.5x the average candle past the level, 20-min cooldown after it fires. Window 9:45-10:45.
+_Source: celo-trader README playbook (manujbh/mmoore723), rules summarized_
+
+## [K22] VWAP pullback in a trend  (research)
+Calls: 50 EMA rising, VWAP above the 50 EMA, previous 5m candle's low dipped to/below VWAP, current candle closes back above VWAP, volume above normal. Puts: mirror. Stop: VWAP failing = trend probably over. This is a pullback-in-trend entry, not 'every VWAP cross' (see K06).
+_Source: celo-trader README playbook (manujbh/mmoore723), rules summarized_
+
+## [K23] Trend continuation (2nd/3rd wave)  (research)
+In a confirmed trend, a fresh higher low (calls) or lower high (puts) from the last 20 candles, then a close beyond that pivot candle, with VWAP on the right side and RVOL >= 1.2. Joins a proven trend at a discount; stale pivots (>20 candles) don't count. Close to Nick's Momentum setup; window 9:45-2:30.
+_Source: celo-trader README playbook (manujbh/mmoore723), rules summarized_
+
+## [K24] Break of structure / market structure shift  (research)
+A 5m CLOSE (not a wick) beyond the last confirmed swing high/low, volume >= 1.5x, price on the trend side of the 50 EMA and VWAP, not already extended >1.5x average candle. Swings must be confirmed when they happen (no hindsight).
+_Source: celo-trader README playbook (manujbh/mmoore723), rules summarized_
+
+## [K25] Fair value gap retest  (research)
+3-candle pattern: candle 1's low above candle 3's high (bullish gap) or the reverse. Gap must be at least half an average candle wide, from the last ~20 candles. Entry when price trades back into the gap with volume >= 1.5x and VWAP alignment; stop just outside the gap. A gap is a price feature, not proof of 'institutions'.
+_Source: celo-trader README playbook (manujbh/mmoore723), rules summarized_
+
+## [K26] Midday breakdown (puts)  (research)
+10:30-1:00, puts only: a confirmed lower high already printed, price below the ORB low AND below VWAP (VWAP acting as a ceiling), volume >= 1.5x normal for that time of day. Three things already against the bulls before entry. Celo reports it rarely fires.
+_Source: celo-trader README playbook (manujbh/mmoore723), rules summarized_
+
+## [K27] Afternoon reversal (calls)  (research)
+1:00-3:30, calls only: after a midday selloff, a confirmed higher low, then a close above the most recent swing high, volume >= 1.2x. Most afternoon reversals fail, so it needs both confirmations. Afternoon = tighter 10% stop and fast theta (K03).
+_Source: celo-trader README playbook (manujbh/mmoore723), rules summarized_
+
+## [K28] Channel trendline rejection  (research)
+Line through the last two swing highs (or lows), projected to now. Entry when a candle tags within 0.3% of the line and closes back in rejection, VWAP on the right side, not against a confirmed opposite trend, pivots < 40 candles old. They skip 12:00-1:30 because midday touches fake out.
+_Source: celo-trader README playbook (manujbh/mmoore723), rules summarized_
+
+## [K29] Celo trade management (for comparison)  (reference)
+Their stop starts at 20% and tightens with TIME IN TRADE (15% after 15 min, 10% after 30); sell half at +50%; runner exits at entry x1.15; out if down 12% in the first 30 min; time limit 30 min (90 if first target hit). The desk uses time-of-day stops (20/12/10%), BE then T1 then trail, and flat exits instead. Different design, same goal: don't let a 0DTE trade sit and decay.
+_Source: celo-trader README playbook (manujbh/mmoore723), rules summarized_
+
+## [K30] Don't chase + setup cooldown  (reference)
+If price is already more than 1.5x the average 5m candle past the level, it's extended: wait for the retest or skip. After a setup fires, the same setup can't fire again for 20 minutes. The desk now enforces both in the paper engine. Re-entering the same failed setup three times on a chop day is the classic account-killer.
+_Source: celo-trader rules; Nick's LE-model video lesson_
+
+## [K31] ADX: trend vs chop  (reference)
+ADX(14) measures trend STRENGTH, not direction. Rough guide on 5m: under ~18 = no trend (chop risk), 25+ = trending. The desk now adds ADX to every plan: under 18 on a non-trend day marks it a chop day; 25+ counts in favor. Direction still comes from structure, VWAP and the 200s.
+_Source: bandaru-trade-analysis (MIT), Wilder's ADX_
+
+## [K32] Floor pivots  (reference)
+Pivot P = (prior high + low + close)/3; R1 = 2P - low; S1 = 2P - high; R2 = P + (high - low); S2 = P - (high - low). Widely watched reference levels, like PDH/PDL. They're context for room-to-target, not entry signals by themselves.
+_Source: bandaru-trade-analysis (MIT)_
+
+## [K33] GO / READY / STANDBY / INVALID  (reference)
+Bandaru labels trade cards: GO (at the level, conditions met), READY (within ~0.2% of the level), STANDBY (not close), INVALID (broke the level by ~0.3%). The desk's version: READY, WAIT (plus NEAR on a watch), PASS, INVALIDATED/EXPIRED, all from completed candles. Same idea: say how close and what kills it.
+_Source: bandaru-trade-analysis (MIT)_
+
+## [K34] PDH/PDL retest + 9 EMA pullback (LE model)  (reference)
+Levels first, then EMAs. Trend days break OUTSIDE the prior day's range (outside day) and pay; inside/chop days ping-pong and bleed. Calls: price breaks and holds above PDH (and above the premarket high), settles, pops, then pulls back to PDH or the 9 EMA: enter on the green close that holds. Puts mirror at PDL. Don't short pops on a trend-up day; avoid trading inside days.
+_Source: Nick's trading video (LE model) + Oct 26 Playbook; desk setup PDH_RETEST/PDL_RETEST_
+
+## [K35] Using the journal to improve  (reference)
+After each trade: why in, why out, followed plan?, what went well, what to improve, next time, and mistake tags (chased, early entry, no stop set, moved stop, oversized, revenge trade, held too long, ignored chop). Weekly: check 'What's working' by setup, time of day and grade, and the mistake counts. Fix the most frequent mistake first, one at a time.
+_Source: OptionsTradingJournal ideas; master prompt Part 20_

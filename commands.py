@@ -81,6 +81,8 @@ def handle(text, selected="SPY"):
     if re.search(r"\bstop watch(ing)?\b|\bunwatch\b", low):
         n = engine.stop_watch(tk if TICK.search(t) else None)
         return {"reply": f"Stopped {n} watch(es). Paper engine and open-position protection keep running.", "handled": True}
+    if re.search(r"\b(kill switch|kill paper|kill)\b", low) and not re.search(r"\b(kill zone)\b", low):
+        return {"reply": engine.kill_paper(), "handled": True}
     if re.search(r"\bpause paper\b", low):
         store.kv_set("paper_enabled", False)
         store.event("paper", "PAPER ENTRIES PAUSED by Nick (open paper positions still managed)", "paper")
@@ -128,7 +130,7 @@ def plan_text(p):
         ex = p["exit"]
         lines.append(f"BUY: {c['label']} at or under ${p['premium_limit']:.2f} (ask {c['ask']:.2f}, delta {c['delta'] if c['delta'] is not None else 'unknown'}, delayed quote)")
         lines.append(f"SIZE: {p['qty']} ({'$%.2f' % p['risk_per_contract']} planned loss per contract){' | ' + p['size_note'] if p.get('size_note') else ''}")
-        lines.append(f"STOP ${ex['stop']:.2f} (20% cap) | BE at ${ex['be_trigger']:.2f} -> stop to fill | T1 ${ex['t1']:.2f} | flat exit {ex['flat_by']} | all out {ex['all_out']}")
+        lines.append(f"STOP ${ex['stop']:.2f} ({round(ex.get('stop_pct', 0.2) * 100)}% {ex.get('window', '').lower()} stop) | BE at ${ex['be_trigger']:.2f} -> stop to fill | T1 ${ex['t1']:.2f} | flat exit {ex['flat_by']} | all out {ex['all_out']}")
     else:
         lines.append(f"CONTRACT: {p.get('contract_note')}")
     if p.get("objections"):
@@ -171,12 +173,12 @@ def coach_context(selected="SPY", text=""):
     rd = s.get("read", {})
     lessons = store.q("SELECT id, text, status FROM lessons WHERE status IN ('ACTIVE','PROPOSED') ORDER BY created DESC LIMIT 5")
     return {
-        "policy": {"version": core.policy()["version"], "stop_cap": "20% of premium (gross fill x 0.80, trigger above for costs)",
+        "policy": {"version": core.policy()["version"], "stop_cap": "morning 20% (all-in ceiling), midday 12%, afternoon 10% of premium",
                    "per_trade_cap": core.policy()["risk"]["per_trade_cap"], "daily_loss": core.policy()["risk"]["daily_loss_usd"],
                    "weekly_loss": core.policy()["risk"]["weekly_loss_usd"], "exit_profile": core.policy()["exit_profile"]["name"]},
         "session": core.session_info(),
         "ticker": selected, "price": s.get("price"), "price_src": s.get("price_src"), "bar_age_s": s.get("bar_age_s"),
-        "read": {k: rd.get(k) for k in ("day_type", "daily", "vs_vwap", "vs_200s", "chop", "trend", "rsi", "macd", "rvol", "setups", "above", "below")},
+        "read": {k: rd.get(k) for k in ("day_type", "daily", "vs_vwap", "vs_200s", "chop", "trend", "rsi", "macd", "rvol", "adx_5m", "setups", "above", "below")},
         "active_plan": active_plan(selected),
         "open_real": [{k: p[k] for k in ("ticker", "contract", "qty_open", "fill")} | {"stop": p["plan"].get("stop"), "t1": p["plan"].get("t1")}
                       for p in store.positions(ledger="real", status="OPEN")],

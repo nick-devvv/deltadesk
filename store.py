@@ -154,7 +154,8 @@ def journal_set(day, notes=None, summary=None):
 
 
 # ---------------- journal analytics (calendar, breakdowns, per-trade review, CSV) ----------------
-REVIEW_FIELDS = ("entry_reason", "exit_reason", "went_well", "improve", "next_time", "followed_plan")
+REVIEW_FIELDS = ("entry_reason", "exit_reason", "went_well", "improve", "next_time", "followed_plan", "mistakes")
+MISTAKES = ("chased", "early entry", "no stop set", "moved stop", "oversized", "revenge trade", "held too long", "cut winner early", "ignored chop", "against trend")
 
 
 def trade_note(pid, fields):
@@ -178,7 +179,7 @@ def calendar(ledger, month):
 
 def breakdown(ledger, since):
     import core
-    rows = q("SELECT ticker, setup, grade, realized, opened FROM positions WHERE ledger=? AND status='CLOSED' AND date>=?", (ledger, since))
+    rows = q("SELECT ticker, setup, grade, realized, opened, notes FROM positions WHERE ledger=? AND status='CLOSED' AND date>=?", (ledger, since))
     out = {}
     for key, f in (("setup", lambda r: r["setup"] or "—"), ("time", lambda r: core.time_bucket((r["opened"] or "")[11:16] or "09:30")),
                    ("ticker", lambda r: r["ticker"]), ("grade", lambda r: r["grade"] or "—")):
@@ -190,6 +191,19 @@ def breakdown(ledger, since):
             b["pnl"] += r["realized"] or 0
         out[key] = sorted(({"name": k, "n": v["n"], "win_rate": round(100 * v["wins"] / v["n"]), "pnl": round(v["pnl"], 2)}
                            for k, v in g.items()), key=lambda z: -z["pnl"])
+    g = {}
+    for r in rows:
+        try:
+            tags = [t.strip() for t in (json.loads(r["notes"] or "{}").get("mistakes") or "").split(",") if t.strip()]
+        except (ValueError, AttributeError):
+            tags = []
+        for t in tags:
+            b = g.setdefault(t, {"n": 0, "wins": 0, "pnl": 0.0})
+            b["n"] += 1
+            b["wins"] += 1 if (r["realized"] or 0) > 0 else 0
+            b["pnl"] += r["realized"] or 0
+    out["mistakes"] = sorted(({"name": k, "n": v["n"], "win_rate": round(100 * v["wins"] / v["n"]), "pnl": round(v["pnl"], 2)}
+                              for k, v in g.items()), key=lambda z: -z["n"])
     return out
 
 

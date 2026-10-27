@@ -49,6 +49,11 @@ def snapshot(ticker, max_age=8):
         "price_src": (last or {}).get("feed", "Yahoo 1m close"), "price_ts": (last or {}).get("ts"),
         "bar_ts": bar_t.isoformat(), "bar_age_s": round(max(age, 0)), "m1": m1,
     }
+    try:
+        s["adx"] = adx(bars5(m1))
+    except Exception:
+        s["adx"] = None
+    s["read"]["adx_5m"] = s["adx"]
     s["stale"] = s["bar_age_s"] > core.policy()["data"]["max_bar_age_s"] and core.session_info()["state"] in (
         "OPEN", "ORB FORMING", "NO NEW ENTRIES", "ALL OUT")
     with _mx:
@@ -88,8 +93,31 @@ def vwap_series(m1):
 
 
 # ======================= setups (completed bars only) =======================
+def adx(b5, n=14):
+    """Wilder's ADX on completed 5m bars (trend strength, direction-free). None until enough bars."""
+    if len(b5) < 2 * n + 1:
+        return None
+    h, l, c = b5["High"], b5["Low"], b5["Close"]
+    up, dn = h.diff(), -l.diff()
+    pdm = up.where((up > dn) & (up > 0), 0.0)
+    mdm = dn.where((dn > up) & (dn > 0), 0.0)
+    tr = pd.concat([h - l, (h - c.shift()).abs(), (l - c.shift()).abs()], axis=1).max(axis=1)
+    a = 1.0 / n
+    atr = tr.ewm(alpha=a, adjust=False).mean()
+    pdi = 100 * pdm.ewm(alpha=a, adjust=False).mean() / atr
+    mdi = 100 * mdm.ewm(alpha=a, adjust=False).mean() / atr
+    dx = (100 * (pdi - mdi).abs() / (pdi + mdi)).fillna(0)
+    v = float(dx.ewm(alpha=a, adjust=False).mean().iloc[-1])
+    return round(v, 1) if v == v else None
+
+
+def avg_range(b5, n=14):
+    r = (b5["High"] - b5["Low"]).iloc[-n - 1:-1]
+    return float(r.mean()) if len(r) else 0.0
+
+
 def detect(s):
-    """New setups on the newest completed 5m bar. Families: ORB break/retest, failed break reclaim, VWAP reclaim."""
+    """New setups on the newest completed 5m bar. Families: ORB break/retest, failed break reclaim, PDH/PDL retest, VWAP reclaim."""
     m1, lv, rd = s["m1"], s["levels"], s["read"]
     b5 = bars5(m1)
     if len(b5) < 2 or "ORB_H" not in lv:
@@ -100,7 +128,8 @@ def detect(s):
     after = b5[b5.index >= b5.index[0] + pd.Timedelta(minutes=15)]  # bars after the ORB
     out = []
     px = float(last["Close"])
-    ext = 0.0015 * px
+    ar = avg_range(b5)
+    ext = 1.5 * ar if ar > 0 else 0.0015 * px      # don't chase: > 1.5x the average 5m candle past the level
 
     def add(fam, side, inv, level, note):
         out.append({"family": fam, "side": side, "bar": t.isoformat(), "trigger": round(px, 2),
@@ -123,14 +152,29 @@ def detect(s):
         if broke_dn and prev["Close"] < ol and ol <= last["Close"] < oh:
             ext_lo = float(after["Low"].min())
             add("FAILED_BREAK", "C", ext_lo * (1 - BUF), ol, "failed breakdown: 5m close back inside ORB")
+    # PDH/PDL retest + 9 EMA pullback ("levels first, then EMAs"; from Nick's Oct 26 trend-day rules / LE-model video):
+    # price broke out past the prior-day level on an earlier completed 5m close (and is past the premarket extreme),
+    # then pulled back into that level or the 5m 9 EMA and the newest 5m candle closed back in the trend direction.
+    pdh, pdl, pmh, pml = lv.get("PDH"), lv.get("PDL"), lv.get("PMH"), lv.get("PML")
+    if len(after) > 2:
+        e9 = float(b5["Close"].ewm(span=9, adjust=False).mean().iloc[-1])
+        tol = 0.0006 * px
+        if pdh and (after["Close"].iloc[:-1] > pdh).any() and px > pdh and (pmh is None or px > pmh):
+            touched = float(last["Low"]) <= max(pdh, e9) + tol
+            if touched and last["Close"] > last["Open"] and px > e9:
+                add("PDH_RETEST", "C", min(float(last["Low"]), pdh) * (1 - BUF), pdh, "pullback to PDH/9 EMA held, green 5m close")
+        if pdl and (after["Close"].iloc[:-1] < pdl).any() and px < pdl and (pml is None or px < pml):
+            touched = float(last["High"]) >= min(pdl, e9) - tol
+            if touched and last["Close"] < last["Open"] and px < e9:
+                add("PDL_RETEST", "P", max(float(last["High"]), pdl) * (1 + BUF), pdl, "pop to PDL/9 EMA rejected, red 5m close")
     vw = vwap_series(m1)
     if len(vw) > 10:
         v_now = float(vw.iloc[-2]) if len(vw) > 1 else float(vw.iloc[-1])
         crosses = int(rd.get("vwap_crosses_1h") or 0)
         if prev["Close"] < v_now < last["Close"] and crosses <= 2:
-            add("VWAP_RECLAIM", "C", v_now * (1 - BUF), v_now, "5m close back above VWAP")
+            add("VWAP_RECLAIM", "C", v_now * (1 - BUF), v_now, "5m close back above VWAP" + (" (extended: wait for retest)" if px - v_now > ext else ""))
         if prev["Close"] > v_now > last["Close"] and crosses <= 2:
-            add("VWAP_RECLAIM", "P", v_now * (1 + BUF), v_now, "5m close back below VWAP")
+            add("VWAP_RECLAIM", "P", v_now * (1 + BUF), v_now, "5m close back below VWAP" + (" (extended: wait for retest)" if v_now - px > ext else ""))
     return out
 
 
@@ -147,6 +191,16 @@ def grade(s, side):
     (agree if ("TREND UP" in day if want_up else "TREND DOWN" in day) else against).append(f"day: {day}")
     g = "A" if len(agree) == 3 else "B" if len(agree) == 2 else "C"
     chop = "CHOP" in day or (bool(rd.get("chop")) and "TREND" not in day)  # holding outside the ORB = trend day
+    ax = s.get("adx")
+    if ax is not None:
+        if ax < 18 and "TREND" not in day:
+            chop = True
+            against.append(f"ADX {ax}: no trend (chop)")
+        elif ax >= 25:
+            agree.append(f"ADX {ax}: trending")
+    rv = rd.get("rvol")
+    if rv is not None and rv < 1.2:
+        against.append(f"volume light (RVOL {rv})")   # context only; doesn't change the grade
     return g, agree, against, chop
 
 
@@ -173,7 +227,7 @@ def pick_contract(ticker, side, price, budget, grade_, chop, structural=None):
         if d is not None and not (p["abs_delta_min"] <= abs(d) <= p["abs_delta_max"]):
             rejected += 1
             continue
-        rank = abs(abs(d) - 0.40) if d is not None else abs(c["strike"] - price) / price * 10
+        rank = abs(abs(d) - p.get("abs_delta_target", 0.45)) if d is not None else abs(c["strike"] - price) / price * 10
         cands.append((rank, (c["ask"] - c["bid"]) / c["ask"], c))
     if not cands:
         return None, f"no contract passes price ${p['premium_min']}-{p['premium_max']}, spread <= {int(p['max_spread_pct']*100)}% and delta {p['abs_delta_min']}-{p['abs_delta_max']}"
@@ -353,6 +407,8 @@ def paper_scan(ticker):
             reason = "extended: waiting for retest (no chase)"
         elif len(store.positions(ledger="paper", status="OPEN")) >= core.policy()["risk"]["max_open_positions"]:
             reason = "max open paper positions"
+        elif _setup_cooldown(ticker, st):
+            reason = _setup_cooldown(ticker, st)
         else:
             reason = discipline_gate("paper", g) or event_block()
             if chop and not reason:
@@ -376,6 +432,15 @@ def paper_scan(ticker):
                  json.dumps({"setup": st, "agree": agree, "against": against, "chop": chop, "position": pid})))
         store.event("opportunity", f"PAPER {decision}: {ticker} {st['family']} {'calls' if st['side']=='C' else 'puts'} ({g})"
                     + (f" | {reason}" if reason else ""), "paper", oid)
+
+
+def _setup_cooldown(ticker, st):
+    """20-minute cooldown after the same setup fired an order (stops re-buying a setup that just failed)."""
+    m = core.policy()["discipline"].get("setup_cooldown_min", 20)
+    since = (core.now_et() - timedelta(minutes=m)).isoformat(timespec="seconds")
+    hit = store.q("SELECT ts FROM opportunities WHERE ticker=? AND setup=? AND side=? AND decision='ORDER' AND ts>=? ORDER BY ts DESC LIMIT 1",
+                  (ticker, st["family"], st["side"], since))
+    return f"cooldown: {st['family']} already traded at {hit[0]['ts'][11:16]} ({m} min)" if hit else None
 
 
 def open_paper(ticker, st, g, c, oid, s):
@@ -564,7 +629,7 @@ def log_real_in(ticker, contract, qty, fill, t=None, plan=None, setup=""):
         warn += f" | {streak_msg}"
     if manual:
         store.event("real_in", f"LOGGED YOUR BUY {qty} {ticker.upper()} {contract.upper()} @ ${fill:.2f} | cost ${fill*100*qty:.0f} | "
-                    f"STOP ${ex['stop']:.2f} (strict 20%, max planned loss ${risk:.2f}){warn} | BE at ${ex['be_trigger']:.2f} | "
+                    f"STOP ${ex['stop']:.2f} (strict {round(ex['stop_pct'] * 100)}%, max planned loss ${risk:.2f}){warn} | BE at ${ex['be_trigger']:.2f} | "
                     f"journal only: the desk auto-manages SPY/QQQ 0DTE; ask Chart for the {ticker.upper()} exit plan | set your stop in Robinhood now", "real", pid)
         return pid
     store.event("real_in", f"LOGGED YOUR BUY {qty} {ticker.upper()} {contract.upper()} @ ${fill:.2f} | cost ${fill*100*qty:.0f} | "
@@ -601,6 +666,33 @@ def start_watch(plan, minutes=None):
             (wid, plan["ticker"], plan["side"], store.ts(), exp, "ACTIVE", json.dumps(plan, default=str), plan["state"]))
     store.event("watch", f"WATCHING {plan['ticker']} {'calls' if plan['side']=='C' else 'puts'} until {exp[11:16]} ET: {plan.get('trigger_rule','')}", "real", wid)
     return wid, exp
+
+
+def kill_paper(reason="Nick pressed KILL"):
+    """Kill switch (paper only): stop new paper entries, close every open paper position now, stop all watches.
+    Real trades are Nick's: the desk only reminds him; it never touches Robinhood."""
+    store.kv_set("paper_enabled", False)
+    closed = 0
+    for p in store.positions(ledger="paper", status="OPEN"):
+        pend = sum(o["qty"] for o in store.q(
+            "SELECT qty FROM orders WHERE position_id=? AND side='sell' AND status IN ('ACKNOWLEDGED','UNKNOWN','PARTIAL','SUBMITTING')", (p["id"],)))
+        qn = p["qty_open"] - pend
+        if qn <= 0 or not broker.configured():
+            continue  # never oversell: an exit is already working
+        cid = f"{p['id']}-S-KILL-{qn}"
+        if store.q("SELECT client_id FROM orders WHERE client_id=?", (cid,)):
+            continue
+        o, e = broker.submit(p["symbol"], qn, "sell", cid)
+        store.x("INSERT INTO orders(client_id,position_id,ts,side,qty,status,broker_id,reason) VALUES(?,?,?,?,?,?,?,?)",
+                (cid, p["id"], store.ts(), "sell", qn, "ACKNOWLEDGED" if o else "UNKNOWN", (o or {}).get("id"), "KILL SWITCH"))
+        closed += 1
+    n = stop_watch()
+    real = len(store.positions(ledger="real", status="OPEN"))
+    msg = f"KILL SWITCH: paper entries OFF, {closed} paper position(s) sent to close, {n} watch(es) stopped"
+    if real:
+        msg += f" | you have {real} real trade(s) open: close them yourself in Robinhood"
+    store.event("paper", msg + f" ({reason})", "paper")
+    return msg
 
 
 def stop_watch(ticker=None):

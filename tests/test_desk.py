@@ -158,7 +158,12 @@ def test_stop_never_exceeds_20pct_and_tighten_only():
             assert loss <= 100 * fill * 0.20 + 1e-6 or q == 0, (fill, spread, loss)
             assert stop >= round(fill * 0.80, 2)
     assert core.tighten_only(1.10, 0.90) == 1.10
-    assert core.exit_plan(1.00, "10:15")["stop"] == core.exit_plan(1.00, "14:30")["stop"]  # no 15/12/10% schedule
+    # Nick Oct 27: morning 20% (costs inside), midday 12%, afternoon 10%; never looser than the 20% all-in ceiling
+    assert core.exit_plan(1.00, "10:15")["stop"] == 0.82
+    assert core.exit_plan(1.00, "12:30")["stop"] == 0.88 and core.exit_plan(1.00, "14:30")["stop"] == 0.90
+    for t in ("10:15", "12:30", "14:30"):
+        ex = core.exit_plan(0.40, t, 0.02)
+        assert core.risk_per_contract(0.40, ex["stop"], ex["slippage_reserve"]) <= 0.40 * 100 * 0.20 + 1e-6
 
 
 def test_sizing_integer_and_caps():
@@ -451,6 +456,8 @@ def test_journal_calendar_breakdown_review_csv(desk_env, monkeypatch):
     assert times["Open 9:30-10:30"]["pnl"] == 40.0 and times["Power hour 3-close"]["pnl"] == -20.0
     n = store.trade_note(r1["id"], {"went_well": "waited for the close", "followed_plan": "yes", "hack": "x"})
     assert n == {"went_well": "waited for the close", "followed_plan": "yes"}
+    store.trade_note(r1["id"], {"mistakes": "chased, early entry"})
+    assert {m["name"] for m in store.breakdown("real", "2026-10-01")["mistakes"]} == {"chased", "early entry"}
     csv_text = store.export_csv("real")
     assert "waited for the close" in csv_text and csv_text.count("\n") == 3
 
@@ -462,3 +469,62 @@ def test_black_scholes_delta_fallback():
     assert 0.45 < c < 0.56 and abs(c - p - 1) < 1e-6
     assert core.bs_delta(600, 610, 0.15, "C", t) < 0.1          # far OTM 0DTE call ~ 0
     assert core.bs_delta(600, 600, None, "C", t) is None
+
+
+def test_pdh_retest_setup_and_kill_switch(desk_env, monkeypatch):
+    """PDH retest + 9 EMA pullback fires on a breakout-and-hold day; the kill switch closes paper only."""
+    clock = desk_env
+    def path(ts):
+        m = ts.hour * 60 + ts.minute
+        if m < 570: return 599.6
+        if m < 585: return 600.0 + (m - 570) % 6 / 5.0
+        if m < 620: return 601.0 + (m - 585) * 0.06          # breakout above PDH (~598+) and ORB
+        if m < 630: return 603.1 - (m - 620) * 0.12          # pullback toward the 9 EMA
+        return 601.9 + (m - 630) * 0.08
+    fb = wire(monkeypatch, clock, path)
+    found = set()
+    for mins in range(600, 660, 5):
+        clock.t = DAY.replace(hour=mins // 60, minute=mins % 60, second=5)
+        engine._cache.clear()
+        s = engine.snapshot("SPY")
+        found |= {x["family"] for x in engine.detect(s)}
+    assert "PDH_RETEST" in found, found
+    # kill switch: run the up-day market until the paper engine is in a trade, then kill
+    fb = wire(monkeypatch, clock, up_day)
+    t = DAY.replace(hour=9, minute=30)
+    opened = []
+    while t < DAY.replace(hour=11, minute=30) and not opened:
+        clock.t = t
+        engine._cache.clear()
+        engine.tick()
+        opened = store.positions(ledger="paper", status="OPEN")
+        t += timedelta(minutes=1)
+    assert opened, "expected the paper engine to be in a trade before the kill test"
+    msg = commands.handle("kill switch", "SPY")["reply"]
+    assert "paper entries OFF" in msg and store.kv_get("paper_enabled") is False
+    for _ in range(2):
+        clock.t += timedelta(minutes=1)
+        engine._cache.clear()
+        engine.tick()
+    assert not store.positions(ledger="paper", status="OPEN")
+    sells = store.q("SELECT * FROM orders WHERE side='sell' AND reason='KILL SWITCH'")
+    assert len(sells) == len(opened)
+
+
+def test_adx_trend_vs_chop_and_setup_cooldown(desk_env, monkeypatch):
+    idx = pd.date_range(DAY.replace(hour=9, minute=30), periods=60, freq="5min")
+    up = np.linspace(600, 612, 60)
+    trend = pd.DataFrame({"Open": up - .05, "High": up + .15, "Low": up - .15, "Close": up, "Volume": 1e5}, index=idx)
+    wig = 600 + 0.4 * np.sin(np.arange(60))
+    chop = pd.DataFrame({"Open": wig, "High": wig + .3, "Low": wig - .3, "Close": wig[::-1], "Volume": 1e5}, index=idx)
+    assert engine.adx(trend) > 25 and engine.adx(chop) < 18
+    assert engine.adx(trend.iloc[:10]) is None
+    clock = desk_env
+    clock.t = DAY.replace(hour=10, minute=30)
+    st = {"family": "ORB_RETEST", "side": "C"}
+    store.x("INSERT INTO opportunities(id,date,ts,ticker,side,setup,grade,decision,reason,data) VALUES(?,?,?,?,?,?,?,?,?,?)",
+            ("x1", "2026-10-28", DAY.replace(hour=10, minute=20).isoformat(timespec="seconds"), "SPY", "C", "ORB_RETEST", "A", "ORDER", None, "{}"))
+    assert "cooldown" in engine._setup_cooldown("SPY", st)
+    assert engine._setup_cooldown("SPY", {"family": "ORB_RETEST", "side": "P"}) is None
+    clock.t = DAY.replace(hour=10, minute=45)
+    assert engine._setup_cooldown("SPY", st) is None
