@@ -372,3 +372,23 @@ def test_watchlist_tickers_route_to_chart_and_log_journal_only(desk_env, monkeyp
     out = commands.handle("OUT NVDA 4.10", "SPY")
     assert "+$90.00" in out["reply"] or "90" in out["reply"]
     assert store.pos_get(p["id"])["status"] == "CLOSED"
+
+
+def test_voice_transcripts_parse_as_commands(desk_env, monkeypatch):
+    """Outputs of the page's speech normalizer (Voice.normalize) must be understood by commands.handle."""
+    clock = desk_env
+    wire(monkeypatch, clock, up_day)
+    clock.t = DAY.replace(hour=10, minute=5)
+    r = commands.handle("spy rejected 600.50 puts?", "SPY")
+    assert r["handled"] and r["plan"]["side"] == "P" and r["plan"]["trigger_level"] == 600.5
+    r = commands.handle("IN spy 601C 2 at 0.90", "SPY")
+    assert r["position"]["qty_init"] == 2 and r["position"]["fill"] == 0.90 and r["position"]["contract"] == "601C"
+    r = commands.handle("OUT 2 at 1.05", "SPY")
+    assert "+30.00" in r["reply"] and "0 left" in r["reply"]
+
+
+def test_alt_data_off_without_key(monkeypatch):
+    import altdata
+    monkeypatch.delenv("QUIVER_KEY", raising=False)
+    r = altdata.ticker("NVDA")
+    assert r["enabled"] is False and "QUIVER_KEY" in r["note"]

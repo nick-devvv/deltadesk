@@ -140,6 +140,14 @@ def plan_text(p):
     return "\n".join(lines)
 
 
+def _alt(t):
+    try:
+        import altdata
+        return altdata.ticker(t) if altdata.enabled() else None
+    except Exception:
+        return None
+
+
 def coach_context(selected="SPY"):
     """Compact state for Chart. No raw bars, no secrets."""
     s = engine.snapshot(selected)
@@ -160,4 +168,5 @@ def coach_context(selected="SPY"):
         "recent_events": [e["text"] for e in store.q("SELECT text FROM events ORDER BY seq DESC LIMIT 6")],
         "desk_plans_for_ticker": selected in core.policy()["instruments"],
         "watchlist_quote": None if selected in core.policy()["instruments"] else watchlist.quote(selected),
+        "alt_data": None if selected in core.policy()["instruments"] else _alt(selected),
     }

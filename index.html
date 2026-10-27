@@ -221,6 +221,26 @@ p+p{margin-top:6px}
 .wladd input{flex:1;text-transform:uppercase;padding:6px 8px;font-size:12px}
 .wladd button{border-radius:4px;padding:5px 10px}
 .seg .other{border-style:dashed}
+
+.voicebtn{display:inline-flex;align-items:center;gap:7px;border-color:var(--brand);color:var(--ink);box-shadow:var(--glow)}
+.voicebtn svg{width:15px;height:15px;color:var(--brand)}
+.jarvis{position:fixed;inset:0;z-index:50;display:flex;flex-direction:column;background:radial-gradient(900px 600px at 50% 45%,rgba(40,6,12,.92),rgba(5,2,3,.97));backdrop-filter:blur(6px);animation:jvin .28s ease-out}
+.jarvis[hidden]{display:none}
+@keyframes jvin{from{opacity:0;transform:scale(1.02)}}
+.jvtop{display:flex;align-items:center;padding:18px 24px}
+.jvtop .r{margin-left:auto;display:flex;gap:8px}
+#jvHands[aria-pressed=true]{border-color:var(--brand);color:var(--ink);box-shadow:var(--glow)}
+.jvstage{position:relative;flex:1;min-height:0}
+#jvCore{position:absolute;inset:0;width:100%;height:100%;cursor:pointer;outline:none}
+.jvlabel{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);text-align:center;pointer-events:none}
+.jvlabel b{display:block;font:600 15px var(--mono);letter-spacing:.42em;text-transform:uppercase;color:var(--ink);text-shadow:0 0 16px rgba(232,49,74,.8)}
+.jvlabel small{font:500 10px var(--mono);letter-spacing:.32em;color:var(--ink-3)}
+.jvtext{display:grid;grid-template-columns:1fr 1fr;gap:18px;max-width:980px;width:100%;margin:0 auto;padding:0 24px 28px}
+.jvtext>div{border-top:1px solid var(--line-2);padding-top:10px;min-width:0}
+.jvtext small{font:500 9.5px var(--mono);letter-spacing:.3em;text-transform:uppercase;color:var(--brand)}
+.jvtext p{margin-top:6px;font:15px/1.5 var(--sans);color:var(--ink);overflow-wrap:anywhere;max-height:7.5em;overflow:auto}
+.jvtext #jvHint{grid-column:1/3;font:12px var(--mono);color:var(--ink-3)}
+@media (max-width:700px){.jvtext{grid-template-columns:1fr}.jvtext #jvHint{grid-column:1}}
 @media (max-width:1380px){ .trade{grid-template-columns:300px minmax(0,1fr) 380px} .hide-md{display:none} nav a{padding:7px 12px;letter-spacing:.16em} header{gap:12px} .brand b{letter-spacing:.3em} }
 @media (max-width:1100px){
   body{overflow:auto}
@@ -266,6 +286,7 @@ p+p{margin-top:6px}
       <a href="#review" data-v="review">Review</a>
       <a href="#research" data-v="research">Rules</a>
     </nav>
+    <button type="button" class="voicebtn" id="voiceBtn" title="Talk to the desk (J)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>Voice</button>
     <span class="pill dim" id="streak" title="Losing-streak rule: 2 losses in a row = A setups only + 10 min cooldown; 3 = stop for today">streak ok</span>
     <a class="legend" href="https://robinhood.com/legend" target="_blank" rel="noopener">Open Legend ↗</a>
   </header>
@@ -418,6 +439,19 @@ p+p{margin-top:6px}
       <p class="m" style="margin-top:14px">The old desk chart with custom indicators is still here: <a href="legacy" style="color:var(--ink-2)">open the legacy page</a>.</p>
     </section>
   </main>
+  <div class="jarvis" id="jarvis" hidden role="dialog" aria-modal="true" aria-label="Voice mode">
+    <div class="jvtop"><span class="lbl">Desk voice<small>you speak · desk computes · Chart explains</small></span>
+      <div class="r"><button type="button" id="jvHands" aria-pressed="true" title="Keep listening after each answer">Hands-free</button><button type="button" id="jvClose">Close · Esc</button></div></div>
+    <div class="jvstage">
+      <canvas id="jvCore" role="button" tabindex="0" aria-label="Tap to talk or interrupt"></canvas>
+      <div class="jvlabel"><b id="jvState">Ready</b><small id="jvTicker">SPY</small></div>
+    </div>
+    <div class="jvtext">
+      <div><small>You said</small><p id="jvHeard">…</p></div>
+      <div><small>Desk / Chart</small><p id="jvReply">…</p></div>
+      <p class="m" id="jvHint"></p>
+    </div>
+  </div>
   <footer class="statusbar" aria-label="Status">
     <div class="box"><div><small>Session</small><b id="sess">connecting…</b></div></div>
     <div class="box"><div><small>Active watch</small><b id="watch">none</b></div></div>
@@ -472,6 +506,21 @@ function setTicker(t){
   drawTV(); render();
 }
 $$("header .seg button").forEach(b => b.onclick = () => { if (b.dataset.t && b.dataset.t !== ticker) setTicker(b.dataset.t); });
+
+/* ---------- alt data (optional Quiver) ---------- */
+const ALT = {};
+async function loadAlt(t){
+  const box = $("#altBox"); if (!box) return;
+  const show = a => {
+    if (!a || !a.enabled){ box.innerHTML = `<span class="m">Smart-money data (Quiver: congress trades, short volume, WSB) is off. Add QUIVER_KEY in Chart’s Secrets to turn it on.</span>`; return; }
+    if (a.error){ box.innerHTML = `<span class="m">Quiver: ${esc(a.error)}</span>`; return; }
+    box.innerHTML = `<div class="lbl" style="margin:6px 0 4px">Smart money<small>${esc(a.source)} · ${esc(a.fetched)}</small></div>` +
+      Object.entries(a.data).map(([k, v]) => `<li><b>${esc(k)}</b>: ${v.error ? '<span class="m">unavailable</span>' : `${v.count ?? "?"} records${v.rows && v.rows[0] ? ` · latest ${esc(Object.values(v.rows[0]).filter(Boolean).slice(0,3).join(" · "))}` : ""}`}</li>`).join("");
+  };
+  if (ALT[t] && Date.now() - ALT[t].at < 6e5) return show(ALT[t].v);
+  box.innerHTML = '<span class="m">Loading smart-money data…</span>';
+  try { const v = await api("api/alt?t=" + encodeURIComponent(t)); ALT[t] = {at: Date.now(), v}; if (ticker === t) show(v); } catch(e){ box.innerHTML = `<span class="m">Smart-money data unavailable (${esc(e.message)})</span>`; }
+}
 
 /* ---------- watchlist (other tickers: quotes, earnings, Chart questions) ---------- */
 let WL = [];
@@ -550,7 +599,7 @@ function addEvent(e){
     const who = e.kind === "you" ? "YOU" : e.kind === "desk" ? "DESK · computed in code" : "CHART";
     d.innerHTML = `<span class="who">${who} · ${hhmm(e.ts)}</span>${esc(e.text)}`;
     $("#chat").appendChild(d);
-    if (e.kind === "chart") { if (booted) Core.pulse("CHART"); pending = false; $("#sendStatus").textContent = ""; }
+    if (e.kind === "chart") { if (booted) { Core.pulse("CHART"); if (window.Voice) Voice.onChart(e.text); } pending = false; $("#sendStatus").textContent = ""; }
     if (booted) { const r = $("#rscroll"); r.scrollTop = r.scrollHeight; }
     return;
   }
@@ -564,7 +613,7 @@ function addEvent(e){
   row.innerHTML = `<time>${hhmm(e.ts)}</time><span class="k ${kind}">${esc(label)}</span><span class="t">${esc(e.text)}</span>`;
   const f = $("#feed"); f.prepend(row);
   while (f.children.length > 150) f.lastChild.remove();
-  if (booted && !muted && (e.kind === "real_alert" || e.kind === "watch") && "speechSynthesis" in window) {
+  if (booted && !muted && !(window.Voice && Voice.isOpen()) && (e.kind === "real_alert" || e.kind === "watch") && "speechSynthesis" in window) {
     try { const u = new SpeechSynthesisUtterance(e.text.split("|")[0].slice(0,120)); u.rate = 1.1; speechSynthesis.cancel(); speechSynthesis.speak(u); } catch(x){}
   }
 }
@@ -629,8 +678,10 @@ function renderPlan(p){
       <dl class="kv"><dt>Last</dt><dd>${q.last != null ? q.last.toFixed(2) : "—"} <small>${q.chg_pct != null ? (q.chg_pct >= 0 ? "+" : "−") + Math.abs(q.chg_pct).toFixed(2) + "% today" : ""}</small></dd>
       <dt>Earnings</dt><dd>${q.earnings ? esc(q.earnings.date) + ` <small>in ${q.earnings.days} day${q.earnings.days === 1 ? "" : "s"} · check BMO/AMC</small>` : "<small>none found in Yahoo’s calendar</small>"}</dd>
       <dt>Your trades</dt><dd><small>IN ${esc(ticker)} 140C 1 at 3.20 logs it to the journal with a strict 20% stop. You manage the exit with Chart.</small></dd></dl>
-      <div class="quick" style="margin-top:12px">${["Earnings play?","Key levels?","News?","Expected move?"].map(x => `<button type="button" data-ask="${esc(ticker)}: ${x}">${x}</button>`).join("")}</div>`;
+      <div id="altBox" class="obj"></div>
+      <div class="quick" style="margin-top:12px">${["Earnings play?","Key levels?","News?","Expected move?","Smart money?"].map(x => `<button type="button" data-ask="${esc(ticker)}: ${x}">${x}</button>`).join("")}</div>`;
     el.querySelectorAll("[data-ask]").forEach(b => b.onclick = () => send(b.dataset.ask));
+    loadAlt(ticker);
     return;
   }
   if (!p){ $("#planAge").textContent = ""; el.innerHTML = `<div class="empty">No ${ticker} plan yet. Tell the desk what you see in Legend, e.g. “${ticker} rejected PDH, puts?”, or press Confirm &amp; watch.</div>`; return; }
@@ -699,8 +750,11 @@ async function send(text, explain=true){
       setTimeout(()=>{ if (pending) $("#sendStatus").textContent = "Chart hasn’t answered yet. Any plan shown above is still the one to use."; }, 90000);
     } else $("#sendStatus").textContent = r.reply ? "" : "Chart isn’t connected right now; standard commands still work.";
     await poll();
+    $("#sendBtn").disabled = false;
+    return r;
   }catch(e){ $("#sendStatus").textContent = "Couldn’t send: " + e.message + ". Your text is back in the box; try again."; $("#msg").value = $("#msg").value || text; }
   $("#sendBtn").disabled = false;
+  return null;
 }
 $("#sendForm").onsubmit = e => { e.preventDefault(); const v = $("#msg").value.trim(); if (!v) { $("#msg").focus(); return; } $("#msg").value = ""; send(v); };
 $$(".quick button").forEach(b => b.onclick = () => {
@@ -974,6 +1028,196 @@ function drawEquity(rows){
   requestAnimationFrame(frame);
 }
 Core.init();
+
+/* ---------- VOICE: talk to the desk + Chart (browser speech, no plugin, no extra AI) ---------- */
+window.Voice = (() => {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const el = id => document.getElementById(id);
+  let rec = null, open = false, listening = false, speaking = false, thinking = false, handsFree = store.get("handsFree", true);
+  let confirmText = null, level = 0, analyser = null, micStream = null, voicePick = null, raf = 0, t = 0;
+  const say = (s) => { el("jvState").textContent = s; el("jarvis").dataset.state = s.toLowerCase(); };
+
+  /* speech -> desk text: numbers, cents, tickers, IN/OUT phrasing */
+  const NUM = {zero:0,oh:0,one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,eleven:11,twelve:12,thirteen:13,fourteen:14,fifteen:15,sixteen:16,seventeen:17,eighteen:18,nineteen:19,twenty:20,thirty:30,forty:40,fifty:50,sixty:60,seventy:70,eighty:80,ninety:90};
+  function words2num(s){
+    return s.replace(/\b(twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)[\s-](one|two|three|four|five|six|seven|eight|nine)\b/g, (m,a,b) => String(NUM[a]+NUM[b]))
+            .replace(/\b(zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)\b/g, m => String(NUM[m]));
+  }
+  function normalize(raw){
+    let s = " " + raw.toLowerCase().replace(/[,!?]/g, " ") + " ";
+    s = s.replace(/\b(q q q|qs|cues|queues|triple q|cube)\b/g, "qqq").replace(/\b(s p y|spy's|spies)\b/g, "spy");
+    s = words2num(s);
+    s = s.replace(/(\d+)\s+point\s+(\d+)/g, "$1.$2");
+    s = s.replace(/\ba dollar\b/g, "1 dollar");
+    const LV = "(over|under|above|below|near|through|at|strike|reclaim|rejected|reject|break|lose|loses|lost|holds?)";
+    s = s.replace(new RegExp("\\b" + LV + " ([1-9]) (\\d{2})\\b", "g"), "$1 $2$3");           // "over 6 12" -> 612
+    s = s.replace(/\b([1-9]) (\d{2})(?= ?(?:calls?|puts?)\b)/g, "$1$2");                          // "7 65 calls" -> 765
+    s = s.replace(new RegExp("\\b" + LV + " (\\d{3}) (\\d{2})\\b(?! ?(?:calls?|puts?|contracts?))", "g"), "$1 $2.$3"); // "under 765 50" -> 765.50
+    s = s.replace(/\$?(\d+)\s*dollars?\s*(?:and\s*)?(\d{1,2})\s*cents?/g, (m,d,c) => `${d}.${c.padStart(2,"0")}`);
+    s = s.replace(/\$?(\d{1,2})\s*cents?/g, (m,c) => `0.${c.padStart(2,"0")}`);
+    s = s.replace(/\b(\d+)\s*dollars?\s*(?:and\s*)?(\d{2})\b/g, "$1.$2").replace(/\b(\d+)\s*dollars?\s*(?:and\s*)?([1-9])\b(?!\d)/g, (m,d,c) => `${d}.0${c}`).replace(/\b(\d+)\s*dollars?\b/g, "$1.00");
+    s = s.replace(/\$(\d)/g, "$1");
+    s = s.replace(/^\s*(i'?m in|i got in|i bought|bought|filled|i'm long|im in|in)\b/, " IN ");
+    s = s.replace(/^\s*(i'?m out|i sold|sold|sell|exit(ed)?|out|im out)\b/, " OUT ");
+    if (/^\s*(IN|OUT)\b/.test(s)) s = s.replace(/\b(\d{2,4}(?:\.5)?)\s*(call|put)s?\b/g, (m,k,c) => k + (c === "call" ? "C" : "P")).replace(/\b(contracts?)\b/g, "").replace(/\bfor\b/g, "at");
+    s = s.replace(/^\s*(IN|OUT)\s+(?:(spy|qqq|[a-z]{2,5})\s+)?(\d+)\s+(\d+(?:\.5)?[CP])\b/, (m,k,tk,q,ct) => `${k} ${tk ? tk + " " : ""}${ct} ${q}`);  // "IN 2 765C" -> "IN 765C 2"
+    s = s.replace(/\s+/g, " ").trim();
+    if (!/^(IN|OUT)\b/.test(s) && /\b(calls?|puts?)\b/.test(s) && !/\?$/.test(s)) s += "?";   // "SPY puts under 765.50" = ask for a plan
+    return s;
+  }
+  /* desk reply -> something short to say */
+  function spoken(r){
+    const p = r && r.plan;
+    if (p && p.state){
+      if (p.state === "DATA UNAVAILABLE") return `${p.ticker}: data unavailable. No plan until the data is fresh.`;
+      const side = p.side === "C" ? "calls" : "puts", ex = p.exit || {}, c = p.contract;
+      let s = `${p.state}. ${p.ticker} ${side}, grade ${p.grade || "unknown"}. ${p.trigger_rule || ""}.`;
+      if (c && p.qty) s += ` Buy the ${c.label} at or under ${p.premium_limit.toFixed(2)}. Stop ${ex.stop.toFixed(2)}. Breakeven at ${ex.be_trigger.toFixed(2)}. Target ${ex.t1.toFixed(2)}.`;
+      if (p.reason) s += ` Pass because ${p.reason}.`;
+      const streak = (p.objections||[]).find(o => /STOP FOR TODAY|A setups only/.test(o)); if (streak) s = streak.split(":")[0] + ". " + s;
+      return s;
+    }
+    if (r && r.reply) return r.reply.split("\n")[0].split("|").slice(0, 4).join(". ").replace(/\$/g, "");
+    return "";
+  }
+  function pickVoice(){
+    const vs = speechSynthesis.getVoices(); if (!vs.length) return null;
+    const pref = ["Daniel", "Google UK English Male", "Arthur", "Oliver", "Microsoft Ryan", "Google US English", "Alex", "Samantha"];
+    for (const n of pref){ const v = vs.find(x => x.name.includes(n)); if (v) return v; }
+    return vs.find(v => /^en/i.test(v.lang)) || vs[0];
+  }
+  if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = () => { voicePick = pickVoice(); };
+
+  function speak(text, then){
+    if (!text || !("speechSynthesis" in window)) { then && then(); return; }
+    stopListen(); speaking = true; say("Speaking"); el("jvReply").textContent = text;
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text.slice(0, 600)); u.rate = 1.04; u.pitch = 0.92; u.voice = voicePick || pickVoice();
+    u.onend = u.onerror = () => { speaking = false; if (!open) return;
+      if (queued) { const q = queued; queued = null; return speak(q, null); }
+      say("Ready"); then ? then() : (handsFree && listen()); };
+    speechSynthesis.speak(u);
+  }
+  async function mic(){
+    if (analyser) return;
+    try{
+      micStream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true, noiseSuppression:true}});
+      const ac = new (window.AudioContext || window.webkitAudioContext)(); const src = ac.createMediaStreamSource(micStream);
+      analyser = ac.createAnalyser(); analyser.fftSize = 512; src.connect(analyser);
+    }catch(e){ analyser = null; }
+  }
+  function listen(){
+    if (!SR){ say("Unsupported"); el("jvHint").textContent = "This browser can’t do speech-to-text. Use Chrome or Safari, or type in the chat."; return; }
+    if (listening || speaking) return;
+    rec = new SR(); rec.lang = "en-US"; rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 1;
+    let final = "";
+    rec.onresult = ev => { let interim = ""; for (const r of ev.results){ (r.isFinal ? (final = r[0].transcript) : (interim += r[0].transcript)); } el("jvHeard").textContent = final || interim; };
+    rec.onerror = ev => { listening = false; if (ev.error === "not-allowed") { say("Mic blocked"); el("jvHint").textContent = "Allow the microphone for this site (lock icon in the address bar), then press the core."; } else if (open && handsFree && ev.error === "no-speech") { listen(); } else say("Ready"); };
+    rec.onend = () => { listening = false; if (final.trim()) handle(final.trim()); else if (open && !speaking && !thinking) say("Ready"); };
+    try { rec.start(); listening = true; say("Listening"); el("jvHeard").textContent = ""; mic(); } catch(e){}
+  }
+  function stopListen(){ if (rec && listening) { try { rec.abort(); } catch(e){} } listening = false; }
+
+  async function handle(raw){
+    const low = raw.toLowerCase().trim();
+    if (/^(stop|cancel|never ?mind|close|goodbye|that's all)\b/.test(low)) { confirmText = null; speak("Okay.", () => close()); return; }
+    if (confirmText){
+      if (/^(yes|yeah|yep|confirm|correct|do it|log it)\b/.test(low)) { const t = confirmText; confirmText = null; return run(t, false); }
+      confirmText = null; speak("Okay, not logged. Say it again if you want.", null); return;
+    }
+    const text = normalize(raw);
+    el("jvHeard").textContent = raw + (text !== raw.toLowerCase() ? `  →  ${text}` : "");
+    if (/^(IN|OUT)\b/.test(text)) {   // a misheard fill is worse than one extra question
+      confirmText = text;
+      speak(`${text.startsWith("IN") ? "Log your buy" : "Log your sale"}: ${text.replace(/^(IN|OUT)\s*/, "").replace(/\bat\b/, "at")}. Say yes to log it.`, () => listen());
+      return;
+    }
+    run(text, true);
+  }
+  async function run(text, explain){
+    thinking = true; say("Thinking");
+    const r = await send(text, explain);
+    thinking = false;
+    const s = spoken(r);
+    if (r && r.coach_pending && !s) { say("Waiting for Chart"); el("jvReply").textContent = "Sent to Chart. I’ll read the answer when it arrives."; return; }
+    if (r && r.coach_pending) { awaitingChart = true; }
+    speak(s || "Done.", r && r.coach_pending ? () => { say("Waiting for Chart"); } : null);
+  }
+  let awaitingChart = false;
+  let queued = null;
+  function onChart(text){
+    if (!open) return false;
+    awaitingChart = false;
+    const short = text.replace(/\$/g, "").split(/\n+/).slice(0, 5).join(" ");
+    if (speaking) queued = short; else speak(short, null);
+    return true;
+  }
+
+  /* the core: rings + particles; reacts to the mic when listening and to speech when speaking */
+  function draw(){
+    const cv = el("jvCore"); if (!cv || !open) return;
+    const r = cv.getBoundingClientRect(), d = Math.min(2, devicePixelRatio || 1);
+    if (cv.width !== Math.round(r.width * d)) { cv.width = r.width * d; cv.height = r.height * d; }
+    const c = cv.getContext("2d"); c.setTransform(d,0,0,d,0,0);
+    const w = r.width, h = r.height, cx = w/2, cy = h/2, R = Math.min(w, h) * 0.26;
+    t += 1/60;
+    let target = 0.04;
+    if (listening && analyser){ const a = new Uint8Array(analyser.fftSize); analyser.getByteTimeDomainData(a); let m = 0; for (const v of a) m = Math.max(m, Math.abs(v - 128)); target = Math.min(1, m / 50); }
+    else if (speaking) target = 0.35 + 0.25 * Math.abs(Math.sin(t * 9)) * Math.abs(Math.sin(t * 3.3));
+    else if (thinking) target = 0.15;
+    level += (target - level) * 0.2;
+    const st = el("jarvis").dataset.state || "";
+    const col = /listen/.test(st) ? "232,49,74" : /speak/.test(st) ? "255,141,156" : /think|wait/.test(st) ? "242,184,75" : "232,49,74";
+    c.clearRect(0,0,w,h);
+    const g = c.createRadialGradient(cx, cy, R * 0.1, cx, cy, R * (2 + level));
+    g.addColorStop(0, `rgba(${col},${0.22 + level * 0.3})`); g.addColorStop(1, `rgba(${col},0)`);
+    c.fillStyle = g; c.beginPath(); c.arc(cx, cy, R * (2 + level), 0, Math.PI * 2); c.fill();
+    // waveform ring
+    c.lineWidth = 1.5; c.strokeStyle = `rgba(${col},.95)`; c.shadowColor = `rgba(${col},.9)`; c.shadowBlur = 16;
+    c.beginPath();
+    for (let i = 0; i <= 160; i++){ const a = i / 160 * Math.PI * 2;
+      const n = Math.sin(a * 6 + t * 2) * 0.5 + Math.sin(a * 11 - t * 3.1) * 0.35 + Math.sin(a * 17 + t * 1.3) * 0.15;
+      const rr = R * (1 + level * 0.22 * n + 0.012 * Math.sin(t * 2));
+      const x = cx + Math.cos(a) * rr, y = cy + Math.sin(a) * rr; i ? c.lineTo(x, y) : c.moveTo(x, y); }
+    c.closePath(); c.stroke(); c.shadowBlur = 0;
+    // HUD rings
+    const arcs = [[1.32, 0.9, 1, 1.0], [1.5, -0.5, 0.6, 0.55], [1.68, 0.25, 1.4, 0.35]];
+    for (const [k, sp, len, al] of arcs){ for (let j = 0; j < 3; j++){ const a0 = t * sp + j * Math.PI * 2 / 3;
+      c.strokeStyle = `rgba(${col},${al * 0.6})`; c.lineWidth = j === 0 ? 2 : 1; c.beginPath(); c.arc(cx, cy, R * k, a0, a0 + len); c.stroke(); } }
+    // ticks
+    c.strokeStyle = `rgba(${col},.35)`; c.lineWidth = 1;
+    for (let i = 0; i < 72; i++){ const a = i / 72 * Math.PI * 2 + t * 0.05, r1 = R * 1.86, r2 = r1 + (i % 6 ? 4 : 10);
+      c.beginPath(); c.moveTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1); c.lineTo(cx + Math.cos(a) * r2, cy + Math.sin(a) * r2); c.stroke(); }
+    // thinking spinner
+    if (thinking || /wait/.test(st)){ c.strokeStyle = `rgba(${col},.9)`; c.lineWidth = 2.5; c.beginPath(); c.arc(cx, cy, R * 0.78, t * 4, t * 4 + 1.2); c.stroke(); }
+    raf = requestAnimationFrame(draw);
+  }
+  function openUI(){
+    open = true; el("jarvis").hidden = false; document.body.classList.add("jv-open");
+    el("jvHands").setAttribute("aria-pressed", String(handsFree));
+    el("jvHint").textContent = SR ? "Speak naturally: “SPY puts under 765.50?”, “why?”, “NVDA earnings play?”, “I’m in two at ninety-five cents.” Say “stop” to close." : "This browser can’t do speech-to-text. Use Chrome or Safari.";
+    say("Ready"); el("jvTicker").textContent = ticker; cancelAnimationFrame(raf); if (!RM) draw(); else el("jvCore").getContext("2d");
+    listen();
+  }
+  function close(){
+    open = false; stopListen(); speechSynthesis && speechSynthesis.cancel(); speaking = false; thinking = false; confirmText = null;
+    el("jarvis").hidden = true; document.body.classList.remove("jv-open"); cancelAnimationFrame(raf);
+    if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; analyser = null; }
+    el("voiceBtn").focus();
+  }
+  el("voiceBtn").onclick = openUI;
+  el("jvClose").onclick = close;
+  el("jvCore").onclick = () => { if (speaking) { speechSynthesis.cancel(); } else if (listening) stopListen(); else listen(); };
+  el("jvHands").onclick = () => { handsFree = !handsFree; store.set("handsFree", handsFree); el("jvHands").setAttribute("aria-pressed", String(handsFree)); };
+  document.addEventListener("keydown", e => {
+    const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
+    if (open && e.key === "Escape") { e.preventDefault(); close(); }
+    else if (open && e.code === "Space" && !typing) { e.preventDefault(); el("jvCore").click(); }
+    else if (!open && !typing && (e.key === "j" || e.key === "J") && !e.metaKey && !e.ctrlKey) { e.preventDefault(); openUI(); }
+  });
+  return {onChart, isOpen: () => open, normalize, spoken};
+})();
+const Voice = window.Voice;
 
 /* ---------- start ---------- */
 setTicker(ticker);

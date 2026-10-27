@@ -14,6 +14,7 @@ You do every step yourself, in Grok. Nothing here needs Claude to take over your
   - If flat, get out at the time on the plan.
   - All out at 3:25.
 - **Typing IN / OUT / confirm / check once / stop watching is handled in code**, so it's instant and free. Only "why?" and free questions use Chart.
+- **Voice mode** (Voice button or press J): talk to the desk and Chart, and hear the answers. Fills you say out loud are read back for a yes before they're logged.
 - **Watchlist (bottom left)** for other tickers and earnings plays. Click one to chart it and ask Chart about it.
 - **Journal** is written at 4:05 PM every day. The **4:20 review** proposes lessons, and you approve them.
 
@@ -28,8 +29,8 @@ You never place real trades, never click buy/sell/order buttons, and never enter
 
 1. Back up: cp -r ~/desk ~/desk_backup_$(date +%Y%m%d)
 2. Unzip the attached nicks-desk-v2.zip over ~/desk (overwrite files with the same names; keep everything else, including bot.py, shadow.py, review.py, desk-state.json and my Secrets).
-3. pip install yfinance pandas numpy pytest
-4. cd ~/desk && python3 -m pytest -q tests/   -> must say "17 passed". If not, stop and show me the error.
+3. pip install yfinance pandas numpy pytest quiverquant
+4. cd ~/desk && python3 -m pytest -q tests/   -> must say "19 passed". If not, stop and show me the error.
 5. Restart the desk server the same way watchdog.sh starts it (same env: DESK_TOKEN, CHAT_WEBHOOK, CHAT_WEBHOOK_KEY, ALPACA_KEY, ALPACA_SECRET, PORT). Then run:
    curl -s "http://127.0.0.1:8765/api/state?k=$DESK_TOKEN" | head -c 400
    and show me the output. "paper" should say RUNNING or IDLE and the broker line should say paper account verified.
@@ -70,6 +71,7 @@ Send Chart: `cp ~/desk_backup_YYYYMMDD/server.py ~/desk/server.py && cp ~/desk_b
 | `commands.py` | What you type → actions (IN/OUT/confirm/…) |
 | `store.py` | SQLite journal database (`journal/desk.db`, created on first run) |
 | `broker.py` | Alpaca **paper-only** client (refuses live keys and non-paper accounts) |
+| `altdata.py` | Optional Quiver data (congress trades, short volume, WSB) when QUIVER_KEY is in Secrets |
 | `watchlist.py` | Other tickers: quotes, earnings dates, add/remove (`config/watchlist.json`) |
 | `desk.py`, `chartdata.py` | Market data read (Yahoo bars, indicators, levels) |
 | `index.html`, `index_legacy.html` | New page and the old page (`/legacy`) |
@@ -78,5 +80,5 @@ Send Chart: `cp ~/desk_backup_YYYYMMDD/server.py ~/desk/server.py && cp ~/desk_b
 | `config/agent_policy.json` | Who does what (you trade real money, code does paper, Chart explains) |
 | `grok/*` | Chart's three routine prompts, quick commands, context schema, endpoint list |
 | `docs/LEGACY_RULE_MIGRATION.md` | Every Playbook rule and where it went, plus 3 open questions |
-| `tests/test_desk.py` | 17 tests: no network, no AI, fake paper broker |
+| `tests/test_desk.py` | 19 tests: no network, no AI, fake paper broker |
 | `DESIGN.md` | Page design notes |
