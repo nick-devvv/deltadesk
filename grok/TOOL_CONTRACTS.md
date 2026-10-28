@@ -19,3 +19,7 @@ Base: `http://127.0.0.1:8765` on Chart's computer. Add `?k=DESK_TOKEN` (or `&k=`
 - Any Robinhood order screen.
 
 **Errors:** a non-200 or `{"error": ...}` means stop and tell Nick in one line. Don't retry more than once.
+
+
+## GET /api/chain?t=SPY&side=C|P[&exp=YYYY-MM-DD][&n=10]&k=DESK_TOKEN (v2.9)
+View-only option chain around the money: {ticker, side, exp, dte, expiries, spot, feed ("Schwab live" or "Alpaca delayed"), rows:[{symbol, label, strike, bid, ask, mark, chg_pct, delta, delta_src, iv, breakeven, to_be_pct, volume, oi, spread_pct, itm, fits}]}. With no exp it uses today (0DTE) or the nearest expiry. No order path exists.

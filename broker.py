@@ -99,21 +99,26 @@ def option_quote(symbol):
             "feed": "indicative"}, None
 
 
-def chain(ticker, side, expiry):
-    """Today's snapshots for one side: [{symbol, strike, bid, ask, ts, delta, iv}] (delta may be None)."""
+def chain(ticker, side, expiry, through=None):
+    """Snapshots for one side: [{symbol, strike, exp, bid, ask, ts, delta, iv, last, prev, volume}] (delta may be None).
+    expiry alone = that day only; with through = every expiry from expiry to through (for "nearest expiry")."""
     typ = "call" if side.upper().startswith("C") else "put"
     out, token = [], None
+    when = f"&expiration_date_gte={expiry}&expiration_date_lte={through}" if through else f"&expiration_date={expiry}"
     for _ in range(5):
-        path = (f"/v1beta1/options/snapshots/{ticker}?feed=indicative&type={typ}&expiration_date={expiry}&limit=1000"
+        path = (f"/v1beta1/options/snapshots/{ticker}?feed=indicative&type={typ}{when}&limit=1000"
                 + (f"&page_token={urllib.parse.quote(token)}" if token else ""))
         j, err = _req("GET", DATA, path)
         if not j:
             return out, err
         for sym, s in (j.get("snapshots") or {}).items():
             qd, g = s.get("latestQuote") or {}, s.get("greeks") or {}
+            lt, db, pb = s.get("latestTrade") or {}, s.get("dailyBar") or {}, s.get("prevDailyBar") or {}
             out.append({"symbol": sym, "strike": int(sym[-8:]) / 1000, "bid": float(qd.get("bp") or 0),
                         "ask": float(qd.get("ap") or 0), "ts": qd.get("t"),
-                        "delta": g.get("delta"), "iv": s.get("impliedVolatility")})
+                        "exp": f"20{sym[-15:-13]}-{sym[-13:-11]}-{sym[-11:-9]}",
+                        "delta": g.get("delta"), "iv": s.get("impliedVolatility"),
+                        "last": lt.get("p"), "prev": pb.get("c"), "volume": db.get("v")})
         token = j.get("next_page_token")
         if not token:
             break

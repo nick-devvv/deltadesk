@@ -10,3 +10,9 @@ Nothing here is copied code. The desk reimplements the ideas in its own code.
 | shiyu-coder/Kronos | MIT | Kronos-mini forecast model, run as a shadow test |
 | tradesdontlie/tradingview-mcp | see repo | Chart-analysis checklist and performance-review framework (knowledge cards) |
 | Leonxlnx/taste-skill, vercel-labs/web-interface-guidelines | see repos | UI design rules |
+
+## v2.9 design tools
+- taste-skill (Leonxlnx/taste-skill): app-screen rules, the "data terminal" style, inspector and lint checks.
+- Vercel web interface guidelines (vercel-labs/web-interface-guidelines): accessibility and interaction checklist.
+- design-md (google-labs-code/stitch-skills): the format of DESIGN.md.
+- Fonts: Chakra Petch and Public Sans (SIL Open Font License), loaded from Google Fonts.

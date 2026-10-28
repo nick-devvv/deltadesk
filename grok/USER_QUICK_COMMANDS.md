@@ -16,6 +16,8 @@
 
 **Other tickers (watchlist, bottom left):** click a ticker to chart it and ask Chart about it. The buttons are Earnings play?, Key levels?, News? and Expected move?. Add or remove tickers right in the list. Earnings within 14 days show an ER badge. `IN NVDA 140C 1 at 3.20` and `OUT NVDA 4.10` log those trades to your journal with your time-of-day stop (20/12/10%). You manage them with Chart, because the desk only auto-manages SPY/QQQ 0DTE.
 
+**Options chain (under the chart):** calls/puts, expiry, bid/ask/mark, change, delta, breakeven, with the desk's pick marked and a green dot on contracts that fit your rules. Click a row, then **Ask Chart** (sends "SPY 765P 0DTE at 0.86 …: is this a good entry right now?") or **Log my fill** (fills the log form; you still buy in Robinhood first). Hide it to give the chart the full height.
+
 **Alerts:** the desk pings you for A/B setups and move alerts (2 heavy 5-minute candles), plus market-moving news from Chart's 20-minute scan. Turn pop-ups on with **Alerts** in the top bar, and pick which kinds you want on the Rules page. Phone pings work through the free ntfy app.
 `kill switch`: stops paper entries and closes all paper trades (Paper tab button, tap twice).
 

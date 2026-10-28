@@ -218,6 +218,16 @@ class H(BaseHTTPRequestHandler):
                 if not watchlist.valid(t):
                     return self._json({"error": "bad ticker"}, 400)
                 return self._json(altdata.ticker(t))
+            if u.path == "/api/chain":  # view-only option chain; no order path exists here
+                t = q.get("t", ["SPY"])[0].upper()
+                if not (t in ("SPY", "QQQ") or watchlist.valid(t)):
+                    return self._json({"error": "bad ticker"}, 400)
+                exp = q.get("exp", [None])[0]
+                if exp and not __import__("re").fullmatch(r"\d{4}-\d{2}-\d{2}", exp):
+                    exp = None
+                n = max(4, min(20, int(q.get("n", ["10"])[0] or 10)))
+                res = engine.option_chain(t, q.get("side", ["C"])[0], exp, n)
+                return self._json(clean({k: v for k, v in res.items() if not k.startswith("_")}))
             if u.path == "/api/watchlist":
                 return self._json({"tickers": watchlist.tickers(), "quotes": clean(watchlist.quotes())})
             if u.path == "/api/calendar":

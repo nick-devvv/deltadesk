@@ -271,6 +271,77 @@ def option_quote(symbol):
     return None, "no option data source"
 
 
+# ======================= options chain (view only: Nick buys in Robinhood himself) =======================
+_chain_cache, _chain_mx = {}, threading.Lock()
+
+
+def option_chain(ticker, side, exp=None, n=10, max_age=12):
+    """The chain around the money, like Robinhood's list: n strikes each side of the price, one expiry.
+    Read-only market data. Nothing here can place an order."""
+    ticker, side = ticker.upper(), ("C" if side.upper().startswith("C") else "P")
+    key = (ticker, side, exp, n)
+    with _chain_mx:
+        hit = _chain_cache.get(key)
+        if hit and (core.now_et() - hit["_at"]).total_seconds() < max_age:
+            return hit
+    today = core.now_et().date()
+    first = exp or today.isoformat()
+    through = None if exp else (today + timedelta(days=21)).isoformat()
+    rows, err, feed = None, None, None
+    if schwab.ready():
+        rows, err = schwab.chain(ticker, side, first, through)
+        feed = "Schwab live" if rows else None
+    if not rows and broker.configured():
+        rows, err2 = broker.chain(ticker, side, first, through)
+        err, feed = err2 or err, ("Alpaca delayed" if rows else None)
+    if not rows:
+        return {"ticker": ticker, "side": side, "rows": [], "expiries": [], "error": err or "no option data source (Alpaca or Schwab keys)", "_at": core.now_et()}
+    expiries = sorted({r.get("exp") or first for r in rows})
+    use = exp if exp in expiries else expiries[0]
+    rows = [r for r in rows if (r.get("exp") or first) == use]
+    spot = None
+    if broker.configured():
+        last, _ = broker.stock_last(ticker)
+        spot = float(last["price"]) if last and last.get("price") else None
+    if spot is None:
+        with _mx:
+            snap = _cache.get(ticker)
+        spot = snap.get("price") if snap else None
+    rows.sort(key=lambda r: r["strike"])
+    if spot:
+        below = [r for r in rows if r["strike"] <= spot][-n:]
+        above = [r for r in rows if r["strike"] > spot][:n]
+        rows = below + above
+    p = core.policy()["contract"]
+    dte = (datetime.strptime(use, "%Y-%m-%d").date() - today).days
+    out = []
+    for r in rows:
+        bid, ask = r.get("bid") or 0, r.get("ask") or 0
+        mark = round((bid + ask) / 2, 2) if ask else None
+        d, dsrc = r.get("delta"), None
+        if d is None and r.get("iv") and spot:
+            d = core.bs_delta(spot, r["strike"], r["iv"], side)
+            dsrc = "est" if d is not None else None
+        be = (r["strike"] + mark if side == "C" else r["strike"] - mark) if mark is not None else None
+        spread = (ask - bid) / ask if ask else None
+        ref = r.get("last") or mark
+        chg = round((ref - r["prev"]) / r["prev"] * 100, 1) if ref and r.get("prev") else None
+        fits = bool(ask and bid > 0 and p["premium_min"] <= ask <= p["premium_max"] and spread is not None
+                    and spread <= p["max_spread_pct"] and d is not None and p["abs_delta_min"] <= abs(d) <= p["abs_delta_max"])
+        out.append({"symbol": r["symbol"], "label": occ_to_label(r["symbol"]), "strike": r["strike"], "bid": bid, "ask": ask,
+                    "mark": mark, "delta": round(d, 2) if d is not None else None, "delta_src": dsrc,
+                    "iv": round(r["iv"] * 100, 1) if r.get("iv") else None, "breakeven": round(be, 2) if be is not None else None,
+                    "to_be_pct": round((be - spot) / spot * 100, 2) if be is not None and spot else None,
+                    "chg_pct": chg, "volume": r.get("volume"), "oi": r.get("oi"),
+                    "spread_pct": round(spread * 100, 1) if spread is not None else None,
+                    "itm": bool(spot and (r["strike"] < spot if side == "C" else r["strike"] > spot)), "fits": fits})
+    res = {"ticker": ticker, "side": side, "exp": use, "dte": dte, "expiries": expiries, "spot": spot, "feed": feed,
+           "rows": out, "fetched": core.now_et().isoformat(timespec="seconds"), "_at": core.now_et()}
+    with _chain_mx:
+        _chain_cache[key] = res
+    return res
+
+
 def occ_to_label(sym):
     side = sym[-9]
     return f"{int(sym[-8:]) / 1000:g}{side}"

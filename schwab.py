@@ -204,17 +204,18 @@ def _num(v):
     return None if v <= -999 or v != v else v      # Schwab sends -999 when a greek isn't available
 
 
-def chain(ticker, side, expiry):
-    """Live chain for one side and expiry: [{symbol, strike, bid, ask, ts, delta, iv, feed}] like broker.chain."""
+def chain(ticker, side, expiry, through=None):
+    """Live chain for one side: [{symbol, strike, exp, bid, ask, ts, delta, iv, last, prev, volume, oi, feed}] like broker.chain.
+    expiry alone = that day only; with through = every expiry from expiry to through."""
     typ = "CALL" if side.upper().startswith("C") else "PUT"
     j, err = _get("/marketdata/v1/chains", {"symbol": ticker.upper(), "contractType": typ, "fromDate": expiry,
-                                            "toDate": expiry, "strategy": "SINGLE", "includeUnderlyingQuote": "false"})
+                                            "toDate": through or expiry, "strategy": "SINGLE", "includeUnderlyingQuote": "false"})
     if not j:
         return None, err
     m = j.get("callExpDateMap" if typ == "CALL" else "putExpDateMap") or {}
     rows = []
     for exp_key, strikes in m.items():
-        if not exp_key.startswith(expiry):
+        if not through and not exp_key.startswith(expiry):
             continue
         for k, lst in strikes.items():
             for o in lst or []:
@@ -225,6 +226,7 @@ def chain(ticker, side, expiry):
                 rows.append({"symbol": occ(o.get("symbol")), "strike": float(o.get("strikePrice") or k), "bid": bid, "ask": ask,
                              "ts": datetime.fromtimestamp((o.get("quoteTimeInLong") or 0) / 1000, core.ET).isoformat() if o.get("quoteTimeInLong") else None,
                              "delta": _num(o.get("delta")), "iv": iv / 100 if iv and iv > 3 else iv,
+                             "exp": exp_key[:10], "last": _num(o.get("last")), "prev": _num(o.get("closePrice")),
                              "volume": o.get("totalVolume"), "oi": o.get("openInterest"), "feed": "Schwab live"})
     return rows, None if rows else "empty chain"
 

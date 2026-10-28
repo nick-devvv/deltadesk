@@ -601,3 +601,32 @@ def test_alerts_setups_moves_news(desk_env, monkeypatch):
     alerts.set_settings({"news": False})
     assert len(alerts.add_news([{"headline": "CPI comes in hot at 0.5% vs 0.3% expected", "impact": "high"}])) == 1
     assert store.q("SELECT COUNT(*) n FROM events WHERE kind='alert'")[0]["n"] == 3   # news alerts off: stored, not pinged
+
+
+def test_option_chain_view_only(desk_env, monkeypatch):
+    """Robinhood-style chain around the money: strikes both sides of price, mark, breakeven, rule fit. Never orders."""
+    clock = desk_env
+    clock.t = DAY.replace(hour=10, minute=5)
+    import schwab
+    monkeypatch.setattr(schwab, "ready", lambda: False)
+    monkeypatch.setattr(broker, "configured", lambda: True)
+    monkeypatch.setattr(broker, "submit", lambda *a, **k: (_ for _ in ()).throw(AssertionError("chain must never order")))
+    monkeypatch.setattr(broker, "stock_last", lambda t: ({"price": 765.30, "ts": None, "feed": "IEX"}, None))
+    exp = clock.t.strftime("%Y-%m-%d"); yymmdd = clock.t.strftime("%y%m%d")
+    def fake_chain(t, side, first, through=None):
+        rows = []
+        for k in range(755, 776):
+            mid = max(0.05, 0.95 + (k - 765.3) * 0.18) if side == "C" else max(0.05, 0.95 - (k - 765.3) * 0.18)
+            rows.append({"symbol": f"SPY{yymmdd}C{k*1000:08d}", "strike": float(k), "exp": exp, "bid": round(mid - 0.02, 2),
+                         "ask": round(mid + 0.02, 2), "delta": 0.45 if k == 765 else (0.7 if k < 765 else 0.25), "iv": 0.2,
+                         "last": round(mid, 2), "prev": 1.0, "volume": 1200})
+        return rows, None
+    monkeypatch.setattr(broker, "chain", fake_chain)
+    c = engine.option_chain("SPY", "C", None, n=4)
+    strikes = [r["strike"] for r in c["rows"]]
+    assert strikes == [762, 763, 764, 765, 766, 767, 768, 769] and c["spot"] == 765.30 and c["exp"] == exp and c["dte"] == 0
+    r765 = next(r for r in c["rows"] if r["strike"] == 765)
+    assert r765["fits"] and r765["label"] == "765C" and r765["breakeven"] == round(765 + r765["mark"], 2)
+    assert r765["itm"] and not next(r for r in c["rows"] if r["strike"] == 766)["itm"]
+    assert not next(r for r in c["rows"] if r["strike"] == 762)["fits"]       # delta 0.70: outside 0.40-0.55
+    assert c["feed"] == "Alpaca delayed"
