@@ -98,11 +98,11 @@ main{min-width:0;min-height:0;overflow:hidden;display:flex;flex-direction:column
 .empty{color:var(--ink-3);font:12.5px var(--sans);padding:6px 0}
 
 /* deck layout */
-.trade{display:grid;grid-template-columns:300px minmax(0,1fr) 400px;gap:18px;padding:16px 20px 14px;height:100%}
+.trade{display:grid;grid-template-columns:330px minmax(0,1fr) 400px;gap:18px;padding:16px 20px 14px;height:100%}
 .col{display:flex;flex-direction:column;gap:14px;min-height:0;min-width:0}
 
 /* left: market core + lists, no boxes */
-.corewrap{position:relative;height:200px}
+.corewrap{position:relative;height:170px}
 #core{position:absolute;inset:0;width:100%;height:100%}
 .corepx{position:absolute;left:50%;top:46%;transform:translate(-50%,-50%);text-align:center;pointer-events:none}
 .corepx .tk{font:600 13px var(--disp);letter-spacing:.04em;color:var(--brand-2)}
@@ -112,7 +112,7 @@ main{min-width:0;min-height:0;overflow:hidden;display:flex;flex-direction:column
 .mini{display:grid;grid-template-columns:.8fr 1.3fr 1fr .7fr;gap:8px;padding:6px 2px 0}
 .mini small{display:block;font:400 12px var(--sans);color:var(--ink-3)}
 .mini b{display:block;font:500 12.5px var(--sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.lists{flex:1;min-height:0;display:flex;flex-direction:column;border-top:1px solid var(--line);padding-top:4px}
+.lists{flex:1 1 0;min-height:150px;display:flex;flex-direction:column;border-top:1px solid var(--line);padding-top:2px}
 .tabs{display:flex;gap:18px;padding:8px 2px 8px}
 .tab{border:0;border-radius:0;padding:4px 0;background:none;font:600 14px var(--disp);letter-spacing:.02em;color:var(--ink-3);box-shadow:none;position:relative}
 .tab[aria-selected=true]{color:var(--ink)}
@@ -172,14 +172,21 @@ main{min-width:0;min-height:0;overflow:hidden;display:flex;flex-direction:column
 #tv{position:absolute;inset:0}
 
 /* options chain under the chart (view only, laid out like Robinhood's list) */
-.center{gap:12px}
-.chain{flex:none;height:min(40vh,360px);display:flex;flex-direction:column;border-radius:18px;background:var(--glass);border:1px solid var(--line);overflow:hidden}
-.chain.closed{height:auto}
-.chain.closed #chMain{display:none}
+.chain{flex:2 1 0;min-height:260px;display:flex;flex-direction:column;border-top:1px solid var(--line);padding-top:4px;overflow:hidden}
+.chain.closed{flex:none;min-height:0;cursor:pointer}
+.chain.closed #chMain,.chain.closed .chbar .seg,.chain.closed #chExp{display:none}
+.chain:not(.closed) .chsum{display:none}
+.chain .chspot{display:none}
+.chsum{font-size:12px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1 1 auto}
+.chsum b{font:600 13px var(--disp);color:var(--ink);letter-spacing:.01em}
 #chMain{flex:1;min-height:0;display:flex;flex-direction:column}
-.chbar{display:flex;align-items:center;gap:14px;padding:8px 16px 6px;flex-wrap:wrap}
-.chbar h2{font:600 15px var(--disp);letter-spacing:.02em}
-.chbar .seg button{font-size:13px;padding:4px 6px}
+.chbar{display:flex;align-items:center;gap:8px 12px;padding:8px 2px 6px;flex-wrap:wrap}
+.chbar h2{font:600 14px var(--disp);letter-spacing:.02em;color:var(--ink)}
+.chbar .seg button{font-size:13px;padding:4px 5px}
+.chbar select{flex:none;padding:4px 8px;font-size:12px}
+.chain{position:relative}
+.chbar{gap:8px;padding-right:36px}
+.chtoggle{position:absolute;right:0;top:8px;width:28px;height:28px}
 .chbar select{padding:5px 10px;border-radius:8px;font-size:12.5px;background:var(--glass);color:var(--ink)}
 .chspot{font:600 14px var(--disp);letter-spacing:.01em}
 .chfeed{font-size:12px;color:var(--warn)}
@@ -187,36 +194,39 @@ main{min-width:0;min-height:0;overflow:hidden;display:flex;flex-direction:column
 .chtoggle{margin-left:auto}
 .chfeed.live{color:var(--up)}
 .chtoggle{padding:3px 11px;font-size:12px}
-.chwrap{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:0 8px;scrollbar-width:thin}
-.chtable{font-size:13px}
-.chtable th{position:sticky;top:0;background:var(--glass);z-index:1;padding:6px 10px}
-.chtable td{padding:7px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+.chwrap{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin}
+.chtable{font-size:12.5px}
+.chtable th{position:sticky;top:0;background:var(--bg);z-index:1;padding:4px 4px}
+.chtable td{padding:6px 4px;border-bottom:1px solid var(--line);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .chtable tbody tr{cursor:pointer}
 .chtable tbody tr:hover td{background:rgba(255,255,255,.03)}
 .chtable tr.itm td{background:rgba(255,255,255,.022)}
 .chtable tr.sel td{background:rgba(255,51,85,.1)}
 .chtable tr.sel td:first-child{box-shadow:inset 1px 0 0 var(--brand)}
-.chtable td.k{font:600 14px var(--disp);letter-spacing:.01em}
+.chtable td.k{font:600 13.5px var(--disp);letter-spacing:.01em}
 .chtable td.mk{font-weight:600;color:var(--ink)}
-.chtable .pick{display:inline-block;margin-left:8px;padding:0 6px;border-radius:4px;font:600 11px var(--sans);color:#fff;background:#C81A37;vertical-align:1px}
+.chtable .pick{display:inline-block;margin-left:6px;padding:0 6px;border-radius:4px;font:600 11px var(--sans);color:#fff;background:#C81A37;vertical-align:1px}
 .fitdot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--up);margin:0 4px 1px 6px;vertical-align:middle}
 .chtable tr.spot td{padding:0;border:0;cursor:default;background:none!important}
 .chtable tr.spot div{display:flex;align-items:center;gap:10px;color:var(--brand-2);font:600 12px var(--sans);padding:4px 0}
 .chtable tr.spot div:before,.chtable tr.spot div:after{content:"";flex:1;height:1px;background:var(--line-2)}
-.chpick{display:flex;align-items:center;gap:12px;padding:6px 16px;border-top:1px solid var(--line);background:var(--glass-2)}
-.chpick .l{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chpick{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;padding:6px 8px;border-top:1px solid var(--line);background:var(--glass-2);border-radius:10px;margin-top:4px}
+.chpick .l{min-width:0;flex:1 1 100%;font-size:12px;line-height:1.4}
+.chpick .l b{display:inline;font-size:13px}
+.chpick .l span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:11.5px}
+.chpick .r button{padding:3px 11px;font-size:12px}
 .chpick:not([hidden])+.chnote{display:none}
 .chpick[hidden]{display:none}
 .chpick b{font:600 14px var(--disp);letter-spacing:.01em;margin-right:10px}
 .chpick span{color:var(--ink-2);font-size:12.5px}
-.chpick .r{margin-left:auto;display:flex;gap:6px;flex:none}
+.chpick .r{display:flex;gap:6px;flex:none}
 .chpick .r button{white-space:nowrap}
-.chnote{padding:7px 16px 8px;font-size:12px;color:var(--ink-3);border-top:1px solid var(--line);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chnote{padding:6px 2px 2px;font-size:12px;color:var(--ink-3)}
 
 /* right: plan hero, positions, chat */
 .rbox{flex:1;min-height:0;display:flex;flex-direction:column;background:var(--glass);border:1px solid var(--line);border-radius:18px;overflow:hidden}
 .rscroll{flex:1;overflow:auto;min-height:0;overscroll-behavior:contain;scrollbar-width:thin}
-.hero{padding:18px 20px 16px;background:var(--glass-2);border-bottom:1px solid var(--line)}
+.hero{flex:none;max-height:58%;overflow:auto;scrollbar-width:thin;padding:18px 20px 16px;background:var(--glass-2);border-bottom:1px solid var(--line)}
 .hero-meta{display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--ink-3);margin-bottom:8px}
 .hero-meta b{font:600 14px var(--disp);letter-spacing:.02em;color:var(--ink-2)}
 .plan-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
@@ -269,6 +279,14 @@ dd small{color:var(--ink-3);font:400 12px var(--sans)}
 .msg.desk .full{white-space:pre-wrap;margin-top:4px}
 .msg .who{display:block;font:500 12px var(--sans);color:var(--ink-3);margin-bottom:2px}
 .msg.chart .who{color:var(--brand-2)}
+.rvq{font:13px var(--sans);color:var(--ink);margin:8px 0 4px}
+.reviewcard .rvq:first-of-type{margin-top:2px}
+.rv-in{width:100%;margin-top:8px;font:13px var(--sans)}
+.rvrow{display:flex;gap:6px;margin-top:10px;align-items:center}
+.rvrow .rv-s{font-size:12px}
+.reviewcard .tags{gap:5px}
+.reviewcard .tag{padding:2px 9px;font-size:11.5px!important}
+.reviewcard .rv-in{padding:7px 11px;margin-top:6px}
 .msg.reviewcard{align-self:stretch;max-width:100%;padding:12px 14px;border:1px solid var(--line-2);border-left:1px solid var(--line-2);border-radius:14px;background:rgba(255,51,85,.06);white-space:normal}
 .composer{border-top:1px solid var(--line);padding:12px 16px 12px;background:rgba(0,0,0,.18)}
 .quick{display:flex;gap:6px;margin-bottom:10px;overflow-x:auto;scrollbar-width:none}
@@ -373,7 +391,7 @@ td.n,th.n{text-align:right;white-space:nowrap}
 @media (max-width:700px){.jvtext{grid-template-columns:1fr}.jvtext #jvHint{grid-column:1}}
 
 @media (max-width:1600px){ .hide-xl{display:none!important} }
-@media (max-width:1440px){ .hide-lg{display:none!important} .trade{grid-template-columns:280px minmax(0,1fr) 380px;gap:16px} header{gap:16px} }
+@media (max-width:1440px){ .hide-lg{display:none!important} .trade{grid-template-columns:310px minmax(0,1fr) 380px;gap:16px} header{gap:16px} }
 @media (max-width:1300px){ .hide-md{display:none!important} nav a{padding:8px 9px} .brand b{letter-spacing:.1em} }
 @media (max-width:1100px){
   body{overflow:auto}
@@ -386,9 +404,9 @@ td.n,th.n{text-align:right;white-space:nowrap}
   .trade{grid-template-columns:1fr;height:auto;padding:14px 16px}
   .center{order:-2} .right{order:-1}
   .frame{flex:none;height:60vh}
-  .chain{height:60vh}
+  .chain{flex:none;height:auto}.chwrap{max-height:52vh}
   .rbox{flex:none;max-height:86vh}
-  .lists{flex:none;height:360px}
+  .lists{flex:none;height:320px}
   .tape{position:sticky;bottom:0}
 }
 @media (max-width:600px){
@@ -398,7 +416,7 @@ td.n,th.n{text-align:right;white-space:nowrap}
   .hud{order:4;width:100%;justify-content:flex-start;gap:22px} #streak{order:4}
   .right{order:-2} .center{order:-1}
   .frame{height:48vh}
-  .chain{height:70vh}
+
   .chpick{flex-wrap:wrap}.chpick .r{margin-left:0}
   .chbar{gap:10px 14px}.chnote{white-space:normal}.chpick .l{white-space:normal}
   .trade{padding-bottom:52px}
@@ -460,6 +478,26 @@ td.n,th.n{text-align:right;white-space:nowrap}
             <div><small>AI</small><b id="aiCalls" title="Chart AI calls today">—</b></div>
           </div>
         </section>
+        <section class="chain" id="chain" aria-labelledby="chTitle">
+          <div class="chbar">
+            <h2 id="chTitle">Options</h2>
+            <span class="chsum" id="chSum"></span>
+            <div class="seg" role="group" aria-label="Calls or puts"><button type="button" data-cs="C" aria-pressed="true">Calls</button><button type="button" data-cs="P" aria-pressed="false">Puts</button></div>
+            <label class="sr" for="chExp">Expiration</label><select id="chExp"></select>
+            <span class="chspot" id="chSpot"></span>
+            <button type="button" class="chtoggle ibtn" id="chToggle" aria-expanded="true" aria-controls="chMain" aria-label="Fold the options chain" title="Fold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg></button>
+          </div>
+          <div id="chMain">
+            <div class="chwrap"><table class="chtable"><thead><tr>
+              <th>Strike</th><th class="n">Bid</th><th class="n">Ask</th><th class="n">Mark</th><th class="n" title="Delta">Δ</th>
+            </tr></thead><tbody id="chBody"><tr><td colspan="5" class="m">Loading the chain…</td></tr></tbody></table></div>
+            <div class="chpick" id="chPick" hidden>
+              <div class="l"><b id="chpName"></b><span id="chpMeta"></span></div>
+              <div class="r"><button type="button" id="chpAsk">Ask Chart</button><button type="button" id="chpLog">Log my fill</button></div>
+            </div>
+            <p class="chnote" id="chNote"><span class="chfeed" id="chFeed"></span> View only. <span class="fitdot" title="Δ 0.40–0.55, $0.10–$3.00, spread under 10%"></span>fits your rules.</p>
+          </div>
+        </section>
         <section class="lists" aria-label="Watchlist, feed and news">
           <div class="tabs" role="tablist">
             <button type="button" role="tab" class="tab" data-tab="watch" aria-selected="true">Watchlist</button>
@@ -486,34 +524,15 @@ td.n,th.n{text-align:right;white-space:nowrap}
           <div class="fhead"><h1 id="chartSym">SPY <span>5m</span></h1><span class="m hide-sm">TradingView</span></div>
           <div class="chartbox"><div id="tv"></div></div>
         </section>
-        <section class="chain" id="chain" aria-labelledby="chTitle">
-          <div class="chbar">
-            <h2 id="chTitle">Options</h2>
-            <div class="seg" role="group" aria-label="Calls or puts"><button type="button" data-cs="C" aria-pressed="true">Calls</button><button type="button" data-cs="P" aria-pressed="false">Puts</button></div>
-            <label class="sr" for="chExp">Expiration</label><select id="chExp"></select>
-            <span class="chspot" id="chSpot"></span>
-            <button type="button" class="chtoggle" id="chToggle" aria-expanded="true" aria-controls="chMain">Hide</button>
-          </div>
-          <div id="chMain">
-            <div class="chwrap"><table class="chtable"><thead><tr>
-              <th>Strike</th><th class="n">Bid</th><th class="n">Ask</th><th class="n">Mark</th><th class="n hide-sm">Change</th><th class="n">Δ</th><th class="n hide-lg hide-sm">IV</th><th class="n hide-md">Breakeven</th><th class="n hide-sm">To breakeven</th><th class="n hide-lg hide-sm">Volume</th><th class="n hide-lg hide-sm" id="chOiH">Open int.</th>
-            </tr></thead><tbody id="chBody"><tr><td colspan="11" class="m">Loading the chain…</td></tr></tbody></table></div>
-            <div class="chpick" id="chPick" hidden>
-              <div class="l"><b id="chpName"></b><span id="chpMeta"></span></div>
-              <div class="r"><button type="button" id="chpAsk">Ask Chart</button><button type="button" id="chpLog">Log my fill</button></div>
-            </div>
-            <p class="chnote" id="chNote"><span class="chfeed" id="chFeed"></span> View only, you buy in Robinhood. <span class="fitdot"></span>fits your rules (Δ 0.40–0.55, $0.10–$3.00, spread under 10%).</p>
-          </div>
-        </section>
       </div>
 
       <aside class="col right" aria-label="Plan and conversation">
         <section class="rbox">
+          <section class="hero" aria-label="Plan">
+            <div class="hero-meta"><b>Plan</b><span id="planAge"></span></div>
+            <div id="plan"><div class="empty">No plan yet. Type what you see, like “SPY rejected PDH, puts?”</div></div>
+          </section>
           <div class="rscroll" id="rscroll">
-            <section class="hero" aria-label="Plan">
-              <div class="hero-meta"><b>Plan</b><span id="planAge"></span></div>
-              <div id="plan"><div class="empty">No plan yet. Type what you see, like “SPY rejected PDH, puts?”</div></div>
-            </section>
             <section class="sec" aria-labelledby="posTitle">
               <h2 id="posTitle">Positions</h2>
               <div id="positions"><div class="empty">No open positions.</div></div>
@@ -804,6 +823,7 @@ function addEvent(e){
   if (e.kind === "alert" && booted) notify(e.text, ad);
   const row = document.createElement("div"); row.className = "ev" + (booted ? " new" : "");
   row.innerHTML = `<time>${hhmm(e.ts)}</time><span class="k ${kind}">${esc(label)}</span><span class="t">${esc(e.text)}</span>`;
+  if (e.kind === "alert"){ const tk = (e.text.match(/^(?:MOVE ALERT )?(SPY|QQQ)\b/) || [])[1]; if (tk){ row.style.cursor = "pointer"; row.title = "Show " + tk; row.onclick = () => { if (tk !== ticker) setTicker(tk); }; } }
   const f = $("#feed"); f.prepend(row);
   while (f.children.length > 150) f.lastChild.remove();
   if (booted && !muted && !(window.Voice && Voice.isOpen()) && (e.kind === "real_alert" || e.kind === "watch") && "speechSynthesis" in window) {
@@ -826,7 +846,8 @@ function notify(text, ad){
   if (ad.kind === "news"){ if ($("#pane-news").hidden){ newsUnread++; const b = $("#newsBadge"); b.hidden = false; b.textContent = newsUnread; } loadNews(); }
   if (window.Voice && Voice.isOpen() && ad.level === "high") return;
   if (notifyOn && "Notification" in window && Notification.permission === "granted" && (document.hidden || !document.hasFocus())){
-    try { const n = new Notification(title, {body: rest.join(" · ").slice(0, 180), tag: title.slice(0, 40), silent: true}); n.onclick = () => { window.focus(); n.close(); }; } catch(x){}
+    const tk = (title.match(/\b(SPY|QQQ)\b/) || [])[1];
+    try { const n = new Notification(title, {body: rest.join("\n").slice(0, 400), tag: title.slice(0, 40), silent: true}); n.onclick = () => { window.focus(); n.close(); if (tk && tk !== ticker) setTicker(tk); }; } catch(x){}
   }
 }
 function setBell(){ const b = $("#bellBtn"); b.setAttribute("aria-pressed", String(notifyOn)); $("#bellTxt").textContent = notifyOn ? "Alerts on" : "Alerts off"; b.title = notifyOn ? "Pop-up alerts are on (click to turn off)" : "Turn on pop-up alerts"; }
@@ -863,17 +884,17 @@ function renderTape(){
 /* ---------- options chain: view only, like Robinhood's list. Nick buys in Robinhood himself. ---------- */
 window.Chain = (() => {
   let side = null, exp = "", data = null, sel = null, timer = 0, busy = false, forTicker = "";
-  let closed = store.get("chainClosed", false);
+  let closed = store.get("chainClosed3", false);
   const open = () => !closed;
   const fmt = (v, d = 2) => v == null ? "—" : Number(v).toFixed(d);
   const sgn = v => v == null ? "—" : (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v).toFixed(2) + "%";
   const expLabel = (e, dte) => { const d = new Date(e + "T12:00:00"); const md = d.toLocaleDateString("en-US", {month: "short", day: "numeric"});
-    return dte === 0 ? `Today, ${md} (0DTE)` : `${md} (${dte}d)`; };
+    return dte === 0 ? `Today (0DTE)` : `${md} (${dte}d)`; };
   function deskPick(){ const p = S && currentPlan(); return p && p.contract && p.ticker === ticker ? p.contract.symbol : null; }
   function setOpen(o){
-    closed = !o; store.set("chainClosed", closed);
+    closed = !o; store.set("chainClosed3", closed);
     $("#chain").classList.toggle("closed", closed);
-    $("#chToggle").textContent = closed ? "Show" : "Hide"; $("#chToggle").setAttribute("aria-expanded", String(!closed));
+    $("#chToggle").style.transform = closed ? "rotate(180deg)" : ""; $("#chToggle").title = closed ? "Open" : "Fold"; $("#chToggle").setAttribute("aria-expanded", String(!closed));
     clearInterval(timer);
     if (!closed){ load(); timer = setInterval(() => { if (open() && !document.hidden) load(); }, 15000); }
   }
@@ -886,34 +907,28 @@ window.Chain = (() => {
     try{
       data = await api(`api/chain?t=${encodeURIComponent(ticker)}&side=${side}&n=10${exp ? "&exp=" + exp : ""}`);
       draw();
-    }catch(e){ $("#chBody").innerHTML = `<tr><td colspan="11" class="m">Couldn’t load the chain: ${esc(e.message)}. Try again in a moment.</td></tr>`; }
+    }catch(e){ $("#chBody").innerHTML = `<tr><td colspan="5" class="m">Couldn’t load the chain: ${esc(e.message)}. Try again in a moment.</td></tr>`; }
     busy = false;
   }
   function paintSide(){ $$("#chain [data-cs]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.cs === side))); }
   function draw(){
     const d = data || {}, body = $("#chBody");
-    $("#chFeed").textContent = d.feed ? (/live/i.test(d.feed) ? "Live (Schwab)" : "Delayed quotes, check Legend before you buy") + (d.fetched ? ` (${d.fetched.slice(11, 16)}).` : ".") : "";
+    $("#chFeed").textContent = d.feed ? (/live/i.test(d.feed) ? "Live (Schwab)" : "Delayed, check Legend") + (d.fetched ? ` (${d.fetched.slice(11, 16)}).` : ".") : "";
     $("#chFeed").classList.toggle("live", /live/i.test(d.feed || ""));
     $("#chSpot").innerHTML = d.spot ? `${esc(d.ticker)} ${fmt(d.spot)}<small>share price</small>` : esc(d.ticker || ticker);
     const ex = $("#chExp"); const opts = (d.expiries || []).map(e => { const dte = Math.round((new Date(e + "T12:00:00") - new Date(todayET() + "T12:00:00")) / 864e5);
       return `<option value="${e}"${e === d.exp ? " selected" : ""}>${expLabel(e, dte)}</option>`; }).join("");
     if (ex.innerHTML !== opts) ex.innerHTML = opts;
-    if (d.error || !(d.rows || []).length){ body.innerHTML = `<tr><td colspan="11" class="m">${esc(d.error ? "No chain: " + d.error : "No contracts for this expiry.")}</td></tr>`; $("#chPick").hidden = true; return; }
-    const hasOi = d.rows.some(r => r.oi != null); $("#chOiH").style.display = hasOi ? "" : "none";
+    if (d.error || !(d.rows || []).length){ body.innerHTML = `<tr><td colspan="5" class="m">${esc(d.error ? "No chain: " + d.error : "No contracts for this expiry.")}</td></tr>`; $("#chPick").hidden = true; return; }
     const pick = deskPick(); let html = "", spotDone = false;
-    const spotRow = `<tr class="spot" aria-hidden="true"><td colspan="11"><div>${esc(d.ticker)} ${fmt(d.spot)}</div></td></tr>`;
+    const spotRow = `<tr class="spot" aria-hidden="true"><td colspan="5"><div>${esc(d.ticker)} ${fmt(d.spot)}</div></td></tr>`;
     for (const r of d.rows){
       if (d.spot && !spotDone && r.strike > d.spot){ html += spotRow; spotDone = true; }
       const cls = [r.itm ? "itm" : "", r.symbol === sel ? "sel" : ""].join(" ").trim();
       html += `<tr data-s="${esc(r.symbol)}" class="${cls}" tabindex="0" aria-selected="${r.symbol === sel}">
-        <td class="k">${fmt(r.strike, r.strike % 1 ? 1 : 0)}${r.fits ? '<span class="fitdot" title="Fits your rules"></span>' : ""}${r.symbol === pick ? '<span class="pick">Desk pick</span>' : ""}</td>
+        <td class="k">${fmt(r.strike, r.strike % 1 ? 1 : 0)}${r.fits ? '<span class="fitdot" title="Fits your rules"></span>' : ""}${r.symbol === pick ? '<span class="pick" title="The desk\'s pick">Pick</span>' : ""}</td>
         <td class="n">${fmt(r.bid)}</td><td class="n">${fmt(r.ask)}</td><td class="n mk">${fmt(r.mark)}</td>
-        <td class="n hide-sm ${tone(r.chg_pct)}">${r.chg_pct == null ? "—" : sgn(r.chg_pct)}</td>
-        <td class="n">${r.delta == null ? "—" : Math.abs(r.delta).toFixed(2) + (r.delta_src ? " est." : "")}</td>
-        <td class="n hide-lg hide-sm">${r.iv == null ? "—" : r.iv.toFixed(1) + "%"}</td>
-        <td class="n hide-md">${fmt(r.breakeven)}</td><td class="n hide-sm">${r.to_be_pct == null ? "—" : sgn(r.to_be_pct)}</td>
-        <td class="n hide-lg hide-sm">${r.volume == null ? "—" : Number(r.volume).toLocaleString("en-US")}</td>
-        <td class="n hide-lg hide-sm"${hasOi ? "" : ' style="display:none"'}>${r.oi == null ? "—" : Number(r.oi).toLocaleString("en-US")}</td></tr>`;
+        <td class="n"${r.delta_src ? ' title="estimated from IV"' : ""}>${r.delta == null ? "—" : Math.abs(r.delta).toFixed(2)}</td></tr>`;
     }
     if (d.spot && !spotDone) html += spotRow;
     const scrolled = $(".chwrap").scrollTop; body.innerHTML = html;
@@ -925,20 +940,28 @@ window.Chain = (() => {
     if (!r){ box.hidden = true; return; }
     box.hidden = false;
     $("#chpName").textContent = `${data.ticker} ${r.label} ${data.dte === 0 ? "0DTE" : data.exp.slice(5)}`;
-    $("#chpMeta").textContent = `Mark ${fmt(r.mark)}, ask ${fmt(r.ask)}, Δ ${r.delta == null ? "—" : Math.abs(r.delta).toFixed(2)}, breakeven ${fmt(r.breakeven)}${r.fits ? ", fits your rules" : ", outside your rules"}`;
+    $("#chpMeta").textContent = `Mark ${fmt(r.mark)}, ask ${fmt(r.ask)}, Δ ${r.delta == null ? "—" : Math.abs(r.delta).toFixed(2)}, breakeven ${fmt(r.breakeven)} (${r.to_be_pct == null ? "—" : sgn(r.to_be_pct)}), change ${r.chg_pct == null ? "—" : sgn(r.chg_pct)}${r.iv != null ? `, IV ${r.iv.toFixed(1)}%` : ""}${r.volume != null ? `, vol ${Number(r.volume).toLocaleString("en-US")}` : ""}. ${r.fits ? "Fits your rules." : "Outside your rules."}`;
   }
   $("#chBody").addEventListener("click", e => { const tr = e.target.closest("tr[data-s]"); if (!tr) return; sel = tr.dataset.s === sel ? null : tr.dataset.s; draw(); });
   $("#chBody").addEventListener("keydown", e => { if ((e.key === "Enter" || e.key === " ") && e.target.matches("tr[data-s]")){ e.preventDefault(); e.target.click(); } });
   $$("#chain [data-cs]").forEach(b => b.onclick = () => { if (b.dataset.cs === side) return; side = b.dataset.cs; sel = null; paintSide(); $(".chwrap").scrollTop = 0; load(); });
   $("#chExp").onchange = e => { exp = e.target.value; sel = null; $(".chwrap").scrollTop = 0; load(); };
-  $("#chToggle").onclick = () => setOpen(closed);
+  $("#chToggle").onclick = e => { e.stopPropagation(); setOpen(closed); };
+  $("#chain").addEventListener("click", e => { if (closed && !e.target.closest("button,select")) setOpen(true); });
+  $("#chSum").title = "Open the options chain";
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && !closed && $("#jarvis").hidden) setOpen(false); });
+  function summary(){
+    const p = S && currentPlan(), c = p && p.contract && p.ticker === ticker ? p.contract : null;
+    $("#chSum").innerHTML = c ? `Desk pick <b>${esc(c.label)}</b>, bid ${Number(c.bid).toFixed(2)}, ask ${Number(c.ask).toFixed(2)}`
+                               : `Strikes and prices for ${esc(ticker)}`;
+  }
   $("#chpAsk").onclick = () => { const r = data && data.rows.find(x => x.symbol === sel); if (r) send(`${data.ticker} ${r.label} ${data.dte === 0 ? "0DTE" : "exp " + data.exp} at ${fmt(r.mark)} (ask ${fmt(r.ask)}, delta ${r.delta == null ? "?" : Math.abs(r.delta).toFixed(2)}): is this a good entry right now?`); };
   $("#chpLog").onclick = () => { const r = data && data.rows.find(x => x.symbol === sel); if (!r) return;
     const f = $("#fillForm"); f.hidden = false; f.side.value = "IN"; f.contract.value = r.label; f.price.value = fmt(r.ask); f.price.focus();
     $("#sendStatus").textContent = "Buy it in Robinhood first, then fix the price to your real fill and press Log."; };
-  return { setOpen, onTicker(){ side = null; if (open()) load(); }, refresh(){ if (open() && !data) return load(); if (open() && data) { const p = deskPick(); if (p !== this._p){ this._p = p; draw(); } } } };
+  return { setOpen, summary, onTicker(){ side = null; if (open()) load(); }, refresh(){ summary(); if (open() && !data) return load(); if (open() && data) { const p = deskPick(); if (p !== this._p){ this._p = p; draw(); } } } };
 })();
-Chain.setOpen(!store.get("chainClosed", false));
+Chain.setOpen(!store.get("chainClosed3", false));
 
 $("#tapeBar").onclick = () => $("#tapeBar").classList.toggle("paused");
 loadNews();
@@ -978,6 +1001,7 @@ function render(){
   const jb = $("#jBadge"); jb.hidden = !S.unreviewed_today; jb.textContent = S.unreviewed_today || "";
   renderPlan(plan); renderPositions();
   Core.update(S, plan); if (window.Chain) Chain.refresh();
+  Reviews.sync(S.unreviewed); DayWrap.maybe();
   if (!$("#v-paper").hidden) renderPaperLive();
 }
 function currentPlan(){
@@ -1078,7 +1102,7 @@ async function send(text, explain=true){
   $("#sendStatus").textContent = "Working…"; $("#sendBtn").disabled = true;
   try{
     const r = await api("api/command", {text, ticker, explain});
-    if (r.review) setTimeout(() => reviewCard(r.review), 300);
+    if (r.review) setTimeout(() => Reviews.show(r.review), 300);
     if (r.coach_pending){
       pending = true; $("#sendStatus").textContent = r.plan ? "Plan is up. Chart is writing a short explanation…" : "Sent to Chart. Waiting for a reply…";
       setTimeout(()=>{ if (pending) $("#sendStatus").textContent = "Chart hasn’t answered yet. Any plan shown above is still the one to use."; }, 90000);
@@ -1117,25 +1141,68 @@ $("#muteBtn").onclick = () => { muted = !muted; store.set("muted", muted); setMu
 setMute();
 
 /* ---------- quick review right after each closed trade (saves to the Journal) ---------- */
-function reviewCard(rv){
-  const d = document.createElement("div"); d.className = "msg desk reviewcard";
-  d.innerHTML = `<span class="who">Quick review, ${esc(rv.trade)}</span>
-    <div style="font:13px var(--sans);color:var(--ink);margin-bottom:6px">Followed the plan?</div>
-    <div class="tags" data-g="plan">${["yes","partly","no"].map(x => `<button type="button" class="tag" data-v="${x}">${x}</button>`).join("")}</div>
-    <div style="font:12.5px var(--sans);color:var(--ink);margin:8px 0 4px">Any mistakes?</div>
-    <div class="tags" data-g="mis">${MISTAKES.map(t => `<label class="tag"><input type="checkbox" value="${t}">${t}</label>`).join("")}</div>
-    <input class="rv-exit" placeholder="Why I exited (one line)…" style="width:100%;margin-top:8px;font:12.5px var(--sans)">
-    <div style="display:flex;gap:6px;margin-top:8px;align-items:center"><button type="button" class="rv-save">Save to journal</button><button type="button" class="rv-skip">Later</button><span class="m rv-s" style="font-size:11px"></span></div>`;
-  let plan = "";
-  d.querySelectorAll('[data-g="plan"] .tag').forEach(b => b.onclick = () => { plan = b.dataset.v; d.querySelectorAll('[data-g="plan"] .tag').forEach(x => x.classList.toggle("on", x === b)); });
-  d.querySelector(".rv-skip").onclick = () => { d.querySelector(".rv-s").textContent = "OK, it's waiting in the Journal tab."; setTimeout(() => d.remove(), 1500); };
-  d.querySelector(".rv-save").onclick = async () => {
-    const fields = {followed_plan: plan, exit_reason: d.querySelector(".rv-exit").value, mistakes: [...d.querySelectorAll('[data-g="mis"] input:checked')].map(x => x.value).join(", ")};
-    try { await api("api/trade_note", {id: rv.id, fields}); d.querySelector(".rv-s").textContent = "Saved to your journal."; setTimeout(() => d.remove(), 1600); poll(); }
-    catch(e){ d.querySelector(".rv-s").textContent = "Not saved: " + e.message; }
-  };
-  $("#chat").appendChild(d); const rs = $("#rscroll"); rs.scrollTop = rs.scrollHeight;
-}
+const Reviews = (() => {
+  // One short card per closed trade, right in the chat. Answers save to the Journal (trade notes) by themselves.
+  // "Later" hides it for 45 minutes; anything still unreviewed comes back, and again in the end-of-day wrap.
+  const shown = new Set(), later = store.get("rvLater", {});
+  function card(rv){
+    const d = document.createElement("div"); d.className = "msg desk reviewcard"; d.dataset.rv = rv.id;
+    const pl = rv.pnl != null ? ` <span class="${tone(rv.pnl)}">${money(rv.pnl)}</span>` : "";
+    d.innerHTML = `<span class="who">Quick review: ${esc(rv.trade)}${pl}</span>
+      <div class="rvq">Followed the plan?</div>
+      <div class="tags" data-g="plan">${["yes","partly","no"].map(x => `<button type="button" class="tag" data-v="${x}">${x}</button>`).join("")}</div>
+      <div class="rvq">Any mistakes?</div>
+      <div class="tags" data-g="mis">${MISTAKES.map(t => `<label class="tag"><input type="checkbox" value="${t}">${t}</label>`).join("")}</div>
+      <input class="rv-in" data-f="entry_reason" placeholder="Why you took it (one line)…" aria-label="Why you took it">
+      <input class="rv-in" data-f="exit_reason" placeholder="Why you got out…" aria-label="Why you got out">
+      <input class="rv-in" data-f="next_time" placeholder="Next time I’ll…" aria-label="Next time">
+      <div class="rvrow"><button type="button" class="rv-save">Save to journal</button><button type="button" class="rv-skip">Later</button><span class="m rv-s"></span></div>`;
+    let plan = "";
+    d.querySelectorAll('[data-g="plan"] .tag').forEach(b => b.onclick = () => { plan = b.dataset.v; d.querySelectorAll('[data-g="plan"] .tag').forEach(x => x.classList.toggle("on", x === b)); });
+    d.querySelector(".rv-skip").onclick = () => { later[rv.id] = Date.now(); store.set("rvLater", later); d.querySelector(".rv-s").textContent = "OK, I’ll ask again later."; setTimeout(() => { d.remove(); shown.delete(rv.id); }, 1200); };
+    d.querySelector(".rv-save").onclick = async () => {
+      const fields = {followed_plan: plan, mistakes: [...d.querySelectorAll('[data-g="mis"] input:checked')].map(x => x.value).join(", ")};
+      d.querySelectorAll(".rv-in").forEach(i => { if (i.value.trim()) fields[i.dataset.f] = i.value.trim(); });
+      if (!plan && !fields.mistakes && !fields.entry_reason && !fields.exit_reason && !fields.next_time){ d.querySelector(".rv-s").textContent = "Tap at least one answer first."; return; }
+      try { await api("api/trade_note", {id: rv.id, fields}); d.querySelector(".rv-s").textContent = "Saved to your journal."; delete later[rv.id]; store.set("rvLater", later); setTimeout(() => d.remove(), 1400); poll(); }
+      catch(e){ d.querySelector(".rv-s").textContent = "Not saved: " + e.message + ". Try again."; }
+    };
+    $("#chat").appendChild(d); const rs = $("#rscroll"); rs.scrollTop = rs.scrollHeight;
+  }
+  function show(rv){ if (shown.has(rv.id)) return; shown.add(rv.id); card(rv); }
+  function sync(list){
+    for (const rv of list || []){ if (later[rv.id] && Date.now() - later[rv.id] < 45 * 60e3) continue; show(rv); }
+    $$(".reviewcard[data-rv]").forEach(el => { if (!(list || []).some(x => x.id === el.dataset.rv) && !el.querySelector(".rv-s").textContent) el.remove(); });
+  }
+  return { show, sync };
+})();
+const reviewCard = rv => Reviews.show(rv);   // used by voice mode
+
+/* ---------- end-of-day wrap in the chat (fills the Journal so you never have to open it) ---------- */
+const DayWrap = (() => {
+  let shownFor = "";
+  function maybe(){
+    if (!S || !S.session || S.session.holiday || S.day_wrap_done) return;
+    const now = clockFmt.format(new Date()).slice(0, 5), day = todayET();
+    if (now < "16:10" || now > "23:59" || shownFor === day || S.session.state === "OPEN") return;
+    if (new Date(day + "T12:00:00").getDay() % 6 === 0) return;   // weekend
+    shownFor = day;
+    const d = document.createElement("div"); d.className = "msg desk reviewcard";
+    d.innerHTML = `<span class="who">End of day: 3 quick questions for your journal</span>
+      <input class="rv-in" data-n="execution" placeholder="How did today go? (entries, exits, the plan)…" aria-label="How did today go">
+      <input class="rv-in" data-n="emotions" placeholder="How did you feel? (calm, rushed, FOMO…)…" aria-label="How did you feel">
+      <input class="rv-in" data-n="lessons" placeholder="One lesson for tomorrow…" aria-label="Lesson for tomorrow">
+      <div class="rvrow"><button type="button" class="rv-save">Save to journal</button><button type="button" class="rv-skip">Skip today</button><span class="m rv-s"></span></div>`;
+    d.querySelector(".rv-save").onclick = async () => {
+      const notes = {wrap_done: "yes"}; d.querySelectorAll(".rv-in").forEach(i => { if (i.value.trim()) notes[i.dataset.n] = i.value.trim(); });
+      try { await api("api/journal", {date: day, notes}); d.querySelector(".rv-s").textContent = "Saved. The 4:20 review uses it to suggest lessons."; setTimeout(() => d.remove(), 1800); poll(); }
+      catch(e){ d.querySelector(".rv-s").textContent = "Not saved: " + e.message; }
+    };
+    d.querySelector(".rv-skip").onclick = async () => { try { await api("api/journal", {date: day, notes: {wrap_done: "skipped"}}); } catch(e){} d.remove(); };
+    $("#chat").appendChild(d); const rs = $("#rscroll"); rs.scrollTop = rs.scrollHeight;
+  }
+  return { maybe };
+})();
 
 /* ---------- shared tables ---------- */
 function stats(rows){

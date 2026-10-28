@@ -3,6 +3,7 @@
 Every alert becomes an 'alert' event (desk feed + browser pop-up + sound) and, if NTFY_TOPIC is set, a phone push
 through the free ntfy app. Alerts are heads-ups only: they never trade and never change a plan.
 """
+from datetime import datetime
 import hashlib
 import json
 import os
@@ -60,11 +61,11 @@ def alert(kind, title, body, ref, level="normal"):
 
 
 # ---------------- setups (called by the paper engine scan) ----------------
-def setup(ticker, st, grade, decision, reason):
+def setup(ticker, st, grade, decision, reason, brief=None):
     if grade not in ("A", "B"):
         return False
     side = "calls" if st["side"] == "C" else "puts"
-    body = f"{st['note']} | level {st['level']:.2f}, invalid {st['invalidation']:.2f} | paper: {decision}" + (f" ({reason})" if reason else "")
+    body = (brief + f" | {st['note']}") if brief else (f"{st['note']} | level {st['level']:.2f}, invalid {st['invalidation']:.2f} | paper: {decision}" + (f" ({reason})" if reason else ""))
     return alert("setups", f"{ticker} {st['family'].replace('_', ' ')} {side} ({grade})", body,
                  f"setup:{ticker}:{st['family']}:{st['side']}:{st['bar']}", "high" if grade == "A" else "normal")
 
@@ -84,8 +85,12 @@ def move_check(ticker, b5):
         rng = float(c["High"] - c["Low"])
         body = float(c["Close"] - c["Open"])
         return rng > 0 and (body / rng >= 0.6 if up else -body / rng >= 0.6) and float(c["Volume"]) >= 1.5 * vavg
+    last = store.kv_get(f"move_last:{ticker}")
+    if last and (b5.index[-1].to_pydatetime() - datetime.fromisoformat(last)).total_seconds() < 15 * 60:
+        return False  # one move alert per ticker per 15 minutes, even in a strong trend
     for up in (True, False):
         if strong(a, up) and strong(b, up):
+            store.kv_set(f"move_last:{ticker}", b5.index[-1].isoformat())
             move = float(b["Close"] - a["Open"])
             return alert("moves", f"MOVE ALERT {ticker} {'UP' if up else 'DOWN'}",
                          f"2 heavy 5m candles, {move:+.2f} since {b5.index[-2].strftime('%H:%M')}, volume {float(b['Volume']) / vavg:.1f}x",

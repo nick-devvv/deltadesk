@@ -630,3 +630,34 @@ def test_option_chain_view_only(desk_env, monkeypatch):
     assert r765["itm"] and not next(r for r in c["rows"] if r["strike"] == 766)["itm"]
     assert not next(r for r in c["rows"] if r["strike"] == 762)["fits"]       # delta 0.70: outside 0.40-0.55
     assert c["feed"] == "Alpaca delayed"
+
+
+def test_alerts_carry_full_plan_and_stay_quiet(desk_env, monkeypatch):
+    """A setup alert names the contract, max buy, size, stop, BE, T1/trail and exits; blocked setups don't ping;
+    move alerts can't repeat inside 15 minutes; 'I'm in ...' is understood and answered with the full exit plan."""
+    import alerts
+    monkeypatch.delenv("NTFY_TOPIC", raising=False)
+    clock = desk_env
+    wire(monkeypatch, clock, up_day)
+    run(clock, "09:30", "10:30")
+    setup_alerts = [e["text"] for e in store.q("SELECT text, data FROM events WHERE kind='alert'") if json.loads(e["data"])["kind"] == "setups"]
+    assert setup_alerts, "the up day should raise at least one setup alert"
+    a = setup_alerts[0]
+    assert all(k in a for k in ("buy at or under $", "size ", "STOP $", "BE at $", "T1 $", "trail", "all out", "0DTE"))
+    assert store.q("SELECT COUNT(*) n FROM events WHERE kind='desk' AND text LIKE 'ALERT PLAN%'")[0]["n"] >= 1
+    per = {}
+    for t in setup_alerts:
+        k = t.split(" ")[0] + (" C" if " calls " in t else " P")
+        per[k] = per.get(k, 0) + 1
+    assert all(n <= 7 for n in per.values()) and len(setup_alerts) < 2 * len(per) + 4   # no bursts of near-identical alerts
+    st = {"family": "ORB_BREAK", "side": "C", "note": "x", "level": 601.0, "invalidation": 600.5, "bar": "2026-10-28T10:40:00"}
+    for why in ("STOP FOR TODAY: 3 losses in a row", "extended: waiting for retest (no chase)", "EVENT: CPI at 08:30 ET", "cooldown: ORB_BREAK already traded"):
+        assert not engine.setup_alert("SPY", st, "A", "SKIP", why)
+    idx = pd.date_range(DAY.replace(hour=9, minute=30), periods=31, freq="5min")
+    o = np.full(31, 600.0); c = o + 0.05; v = np.full(31, 1e5)
+    o[-3:], c[-3:], v[-3:] = [600.0, 600.9, 601.8], [600.9, 601.8, 602.7], [3e5, 3e5, 3e5]
+    b5 = pd.DataFrame({"Open": o, "High": np.maximum(o, c) + .05, "Low": np.minimum(o, c) - .05, "Close": c, "Volume": v}, index=idx)
+    assert alerts.move_check("QQQ", b5.iloc[:-1])
+    assert not alerts.move_check("QQQ", b5)          # next 5m bar of the same run: no repeat
+    r = commands.handle("I'm in SPY 601C 2 at 0.95", "SPY")
+    assert r["handled"] and "sell 1" in r["reply"] and "trail" in r["reply"] and "STOP $" in r["reply"]

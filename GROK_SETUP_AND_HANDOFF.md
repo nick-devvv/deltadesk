@@ -15,13 +15,14 @@ You do every step yourself, in Grok. Nothing here needs Claude to take over your
   - All out at 3:25.
 - **Typing IN / OUT / confirm / check once / stop watching is handled in code**, so it's instant and free. Only "why?" and free questions use Chart.
 - **Voice mode** (Voice button or press J): talk to the desk and Chart, and hear the answers. Fills you say out loud are read back for a yes before they're logged.
-- **Options chain under the chart (v2.9):** Robinhood-style list of strikes with bid/ask/mark, change, delta, breakeven and the desk's pick. View only: Nick buys in Robinhood. Click a row to ask Chart about it or to log the fill.
+- **Options chain in the left column (v2.9.1)**, above a shorter watchlist. Setup alerts now carry the full plan. Trade reviews and the end-of-day journal happen in the chat.
+- **Options chain (v2.9):** Robinhood-style list of strikes with bid/ask/mark, change, delta, breakeven and the desk's pick. View only: Nick buys in Robinhood. Click a row to ask Chart about it or to log the fill.
 - **v2.9 look:** cleaner, with fewer boxes and words. Voice is a small mic icon. The ticker tape at the bottom shows prices and news.
 - **Watchlist (bottom left)** for other tickers and earnings plays. Click one to chart it and ask Chart about it.
 - **Journal** is written at 4:05 PM every day. The **4:20 review** proposes lessons, and you approve them.
 
 ## Step 1: attach the files to Chart
-Attach `nicks-desk-v2.9.zip` (in Downloads/nicks-desk) to a new Chart chat with the message below.
+Attach `nicks-desk-v2.9.1.zip` (in Downloads/nicks-desk) to a new Chart chat with the message below.
 
 ## Step 2: the message to send Chart (copy all of it)
 
@@ -30,9 +31,9 @@ DESK V2 INSTALL. Do these steps on your computer, in order, and show me the outp
 You never place real trades, never click buy/sell/order buttons, and never enter passwords or keys.
 
 1. Back up: cp -r ~/desk ~/desk_backup_$(date +%Y%m%d)
-2. Unzip the attached nicks-desk-v2.9.zip over ~/desk (overwrite files with the same names; keep everything else, including bot.py, shadow.py, review.py, desk-state.json and my Secrets).
+2. Unzip the attached nicks-desk-v2.9.1.zip over ~/desk (overwrite files with the same names; keep everything else, including bot.py, shadow.py, review.py, desk-state.json and my Secrets).
 3. pip install yfinance pandas numpy pytest quiverquant
-4. cd ~/desk && python3 -m pytest -q tests/   -> must say "30 passed". If not, stop and show me the error.
+4. cd ~/desk && python3 -m pytest -q tests/   -> must say "31 passed". If not, stop and show me the error.
 5. Restart the desk server the same way watchdog.sh starts it (same env: DESK_TOKEN, CHAT_WEBHOOK, CHAT_WEBHOOK_KEY, ALPACA_KEY, ALPACA_SECRET, PORT). Then run:
    curl -s "http://127.0.0.1:8765/api/state?k=$DESK_TOKEN" | head -c 400
    and show me the output. "paper" should say RUNNING or IDLE and the broker line should say paper account verified.
@@ -86,5 +87,5 @@ Send Chart: `cp ~/desk_backup_YYYYMMDD/server.py ~/desk/server.py && cp ~/desk_b
 | `config/agent_policy.json` | Who does what (you trade real money, code does paper, Chart explains) |
 | `grok/*` | Chart's three routine prompts, quick commands, context schema, endpoint list |
 | `docs/LEGACY_RULE_MIGRATION.md` | Every Playbook rule and where it went, plus 3 open questions |
-| `tests/test_desk.py` | 30 tests: no network, no AI, fake paper broker |
+| `tests/test_desk.py` | 31 tests: no network, no AI, fake paper broker |
 | `DESIGN.md` | Page design notes |

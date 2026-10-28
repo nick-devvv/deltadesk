@@ -92,6 +92,21 @@ def send_to_chart(message, context):
         return f"Couldn't reach Chart: {e}"
 
 
+def unreviewed_list():
+    day = core.now_et().strftime("%Y-%m-%d")
+    out = []
+    for p in store.positions(ledger="real", day=day):
+        if p["status"] != "CLOSED":
+            continue
+        try:
+            notes = json.loads(p.get("notes") or "{}") if isinstance(p.get("notes"), str) else (p.get("notes") or {})
+        except ValueError:
+            notes = {}
+        if not any(notes.get(k) for k in store.REVIEW_FIELDS):
+            out.append({"id": p["id"], "trade": f"{p['ticker']} {p['contract']}", "pnl": p.get("realized")})
+    return out
+
+
 def unreviewed_today():
     day = core.now_et().strftime("%Y-%m-%d")
     n = 0
@@ -125,7 +140,8 @@ def state(since):
         "ai_calls_today": ai_calls_today(), "chat_connected": bool(CHAT_WEBHOOK),
         "data": {"candles": engine.data_source(), "options": "Schwab live" if schwab.ready() else "Alpaca indicative (delayed)",
                  "schwab": schwab.status()},
-        "unreviewed_today": unreviewed_today(),
+        "unreviewed_today": unreviewed_today(), "unreviewed": unreviewed_list(),
+        "day_wrap_done": bool((store.journal_get(core.now_et().strftime("%Y-%m-%d")).get("notes") or {}).get("wrap_done")),
     })
 
 

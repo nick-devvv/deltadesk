@@ -165,6 +165,13 @@ def per_trade_cap(grade, chop_day):
     return c["chop"] if chop_day else c["trend_A"] if grade == "A" else c["trend_B"]
 
 
+def trail_text(ex, qty):
+    """The approved trail plan in words: breakeven first, then T1, then trail the 1-minute swing."""
+    if qty >= 2:
+        return f"T1 ${ex['t1']:.2f}: sell 1, stop on the rest to ${ex['lock_after_t1']:.2f}, then trail the 1m swing"
+    return f"T1 ${ex['t1']:.2f}: hold, stop up to ${ex['lock_after_t1']:.2f}, then trail the 1m swing"
+
+
 def exit_plan(fill, t_entry_hhmm, spread=None, structural_stop=None):
     """All fill-based management numbers for one trade."""
     w = window_for(t_entry_hhmm) or policy()["windows"][-1]

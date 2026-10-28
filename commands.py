@@ -46,7 +46,8 @@ def handle(text, selected="SPY"):
     main = core.policy()["instruments"]
 
     # ---------- IN (real fill reported by Nick) ----------
-    m = re.match(rf"^(?:in|bought|filled)\s+(?:([a-z]{{1,5}})\s+)?(?:(\d+(?:\.\d+)?)\s*([cp])\s+)?(\d+)\s*(?:x|@|at)?\s*\$?{NUM}(?:\s+(\d{{1,2}}:\d{{2}}))?", low)
+    low = re.sub(r"^(?:ok(?:ay)?|so|just|yeah)[, ]+", "", low)
+    m = re.match(rf"^(?:i'?m\s+in|i\s+(?:got\s+in|bought|entered|took)|got\s+in|entered|took|in|bought|filled)\s+(?:([a-z]{{1,5}})\s+)?(?:(\d+(?:\.\d+)?)\s*([cp])\s+)?(\d+)\s*(?:x|@|at)?\s*\$?{NUM}(?:\s+(\d{{1,2}}:\d{{2}}))?", low)
     if m:
         tk2, strike, cp, qty, fill, when = m.groups()
         tk2 = (tk2 if tk2 and watchlist.valid(tk2) else tk).upper()

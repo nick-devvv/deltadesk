@@ -3,6 +3,7 @@
 No AI calls here. Chart (Grok) only explains what this produces.
 """
 import json
+import re
 import threading
 from datetime import datetime, timedelta
 
@@ -487,6 +488,50 @@ def paper_enabled():
     return store.kv_get("paper_enabled", True)
 
 
+QUIET = re.compile(r"extended|cooldown|session|EVENT|STOP FOR TODAY|A setups only|max \d+ trades|chop day", re.I)
+
+
+def plan_brief(p):
+    """One alert line with everything Nick needs: contract, max buy, size, stop, BE, T1/trail, exits, trigger."""
+    c, ex = p["contract"], p["exit"]
+    feed = "live quote" if "live" in str(c.get("feed", "")).lower() else "delayed quote, check Legend"
+    return (f"{p['ticker']} {c['label']} 0DTE | buy at or under ${p['premium_limit']:.2f} ({feed}) | size {p['qty']} | "
+            f"STOP ${ex['stop']:.2f} ({round(ex.get('stop_pct', 0.2) * 100)}% {ex.get('window', '').lower()}) | "
+            f"BE at ${ex['be_trigger']:.2f} -> stop to ${ex['be_stop']:.2f} | {core.trail_text(ex, p['qty'])} | "
+            f"out by {ex['flat_by']} if flat | all out {ex['all_out']} | trigger: {p.get('trigger_rule')} | invalid {p.get('invalidation')}")
+
+
+def setup_alert(ticker, st, g, decision, reason):
+    """Alert only when Nick could actually take it: A/B grade, not blocked by his own rules, and the desk
+    can build a full real-money plan with a contract. The alert carries the whole plan, the plan card
+    shows it, and a 15-minute watch tracks the trigger."""
+    if g not in ("A", "B") or (reason and QUIET.search(reason)):
+        return False
+    if store.kv_get(f"alert:setup:{ticker}:{st['family']}:{st['side']}:{st['bar']}"):
+        return False
+    last = store.kv_get(f"setup_last:{ticker}:{st['side']}")   # one alert per ticker+side per 10 min (an A can still upgrade a B)
+    if last and (core.now_et() - datetime.fromisoformat(last["at"])).total_seconds() < 600 and not (g == "A" and last.get("g") != "A"):
+        return False
+    try:
+        plan = build_plan(ticker, st["side"], st.get("level"), "watch")
+    except Exception:
+        return False
+    if plan.get("state") not in ("READY", "WAIT") or not plan.get("contract") or not plan.get("qty"):
+        return False
+    store.kv_set("last_plan", plan)
+    if not store.q("SELECT id FROM watches WHERE status='ACTIVE' AND ticker=?", (ticker,)):  # never replace Nick's own watch
+        try:
+            wid, exp = start_watch(plan, None)
+            plan["watch"] = {"id": wid, "until": exp[11:16]}
+        except Exception:
+            pass
+    ok = alerts.setup(ticker, st, g, decision, None, brief=plan_brief(plan))
+    if ok:
+        store.kv_set(f"setup_last:{ticker}:{st['side']}", {"at": core.now_et().isoformat(), "g": g})
+        store.event("desk", f"ALERT PLAN ({g}) {plan_brief(plan).replace(' | ', chr(10))}", "real", plan.get("id"))
+    return ok
+
+
 def paper_scan(ticker):
     s = snapshot(ticker)
     if not s.get("ok") or s["stale"]:
@@ -532,7 +577,7 @@ def paper_scan(ticker):
         store.event("opportunity", f"PAPER {decision}: {ticker} {st['family']} {'calls' if st['side']=='C' else 'puts'} ({g})"
                     + (f" | {reason}" if reason else ""), "paper", oid)
         try:
-            alerts.setup(ticker, st, g, decision, reason)
+            setup_alert(ticker, st, g, decision, reason)
         except Exception:
             pass
 
@@ -736,8 +781,10 @@ def log_real_in(ticker, contract, qty, fill, t=None, plan=None, setup=""):
                     f"journal only: the desk auto-manages SPY/QQQ 0DTE; ask Chart for the {ticker.upper()} exit plan | set your stop in Robinhood now", "real", pid)
         return pid
     store.event("real_in", f"LOGGED YOUR BUY {qty} {ticker.upper()} {contract.upper()} @ ${fill:.2f} | cost ${fill*100*qty:.0f} | "
-                f"STOP ${ex['stop']:.2f} (max planned loss ${risk:.2f}){warn} | BE at ${ex['be_trigger']:.2f} -> stop to ${fill:.2f} | "
-                f"T1 ${ex['t1']:.2f} | if flat exit by {ex['flat_by']} | all out {ex['all_out']} | set your stop in Robinhood now", "real", pid)
+                f"STOP ${ex['stop']:.2f} ({round(ex['stop_pct'] * 100)}% {ex['window'].lower()} stop, max planned loss ${risk:.2f}){warn} | "
+                f"BE at ${ex['be_trigger']:.2f} -> stop to ${ex['be_stop']:.2f} | {core.trail_text(ex, qty)} | "
+                f"if flat exit by {ex['flat_by']} | all out {ex['all_out']} | set your stop in Robinhood now. "
+                f"The desk watches it and tells you each step.", "real", pid)
     return pid
 
 
@@ -887,7 +934,8 @@ def tick():
                     paper_scan(t)
                 try:
                     sn = snapshot(t)
-                    if sn.get("ok") and not sn.get("stale"):
+                    holding = any(p["ticker"] == t for p in store.positions(ledger="real", status="OPEN"))
+                    if sn.get("ok") and not sn.get("stale") and (sess["entries_allowed"] or holding):
                         alerts.move_check(t, bars5(sn["m1"]))
                 except Exception:
                     pass
