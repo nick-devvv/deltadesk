@@ -14,6 +14,9 @@
 
 **Sent to Chart (uses an AI credit)**: anything else, plus the Why? button and the short explanation under a new plan. Examples: "why?", "what changed?", "is there news?", "second opinion on this".
 
-**Other tickers (watchlist, bottom left):** click a ticker to chart it and ask Chart about it. The buttons are Earnings play?, Key levels?, News? and Expected move?. Add or remove tickers right in the list. Earnings within 14 days show an ER badge. `IN NVDA 140C 1 at 3.20` and `OUT NVDA 4.10` log those trades to your journal with a strict 20% stop. You manage them with Chart, because the desk only auto-manages SPY/QQQ 0DTE.
+**Other tickers (watchlist, bottom left):** click a ticker to chart it and ask Chart about it. The buttons are Earnings play?, Key levels?, News? and Expected move?. Add or remove tickers right in the list. Earnings within 14 days show an ER badge. `IN NVDA 140C 1 at 3.20` and `OUT NVDA 4.10` log those trades to your journal with your time-of-day stop (20/12/10%). You manage them with Chart, because the desk only auto-manages SPY/QQQ 0DTE.
+
+**Alerts:** the desk pings you for A/B setups and move alerts (2 heavy 5-minute candles), plus market-moving news from Chart's 20-minute scan. Turn pop-ups on with **Alerts** in the top bar, and pick which kinds you want on the Rules page. Phone pings work through the free ntfy app.
+`kill switch`: stops paper entries and closes all paper trades (Paper tab button, tap twice).
 
 The plan is always computed first, so it's valid even if Chart is slow or offline.

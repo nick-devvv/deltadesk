@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 
 import pandas as pd
 
+import alerts
 import broker
 import schwab
 import core
@@ -459,6 +460,10 @@ def paper_scan(ticker):
                  json.dumps({"setup": st, "agree": agree, "against": against, "chop": chop, "position": pid})))
         store.event("opportunity", f"PAPER {decision}: {ticker} {st['family']} {'calls' if st['side']=='C' else 'puts'} ({g})"
                     + (f" | {reason}" if reason else ""), "paper", oid)
+        try:
+            alerts.setup(ticker, st, g, decision, reason)
+        except Exception:
+            pass
 
 
 def _setup_cooldown(ticker, st):
@@ -809,6 +814,12 @@ def tick():
             for t in core.policy()["instruments"]:
                 if sess["entries_allowed"]:
                     paper_scan(t)
+                try:
+                    sn = snapshot(t)
+                    if sn.get("ok") and not sn.get("stale"):
+                        alerts.move_check(t, bars5(sn["m1"]))
+                except Exception:
+                    pass
             for p in store.positions(status="OPEN"):
                 manage(p)
             check_watches()

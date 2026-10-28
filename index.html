@@ -266,6 +266,10 @@ p+p{margin-top:6px}
 .tag input{accent-color:var(--brand)}
 .tag.on{border-color:var(--brand);color:var(--ink)!important;background:var(--brand-t)}
 .tag:has(input:checked){border-color:var(--down);color:var(--down)!important;background:var(--down-t)}
+
+.k.alert{color:#fff;background:var(--brand);padding:0 5px;border-radius:3px}
+.k.alert.news{background:#3a2a10;color:var(--warn)}
+.k.alert.moves{background:#14301f;color:var(--up)}
 @media (max-width:1600px){ .brand span{display:none} nav a{padding:7px 13px;letter-spacing:.18em} header{gap:12px} }
 @media (max-width:1380px){ .trade{grid-template-columns:300px minmax(0,1fr) 380px} .hide-md{display:none} nav a{padding:7px 12px;letter-spacing:.16em} header{gap:12px} .brand b{letter-spacing:.3em} }
 @media (max-width:1100px){
@@ -312,6 +316,7 @@ p+p{margin-top:6px}
       <a href="#review" data-v="review">Review</a>
       <a href="#research" data-v="research">Rules</a>
     </nav>
+    <button type="button" class="voicebtn" id="bellBtn" title="Pop-up alerts on this computer" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M6 16V11a6 6 0 1 1 12 0v5l2 2H4z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg><span id="bellTxt">Alerts</span></button>
     <button type="button" class="voicebtn" id="voiceBtn" title="Talk to the desk (J)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>Voice</button>
     <span class="pill dim" id="streak" title="Losing-streak rule: 2 losses in a row = A setups only + 10 min cooldown; 3 = stop for today">streak ok</span>
     <a class="legend" href="https://robinhood.com/legend" target="_blank" rel="noopener">Open Legend ↗</a>
@@ -337,7 +342,8 @@ p+p{margin-top:6px}
         <section class="box feedbox" aria-label="Watchlist and engine feed">
           <div class="ph tabs" role="tablist">
             <button type="button" role="tab" class="tab" data-tab="watch" aria-selected="true">Watchlist</button>
-            <button type="button" role="tab" class="tab" data-tab="feed" aria-selected="false">Engine feed<span class="badge" id="feedBadge" hidden></span></button>
+            <button type="button" role="tab" class="tab" data-tab="feed" aria-selected="false">Feed<span class="badge" id="feedBadge" hidden></span></button>
+            <button type="button" role="tab" class="tab" data-tab="news" aria-selected="false">News<span class="badge" id="newsBadge" hidden></span></button>
           </div>
           <div class="tabpane" id="pane-watch" role="tabpanel">
             <div class="wl" id="wl"><div class="empty" style="padding:6px 16px">Loading watchlist…</div></div>
@@ -347,6 +353,9 @@ p+p{margin-top:6px}
           <div class="tabpane" id="pane-feed" role="tabpanel" hidden>
             <div style="display:flex;justify-content:flex-end;padding:0 16px 6px"><button type="button" id="muteBtn" aria-pressed="false" title="Speak watch and trade alerts" style="padding:3px 10px;font-size:10px">Sounds on</button></div>
             <div class="feed" id="feed" aria-live="polite"><div class="empty" id="feedEmpty">Nothing yet today.</div></div>
+          </div>
+          <div class="tabpane" id="pane-news" role="tabpanel" hidden>
+            <div class="feed" id="newsList"><div class="empty">No market-moving news yet. Chart scans X and the web every 20 minutes during market hours.</div></div>
           </div>
         </section>
       </div>
@@ -474,6 +483,7 @@ p+p{margin-top:6px}
         <div class="box"><div class="ph"><h2>Active rules</h2><div class="r"><span class="pill brand" id="polVer"></span></div></div><div class="bd" id="policy"></div></div>
         <div class="box"><div class="ph"><h2>Setup catalog</h2></div><div class="bd" id="catalog"></div></div>
       </div>
+      <div class="box" style="margin-top:14px"><div class="ph"><h2>Live alerts<small>heads-ups only, never trades</small></h2></div><div class="bd" id="alertBox"></div></div>
       <div class="box" style="margin-top:14px"><div class="ph"><h2>Data sources<small>where every number comes from</small></h2><div class="r"><span class="pill dim" id="schStatus">—</span></div></div><div class="bd" id="dataSrc"></div></div>
       <div class="grid2" style="margin-top:14px">
         <div class="box"><div class="ph"><h2>Kronos forecast test<small>shadow · never trades</small></h2><div class="r"><span class="pill dim" id="kxStatus">—</span></div></div><div class="bd" id="kronos"></div></div>
@@ -600,8 +610,9 @@ $("#wlAdd").onsubmit = async e => {
 let unread = 0;
 $$(".tab").forEach(b => b.onclick = () => {
   $$(".tab").forEach(x => x.setAttribute("aria-selected", String(x === b)));
-  $("#pane-watch").hidden = b.dataset.tab !== "watch"; $("#pane-feed").hidden = b.dataset.tab !== "feed";
+  $("#pane-watch").hidden = b.dataset.tab !== "watch"; $("#pane-feed").hidden = b.dataset.tab !== "feed"; $("#pane-news").hidden = b.dataset.tab !== "news";
   if (b.dataset.tab === "feed"){ unread = 0; $("#feedBadge").hidden = true; }
+  if (b.dataset.tab === "news"){ newsUnread = 0; $("#newsBadge").hidden = true; loadNews(); }
   store.set("leftTab", b.dataset.tab);
 });
 setInterval(() => { if (!$("#v-trade").hidden && !document.hidden) loadWatch(); }, 30000);
@@ -652,9 +663,11 @@ function addEvent(e){
   $("#feedEmpty")?.remove();
   if (booted && $("#pane-feed").hidden){ unread++; const bd = $("#feedBadge"); bd.hidden = false; bd.textContent = unread > 99 ? "99+" : unread; }
   if (booted) Core.pulse(/^paper/.test(e.kind) || e.ledger === "paper" ? "PAPER" : /QQQ/.test(e.text) ? "QQQ" : "SPY");
-  const kind = e.kind.startsWith("paper") || e.ledger === "paper" ? "paper" : e.kind === "error" ? "err" : e.kind === "watch" ? "watch" : "real";
-  const label = kind === "paper" ? "paper" : kind === "err" ? "error" : kind === "watch" ? "watch" :
+  let ad = {}; try { ad = typeof e.data === "string" ? JSON.parse(e.data || "{}") : (e.data || {}); } catch(x){}
+  const kind = e.kind === "alert" ? "alert " + (ad.kind || "") : e.kind.startsWith("paper") || e.ledger === "paper" ? "paper" : e.kind === "error" ? "err" : e.kind === "watch" ? "watch" : "real";
+  const label = e.kind === "alert" ? ({setups: "setup", moves: "move", news: "news"}[ad.kind] || "alert") : kind === "paper" ? "paper" : kind === "err" ? "error" : kind === "watch" ? "watch" :
                 e.kind === "real_alert" || e.kind === "real" ? "your trade" : e.kind.replace(/_/g," ");
+  if (e.kind === "alert" && booted) notify(e.text, ad);
   const row = document.createElement("div"); row.className = "ev" + (booted ? " new" : "");
   row.innerHTML = `<time>${hhmm(e.ts)}</time><span class="k ${kind}">${esc(label)}</span><span class="t">${esc(e.text)}</span>`;
   const f = $("#feed"); f.prepend(row);
@@ -663,6 +676,40 @@ function addEvent(e){
     try { const u = new SpeechSynthesisUtterance(e.text.split("|")[0].slice(0,120)); u.rate = 1.1; speechSynthesis.cancel(); speechSynthesis.speak(u); } catch(x){}
   }
 }
+
+/* ---------- live alerts: pop-up + sound (+ phone via ntfy on the server) ---------- */
+let notifyOn = store.get("notify", false), newsUnread = 0, actx = null;
+function beep(high){
+  if (muted) return;
+  try { actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+    (high ? [0, 0.16] : [0]).forEach((d, i) => { const o = actx.createOscillator(), g = actx.createGain(); o.frequency.value = high ? (i ? 1046 : 784) : 660; o.connect(g); g.connect(actx.destination);
+      g.gain.setValueAtTime(0.0001, actx.currentTime + d); g.gain.exponentialRampToValueAtTime(0.12, actx.currentTime + d + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, actx.currentTime + d + 0.14);
+      o.start(actx.currentTime + d); o.stop(actx.currentTime + d + 0.16); }); } catch(x){}
+}
+function notify(text, ad){
+  const [title, ...rest] = text.split(" | ");
+  beep(ad.level === "high");
+  if (ad.kind === "news"){ if ($("#pane-news").hidden){ newsUnread++; const b = $("#newsBadge"); b.hidden = false; b.textContent = newsUnread; } loadNews(); }
+  if (window.Voice && Voice.isOpen() && ad.level === "high") return;
+  if (notifyOn && "Notification" in window && Notification.permission === "granted" && (document.hidden || !document.hasFocus())){
+    try { const n = new Notification(title, {body: rest.join(" · ").slice(0, 180), tag: title.slice(0, 40), silent: true}); n.onclick = () => { window.focus(); n.close(); }; } catch(x){}
+  }
+}
+function setBell(){ const b = $("#bellBtn"); b.setAttribute("aria-pressed", String(notifyOn)); $("#bellTxt").textContent = notifyOn ? "Alerts on" : "Alerts off"; b.style.opacity = notifyOn ? 1 : .7; }
+$("#bellBtn").onclick = async () => {
+  if (!notifyOn && "Notification" in window && Notification.permission !== "granted"){ try { await Notification.requestPermission(); } catch(x){} }
+  notifyOn = !notifyOn; store.set("notify", notifyOn); setBell();
+  if (notifyOn && "Notification" in window && Notification.permission === "denied") $("#sendStatus").textContent = "Pop-ups are blocked for this site in your browser settings; sounds and the feed still work.";
+};
+setBell();
+async function loadNews(){
+  try{
+    const n = await api("api/news?limit=30");
+    $("#newsList").innerHTML = n.length ? n.map(x => `<div class="ev"><time>${esc((x.at || hhmm(x.ts)).slice(0, 5))}</time><span class="k ${x.impact === "high" ? "err" : "watch"}">${x.direction === "bullish" ? "▲" : x.direction === "bearish" ? "▼" : "•"} ${esc(x.impact)}</span><span class="t"><b style="color:var(--ink)">${esc(x.headline)}</b>${x.why ? `<br><span class="m">${esc(x.why)}</span>` : ""}<br><span class="m">${esc(x.source || "")}${x.tickers ? " · " + esc(x.tickers) : ""}</span></span></div>`).join("")
+      : '<div class="empty">No market-moving news yet. Chart scans X and the web every 20 minutes during market hours.</div>';
+  }catch(e){}
+}
+loadNews();
 
 /* ---------- render ---------- */
 function render(){
@@ -1028,7 +1075,7 @@ const CATALOG = [
 async function loadResearch(){
   $("#catalog").innerHTML = `<table><thead><tr><th>Setup</th><th>Status</th><th>Definition</th></tr></thead><tbody>${CATALOG.map(c=>`<tr><td>${c[0]}</td><td style="white-space:nowrap">${c[1]}</td><td class="m">${c[2]}</td></tr>`).join("")}</tbody></table>`;
   api("api/knowledge").then(cs => { $("#cards").innerHTML = cs.map(c => `<div style="padding:8px 0;border-bottom:1px solid rgba(58,18,25,.5)"><b class="mono">[${esc(c.id)}]</b> ${esc(c.title)} <span class="pill ${c.status === "research" ? "warn" : c.status === "shadow" ? "brand" : "dim"}" style="height:18px">${esc(c.status)}</span><div class="m" style="margin-top:4px;font-size:12px">${esc(c.summary)}</div></div>`).join(""); }).catch(()=>{});
-  loadKronos(); loadData();
+  loadKronos(); loadData(); loadAlerts();
   try{
     const p = await api("api/policy");
     $("#polVer").textContent = p.version;
@@ -1388,6 +1435,17 @@ window.Voice = (() => {
 })();
 const Voice = window.Voice;
 
+/* ---------- alert settings (Rules page) ---------- */
+async function loadAlerts(){
+  let a = {}; try { a = await api("api/alerts"); } catch(e){ return; }
+  const row = (k, t, d) => `<label class="tag" style="margin:0 8px 8px 0"><input type="checkbox" data-al="${k}" ${a[k] ? "checked" : ""}>${t}</label><span class="m" style="font-size:11.5px">${d}</span><br>`;
+  $("#alertBox").innerHTML = row("setups", "Setups", "A/B setups on SPY/QQQ the moment the desk spots them (free, in code)") +
+    row("moves", "Move alerts", "2 heavy 5-minute candles in a row on big volume (free, in code)") +
+    row("news", "News", "market-moving headlines from Chart's X/web scan every 20 min (about 20 AI runs a day)") +
+    `<p class="m" style="margin-top:6px">On this computer: press <b>Alerts</b> in the top bar to allow pop-ups. On your phone: ${a.phone ? '<span class="u">phone alerts are on (ntfy)</span>' : 'install the free <b>ntfy</b> app, subscribe to a private topic name you make up (e.g. nick-desk-7h3k2q), and have Chart add <span class="mono">NTFY_TOPIC</span> with that name to the desk server'}.</p>`;
+  $("#alertBox").querySelectorAll("[data-al]").forEach(c => c.onchange = () => api("api/alerts", {[c.dataset.al]: c.checked}));
+}
+
 /* ---------- data sources + Schwab connect (Rules page) ---------- */
 async function loadData(){
   let st = {};
@@ -1433,7 +1491,7 @@ async function loadKronos(){
 
 /* ---------- start ---------- */
 setTicker(ticker);
-if (store.get("leftTab","watch") === "feed") $('.tab[data-tab="feed"]').click();
+{ const lt = store.get("leftTab","watch"); if (lt !== "watch") $(`.tab[data-tab="${lt}"]`)?.click(); }
 loadWatch();
 show(location.hash.slice(1));
 poll(); setInterval(poll, 2000);

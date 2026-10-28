@@ -1,35 +1,74 @@
 {
-  "version": "2026-10-28.1",
-  "purpose": "Who does what. Code computes and monitors; Chart (Grok) explains. Read by people and by tests, not by the engine.",
-  "real_money": {
-    "who_trades": "Nick only, by hand, in Robinhood",
-    "chart_may_place_orders": false,
-    "chart_may_click_order_buttons": false,
-    "chart_may_enter_credentials": false,
-    "robinhood_connected": false
-  },
-  "paper": {
-    "broker": "Alpaca paper only (key must start with PK, account with PA, base paper-api.alpaca.markets)",
-    "who_trades": "the desk engine, in code, on completed 5m bars",
-    "chart_runs_bot_take": false,
-    "uses_ai": false
-  },
-  "ai_routing": {
-    "code_only": ["IN", "OUT", "confirm/watch plan", "check once", "stop watching", "pause/resume paper", "position management", "journal summary", "levels", "event block"],
-    "chart": ["why?", "free-text questions", "one short explanation per new plan", "news lookups", "9 AM news + drawing", "4:20 PM review + lesson proposals"],
-    "chart_may_change_numbers": false,
-    "max_explanation_lines": 4
-  },
-  "routines": {
-    "09:00 ET": "grok/MORNING_ROUTINE_PROMPT.md",
-    "webhook": "grok/PRIMARY_COACH_SYSTEM_PROMPT.md",
-    "16:20 ET": "grok/REVIEW_PROMPT.md",
-    "retired": ["bot.py take/close on every verdict", "shadow.py in/out", "5-minute proactive chart watch"]
-  },
-  "lessons": {
-    "status_flow": ["PROPOSED", "ACTIVE (Nick approves)", "RETIRED"],
-    "min_sample": 3,
-    "may_propose": ["entry filters", "setup skips", "time-of-day filters"],
-    "never_propose": ["looser stop than 20%", "dollar loss limits", "more contracts", "real-money automation"]
-  }
+ "version": "2026-10-28.1",
+ "purpose": "Who does what. Code computes and monitors; Chart (Grok) explains. Read by people and by tests, not by the engine.",
+ "real_money": {
+  "who_trades": "Nick only, by hand, in Robinhood",
+  "chart_may_place_orders": false,
+  "chart_may_click_order_buttons": false,
+  "chart_may_enter_credentials": false,
+  "robinhood_connected": false
+ },
+ "paper": {
+  "broker": "Alpaca paper only (key must start with PK, account with PA, base paper-api.alpaca.markets)",
+  "who_trades": "the desk engine, in code, on completed 5m bars",
+  "chart_runs_bot_take": false,
+  "uses_ai": false
+ },
+ "ai_routing": {
+  "code_only": [
+   "IN",
+   "OUT",
+   "confirm/watch plan",
+   "check once",
+   "stop watching",
+   "pause/resume paper",
+   "position management",
+   "journal summary",
+   "levels",
+   "event block",
+   "setup alerts",
+   "move alerts"
+  ],
+  "chart": [
+   "why?",
+   "free-text questions",
+   "one short explanation per new plan",
+   "news lookups",
+   "9 AM news + drawing",
+   "4:20 PM review + lesson proposals",
+   "20-minute news scan"
+  ],
+  "chart_may_change_numbers": false,
+  "max_explanation_lines": 4
+ },
+ "routines": {
+  "09:00 ET": "grok/MORNING_ROUTINE_PROMPT.md",
+  "webhook": "grok/PRIMARY_COACH_SYSTEM_PROMPT.md",
+  "16:20 ET": "grok/REVIEW_PROMPT.md",
+  "retired": [
+   "bot.py take/close on every verdict",
+   "shadow.py in/out",
+   "5-minute proactive chart watch"
+  ],
+  "every 20 min 09:00-15:40 ET": "grok/NEWS_SCAN_PROMPT.md (market-moving headlines only; posts to /api/news; ~20 runs/day)"
+ },
+ "lessons": {
+  "status_flow": [
+   "PROPOSED",
+   "ACTIVE (Nick approves)",
+   "RETIRED"
+  ],
+  "min_sample": 3,
+  "may_propose": [
+   "entry filters",
+   "setup skips",
+   "time-of-day filters"
+  ],
+  "never_propose": [
+   "looser stop than 20%",
+   "dollar loss limits",
+   "more contracts",
+   "real-money automation"
+  ]
+ }
 }

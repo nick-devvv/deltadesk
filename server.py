@@ -5,7 +5,8 @@
 
 Env: DESK_TOKEN (link secret), CHAT_WEBHOOK + CHAT_WEBHOOK_KEY (Chart's Grok webhook),
      ALPACA_KEY + ALPACA_SECRET (PAPER keys only), PORT (default 8765), QUIVER_KEY (optional, Quiver data),
-     SCHWAB_APP_KEY + SCHWAB_APP_SECRET (+ SCHWAB_CALLBACK, default https://127.0.0.1) optional live market data.
+     SCHWAB_APP_KEY + SCHWAB_APP_SECRET (+ SCHWAB_CALLBACK, default https://127.0.0.1) optional live market data,
+     NTFY_TOPIC (optional: phone alerts through the free ntfy app).
 
 Main endpoints:
   GET  /api/state?since=N    everything the page shows + new events (poll every 2 s)
@@ -18,6 +19,8 @@ Main endpoints:
   GET/POST /api/watchlist     other tickers: quotes, earnings date; {"add":"NVDA"} / {"remove":"NVDA"}
   GET  /api/alt?t=NVDA        optional Quiver data (QUIVER_KEY): congress trades, short volume, WSB, lobbying, contracts
   GET  /api/schwab/status|login, POST /api/schwab/connect   optional live Schwab market data (market data only)
+  GET/POST /api/news         Chart's news scan posts headlines {"items":[{headline,source,time,tickers,impact,direction,why}]}
+  GET/POST /api/alerts       alert toggles (setups, moves, news); phone push via NTFY_TOPIC (ntfy app)
   GET  /legacy               the old desk page (custom indicator chart)
   Legacy: /api/read /api/bars /api/last /api/plan /api/chat
 Real money: only Nick, in Robinhood. The only orders this server sends are Alpaca PAPER orders.
@@ -42,6 +45,7 @@ import engine  # noqa: E402
 import store  # noqa: E402
 import watchlist  # noqa: E402
 import schwab  # noqa: E402
+import alerts  # noqa: E402
 import altdata  # noqa: E402
 
 PORT = int(os.environ.get("PORT", "8765"))
@@ -190,6 +194,10 @@ class H(BaseHTTPRequestHandler):
                 return self._json(store.q("SELECT * FROM lessons ORDER BY created DESC"))
             if u.path == "/api/policy":
                 return self._json(core.policy())
+            if u.path == "/api/news":
+                return self._json(alerts.recent_news(int(q.get("limit", ["20"])[0] or 20)))
+            if u.path == "/api/alerts":
+                return self._json(alerts.settings())
             if u.path == "/api/schwab/status":
                 return self._json(dict(schwab.status(), callback=schwab.callback(), candles=engine.data_source()))
             if u.path == "/api/schwab/login":
@@ -277,6 +285,11 @@ class H(BaseHTTPRequestHandler):
                 text = str(b.get("reply") or b.get("text") or b.get("message") or "")[:6000]
                 store.event("chart", text, "")
                 return self._json({"ok": True})
+            if u.path == "/api/news":  # Chart's news-scan routine posts market-moving headlines here
+                items = b.get("items") if isinstance(b.get("items"), list) else [b]
+                return self._json({"added": len(alerts.add_news(items))})
+            if u.path == "/api/alerts":
+                return self._json(alerts.set_settings(b))
             if u.path == "/api/schwab/connect":
                 ok, msg = schwab.connect(str(b.get("url", ""))[:2000])
                 if ok:

@@ -578,3 +578,26 @@ def test_out_returns_review_card(desk_env, monkeypatch):
     assert r["review"] is None                                    # still 1 open: no review yet
     r = commands.handle("OUT 1 at 1.20", "SPY")
     assert r["review"] and r["review"]["trade"] == "SPY 601C"
+
+
+def test_alerts_setups_moves_news(desk_env, monkeypatch):
+    import alerts
+    monkeypatch.delenv("NTFY_TOPIC", raising=False)
+    st = {"family": "ORB_RETEST", "side": "C", "note": "retest held", "level": 600.0, "invalidation": 599.8, "bar": "2026-10-28T10:00:00"}
+    assert alerts.setup("SPY", st, "A", "ORDER", None)
+    assert not alerts.setup("SPY", st, "A", "ORDER", None)          # same setup bar: no duplicate alert
+    assert not alerts.setup("SPY", dict(st, bar="x2"), "C", "WATCH", None)   # C grades don't ping
+    idx = pd.date_range(DAY.replace(hour=9, minute=30), periods=30, freq="5min")
+    o = np.full(30, 600.0); c = o + 0.05; v = np.full(30, 1e5)
+    o[-2:], c[-2:], v[-2:] = [600.0, 600.9], [600.9, 601.8], [3e5, 3e5]
+    b5 = pd.DataFrame({"Open": o, "High": np.maximum(o, c) + .05, "Low": np.minimum(o, c) - .05, "Close": c, "Volume": v}, index=idx)
+    assert alerts.move_check("SPY", b5) and not alerts.move_check("SPY", b5)
+    n = alerts.add_news([{"headline": "Powell says rate cuts are not on the table this year", "source": "DeltaOne", "impact": "high", "direction": "bearish", "tickers": "spy, qqq"},
+                         {"headline": "Powell says rate cuts are NOT on the table this year!", "impact": "high"},   # same story twice
+                         {"headline": "x"}])
+    assert len(n) == 1 and alerts.recent_news()[0]["tickers"] == "SPY,QQQ"
+    kinds = [json.loads(e["data"])["kind"] for e in store.q("SELECT data FROM events WHERE kind='alert'")]
+    assert kinds == ["setups", "moves", "news"]
+    alerts.set_settings({"news": False})
+    assert len(alerts.add_news([{"headline": "CPI comes in hot at 0.5% vs 0.3% expected", "impact": "high"}])) == 1
+    assert store.q("SELECT COUNT(*) n FROM events WHERE kind='alert'")[0]["n"] == 3   # news alerts off: stored, not pinged

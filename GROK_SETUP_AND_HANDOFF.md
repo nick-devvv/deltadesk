@@ -30,7 +30,7 @@ You never place real trades, never click buy/sell/order buttons, and never enter
 1. Back up: cp -r ~/desk ~/desk_backup_$(date +%Y%m%d)
 2. Unzip the attached nicks-desk-v2.zip over ~/desk (overwrite files with the same names; keep everything else, including bot.py, shadow.py, review.py, desk-state.json and my Secrets).
 3. pip install yfinance pandas numpy pytest quiverquant
-4. cd ~/desk && python3 -m pytest -q tests/   -> must say "28 passed". If not, stop and show me the error.
+4. cd ~/desk && python3 -m pytest -q tests/   -> must say "29 passed". If not, stop and show me the error.
 5. Restart the desk server the same way watchdog.sh starts it (same env: DESK_TOKEN, CHAT_WEBHOOK, CHAT_WEBHOOK_KEY, ALPACA_KEY, ALPACA_SECRET, PORT). Then run:
    curl -s "http://127.0.0.1:8765/api/state?k=$DESK_TOKEN" | head -c 400
    and show me the output. "paper" should say RUNNING or IDLE and the broker line should say paper account verified.
@@ -73,6 +73,7 @@ Send Chart: `cp ~/desk_backup_YYYYMMDD/server.py ~/desk/server.py && cp ~/desk_b
 | `broker.py` | Alpaca **paper-only** client (refuses live keys and non-paper accounts) |
 | `kronos_shadow.py` | Kronos forecast test (shadow only, own process, no keys). Off until KRONOS=1 |
 | `knowledge/cards.json` | 35 knowledge cards; the desk sends the 3 most relevant to Chart with each question |
+| `alerts.py` | Live alerts: setups + move alerts (code) and news from Chart's 20-minute scan; phone pings via ntfy (NTFY_TOPIC) |
 | `schwab.py` | Optional live Schwab market data (read-only; trading endpoints refused in code). Setup: docs/SCHWAB_SETUP.md |
 | `altdata.py` | Optional Quiver data (congress trades, short volume, WSB) when QUIVER_KEY is in Secrets |
 | `watchlist.py` | Other tickers: quotes, earnings dates, add/remove (`config/watchlist.json`) |
@@ -83,5 +84,5 @@ Send Chart: `cp ~/desk_backup_YYYYMMDD/server.py ~/desk/server.py && cp ~/desk_b
 | `config/agent_policy.json` | Who does what (you trade real money, code does paper, Chart explains) |
 | `grok/*` | Chart's three routine prompts, quick commands, context schema, endpoint list |
 | `docs/LEGACY_RULE_MIGRATION.md` | Every Playbook rule and where it went, plus 3 open questions |
-| `tests/test_desk.py` | 28 tests: no network, no AI, fake paper broker |
+| `tests/test_desk.py` | 29 tests: no network, no AI, fake paper broker |
 | `DESIGN.md` | Page design notes |
