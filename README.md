@@ -1,5 +1,6 @@
 # DeltaDesk
 
+[![tests](https://github.com/nick-devvv/deltadesk/actions/workflows/tests.yml/badge.svg)](https://github.com/nick-devvv/deltadesk/actions/workflows/tests.yml)
 ![Python](https://img.shields.io/badge/python-3.12-blue) ![SQLite](https://img.shields.io/badge/storage-SQLite-lightgrey) ![Paper only](https://img.shields.io/badge/broker-paper%20only-red)
 
 **A day-trading command deck for 0DTE SPY/QQQ options.** Deterministic code does the math, the monitoring and the paper trading. An AI coach ("Chart", a Grok agent) explains the numbers in plain words. Real-money trades are placed by hand. The system never places them.
@@ -45,7 +46,7 @@ Chart (Grok agent) <- webhook with compact context (rules, plan, 3 relevant know
 Python 3.12, SQLite, pandas/numpy, yfinance; vanilla HTML/CSS/JS with canvas animations and the TradingView widget; Alpaca and Schwab REST APIs; Grok agent routines; pytest.
 
 ## Running it
-`python3 server.py` with `DESK_TOKEN`, `ALPACA_KEY`/`ALPACA_SECRET` (paper), and optionally `CHAT_WEBHOOK`, `SCHWAB_*`, `NTFY_TOPIC`, `KRONOS=1` set in the environment. Never commit keys. Tests: `pip install -r requirements.txt && python3 -m pytest -q tests/`.
+`python3 server.py` with `DESK_TOKEN`, `ALPACA_KEY`/`ALPACA_SECRET` (paper), and optionally `CHAT_WEBHOOK`, `SCHWAB_*`, `NTFY_TOPIC`, `KRONOS=1` set in the environment. Never commit keys. Tests: `pip install -r requirements.txt && python3 -m pytest -q tests/` (they also run on every push via GitHub Actions).
 
 ## Disclaimer
 This is a personal project, shared for portfolio purposes. It is not financial advice and not a trading service. It never places real-money orders: the broker client only works with paper accounts, and every real trade is placed by hand. Options trading carries a high risk of loss.
