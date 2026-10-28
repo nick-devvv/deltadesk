@@ -2,6 +2,9 @@
 
 A personal trading command deck for 0DTE SPY/QQQ options. Deterministic code does the math, the monitoring and the paper trading. An AI coach ("Chart", a Grok agent) explains the numbers in plain words. Real-money trades are placed by hand. The system never places them.
 
+![The deck](docs/screenshots/deck.png)
+*The deck with demo data: plan, options chain, watchlist, positions and coach chat. In the live app the TradingView chart fills the middle.*
+
 ## What it does
 - **Plans in code.** Each trade idea gets a full plan: trigger, invalidation, contract pick (target delta 0.45), max buy, size, stop, breakeven, T1, trail and exit times. The plan is computed from live market data before the AI says a word.
 - **Live alerts.** A/B setup alerts (opening range break and retest, failed breaks, PDH/PDL retests, VWAP reclaims), alerts for two heavy 5-minute candles, and market-moving news from a 20-minute AI news scan. Each setup alert carries the full plan and only fires when the trader's own rules allow the trade. Delivered as browser pop-ups, sound and phone push (ntfy).
@@ -10,6 +13,10 @@ A personal trading command deck for 0DTE SPY/QQQ options. Deterministic code doe
 - **Journal and learning loop.** After every trade the chat asks a short review (plan followed, mistake tags, why in and out). An end-of-day wrap fills the daily journal. The analytics break results down by setup, time of day, ticker, grade and mistake, with a P/L calendar and CSV export. A 4:20 PM review proposes lessons, which only take effect after the trader approves them.
 - **Options chain view.** A Robinhood-style chain with bid, ask, mark, delta and breakeven. The desk's pick is marked, and contracts that fit the rules get a green dot. Read-only.
 - **Forecast research.** Runs the Kronos time-series model in shadow mode only, scored against no-change and momentum baselines.
+
+| Journal | Phone |
+|---|---|
+| ![Journal](docs/screenshots/journal.png) | <img src="docs/screenshots/phone.png" width="260"> |
 
 ## Architecture
 ```
