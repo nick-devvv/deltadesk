@@ -17,3 +17,9 @@ __pycache__/
 .taste-skill/
 .DS_Store
 reports/
+# files Chart keeps on its computer (never commit)
+*TOKEN*
+*Token*
+schwab.env
+webhook.env
+*.bak_*
