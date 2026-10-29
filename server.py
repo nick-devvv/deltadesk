@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""server.py - Nick's Desk backend + page. Runs the deterministic engine in the background (no AI).
+"""server.py - DeltaDesk backend + page. Runs the deterministic engine in the background (no AI).
 
   python3 server.py            -> http://localhost:8765  (public link via Tailscale Funnel + ?k=DESK_TOKEN)
 
@@ -21,9 +21,16 @@ Main endpoints:
   GET  /api/schwab/status|login, POST /api/schwab/connect   optional live Schwab market data (market data only)
   GET/POST /api/news         Chart's news scan posts headlines {"items":[{headline,source,time,tickers,impact,direction,why}]}
   GET/POST /api/alerts       alert toggles (setups, moves, news); phone push via NTFY_TOPIC (ntfy app)
+  GET  /api/chart?t=SPY&tf=1|2|5  desk chart from the SAME Schwab pipeline as the engine: candles, volume, VWAP,
+                             EMA9/21, MACD, levels (with sources), entry/exit markers, feed + freshness
+  GET  /api/data/status      provider, stream/REST/fallback mode, entitlements check, latency distributions, gaps
+  GET  /api/candidates       every candidate with evidence, decision, rejection reasons, limit blocks (per portfolio)
+  GET  /api/portfolios       real / main paper / research / old-policy results kept apart
+  GET  /api/evaluation       the forward paper test scored against the criteria fixed in policy.json beforehand
   GET  /legacy               the old desk page (custom indicator chart)
   Legacy: /api/read /api/bars /api/last /api/plan /api/chat
-Real money: only Nick, in Robinhood. The only orders this server sends are Alpaca PAPER orders.
+Real money: only Nick, in Robinhood. This server sends NO orders anywhere: paper trading is simulated internally
+on Schwab quotes. Schwab access is market data only (trading/account endpoints are refused in code).
 """
 import json
 import math
@@ -47,6 +54,10 @@ import watchlist  # noqa: E402
 import schwab  # noqa: E402
 import alerts  # noqa: E402
 import altdata  # noqa: E402
+import exits  # noqa: E402
+import indicators  # noqa: E402
+import marketdata  # noqa: E402
+import paper  # noqa: E402
 
 PORT = int(os.environ.get("PORT", "8765"))
 CHAT_WEBHOOK = os.environ.get("CHAT_WEBHOOK", "")
@@ -122,9 +133,43 @@ def unreviewed_today():
     return n
 
 
+def position_view(p):
+    """Exact contract, actual fill, live bid/ask/spread, the P&L mark used, stops history, stall timer."""
+    q, err = marketdata.option_quote(p["symbol"])
+    pl = p.get("plan") or {}
+    v = {"quote": None, "quote_error": err}
+    if q:
+        slip, fee = paper.costs((q.get("ask") or 0) - (q.get("bid") or 0)) if q.get("ask") and q.get("bid") is not None else (0.01, 0.02)
+        bid = q.get("bid")
+        v["quote"] = {k: q.get(k) for k in ("bid", "ask", "mid", "spread", "spread_pct", "age_s", "executable", "problems", "provider",
+                                            "delta", "gamma", "iv")}
+        if bid is not None:
+            v["pnl_liquidation"] = round(((bid - slip) - p["fill"]) * 100 * p["qty_open"] - fee * p["qty_open"] + (p["realized"] or 0), 2)
+        if q.get("mid") is not None:
+            v["pnl_mid"] = round((q["mid"] - p["fill"]) * 100 * p["qty_open"] + (p["realized"] or 0), 2)
+    v["stall_left_min"] = exits.stall_countdown(p) if pl.get("green") else None
+    v["green"] = pl.get("green")
+    return v
+
+
+def counters():
+    d = core.policy()["discipline"]
+    lim = core.policy()["v3"]["limits"]
+    return {"paper": {"ideas": paper.ideas_today("paper"), "cap": lim["main_ideas_per_day"], "streak": paper.streak("paper"),
+                      "stop_after": d["stop_day_after_consecutive_losses"], "a_only_after": d["a_only_after_consecutive_losses"]},
+            "research": {"ideas": paper.ideas_today("research"), "streak": paper.streak("research")},
+            "old": {"ideas": paper.ideas_today("old"), "streak": paper.streak("old")},
+            "real": {"streak": paper.streak("real")}}
+
+
 def state(since):
     sess = core.session_info()
     pos = store.positions(status="OPEN") + store.positions(status="PENDING")
+    for p in pos:
+        try:
+            p["view"] = position_view(p)
+        except Exception as e:
+            p["view"] = {"error": type(e).__name__}
     watches = [dict(w, plan=json.loads(w["plan"])) for w in store.q("SELECT * FROM watches WHERE status='ACTIVE'")]
     eng = engine._state
     paper_status = ("FAULT" if eng["errors"] >= 3 else "PAUSED" if not engine.paper_enabled()
@@ -133,13 +178,15 @@ def state(since):
         "now": store.ts(), "session": sess, "policy_version": core.policy()["version"],
         "engine": {"last_tick": eng["last_tick"], "errors": eng["errors"], "last_error": eng["last_error"], "started": STARTED},
         "paper": {"enabled": engine.paper_enabled(), "status": paper_status,
-                  "broker": broker.paper_account_ok()[1] if broker.configured() else "no Alpaca keys"},
-        "budget": {"real": engine.ledger_budget("real"), "paper": engine.ledger_budget("paper")},
+                  "broker": "internal simulator on Schwab quotes (no broker, no orders)"},
+        "budget": {led: engine.ledger_budget(led) for led in ("real", "paper", "research", "old")},
+        "counters": counters(),
+        "regime": {t: (engine.snapshot(t).get("regime")) for t in core.policy()["instruments"]},
         "positions": pos, "watches": watches, "last_plan": store.kv_get("last_plan"),
         "events": store.events_since(since), "seq": store.last_seq(),
         "ai_calls_today": ai_calls_today(), "chat_connected": bool(CHAT_WEBHOOK),
-        "data": {"candles": engine.data_source(), "options": "Schwab live" if schwab.ready() else "Alpaca indicative (delayed)",
-                 "schwab": schwab.status()},
+        "data": dict(marketdata.status(), candles=engine.data_source(),
+                     options=marketdata.provider().name),
         "unreviewed_today": unreviewed_today(), "unreviewed": unreviewed_list(),
         "day_wrap_done": bool((store.journal_get(core.now_et().strftime("%Y-%m-%d")).get("notes") or {}).get("wrap_done")),
     })
@@ -194,6 +241,9 @@ class H(BaseHTTPRequestHandler):
             if DESK_TOKEN and q.get("k", [""])[0] == DESK_TOKEN:
                 extra["Set-Cookie"] = f"desk_k={DESK_TOKEN}; Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax"
             return self._send(200, data, "text/html; charset=utf-8", extra)
+        if u.path == "/vendor/lwc.js":            # TradingView Lightweight Charts 5.2.1 (Apache-2.0), served locally: no CDN needed
+            with open(os.path.join(HERE, "vendor", "lightweight-charts-5.2.1.js"), "rb") as f:
+                return self._send(200, f.read(), "application/javascript; charset=utf-8")
         if u.path in ("/legacy", "/legacy.html"):
             with open(os.path.join(HERE, "index_legacy.html"), "rb") as f:
                 return self._send(200, f.read(), "text/html; charset=utf-8")
@@ -222,7 +272,7 @@ class H(BaseHTTPRequestHandler):
                 return self._send(302, b"", "text/plain", {"Location": schwab.login_url()})
             if u.path == "/api/kronos":
                 import kronos_shadow
-                store.x(kronos_shadow.SCHEMA)
+                kronos_shadow.migrate()
                 st = store.kv_get("kronos_status") or {"state": "off", "hint": "set KRONOS=1 in the server env (setup steps in kronos_shadow.py)"}
                 m = kronos_shadow.metrics()
                 last = store.q("SELECT ticker, bar_ts, horizon, base, pred, pred_mom, actual, runtime_ms FROM forecasts ORDER BY made_at DESC LIMIT 6")
@@ -267,7 +317,50 @@ class H(BaseHTTPRequestHandler):
                     d = clean(s.get("read", {}))
                     d.update(ticker=t, price=s.get("price"), stale=s.get("stale"), price_src=s.get("price_src"),
                              bar_age_s=s.get("bar_age_s"), levels=clean(s.get("levels", {})), error=s.get("error"))
+                    v3 = s.get("v3") or {}
+                    d["levels_v3"] = clean({k: {"value": v.get("value"), "source": v.get("source"), "complete": v.get("complete")}
+                                            for k, v in (v3.get("levels") or {}).items()})   # the exact levels the engine uses
+                    d["regime_v3"] = (v3.get("regime") or {}).get("label")
+                    d["data"] = (s.get("meta") or {}).get("provider")
                     out["tickers"].append(d)
+                return self._json(out)
+            if u.path == "/api/chart":
+                import chartfeed
+                return self._json(clean(chartfeed.build(q.get("t", ["SPY"])[0].upper(), q.get("tf", ["2"])[0])))
+            if u.path == "/api/data/status":
+                return self._json(clean(marketdata.status()))
+            if u.path == "/api/candidates":
+                day = q.get("date", [core.now_et().strftime("%Y-%m-%d")])[0][:10]
+                pf = q.get("portfolio", [None])[0]
+                rows = store.q("SELECT * FROM candidates WHERE date=?" + (" AND portfolio=?" if pf else "") + " ORDER BY ts DESC LIMIT 300",
+                               (day, pf) if pf else (day,))
+                for r in rows:
+                    for k in ("reasons", "evidence", "plan", "outcome"):
+                        try:
+                            r[k] = json.loads(r[k]) if r[k] else None
+                        except ValueError:
+                            pass
+                return self._json(clean(rows))
+            if u.path == "/api/evaluation":
+                import evaluation
+                return self._json(clean(evaluation.report()))
+            if u.path == "/api/portfolios":
+                since = q.get("since", [(core.now_et() - __import__("datetime").timedelta(days=30)).strftime("%Y-%m-%d")])[0][:10]
+                out = {}
+                for led in ("real", "paper", "research", "old"):
+                    rows = store.q("SELECT realized, status, date FROM positions WHERE ledger=? AND date>=?", (led, since))
+                    closed = [r for r in rows if r["status"] == "CLOSED"]
+                    wins = [r["realized"] for r in closed if (r["realized"] or 0) > 1]
+                    losses = [r["realized"] for r in closed if (r["realized"] or 0) <= -1]
+                    gw, gl = sum(wins), -sum(losses)
+                    out[led] = {"trades": len(closed), "sessions": len({r["date"] for r in rows}), "wins": len(wins), "losses": len(losses),
+                                "breakeven": len(closed) - len(wins) - len(losses), "net": round(sum(r["realized"] or 0 for r in closed), 2),
+                                "win_rate": round(100 * len(wins) / len(closed), 1) if closed else None,
+                                "expectancy": round(sum(r["realized"] or 0 for r in closed) / len(closed), 2) if closed else None,
+                                "profit_factor": round(gw / gl, 2) if gl > 0 else None,
+                                "small_sample": len(closed) < 30}
+                out["note"] = ("Ledgers are separate: real = your reported Robinhood fills; paper = v3 main; research = v3 shadow "
+                               "(keeps going after main limits); old = frozen old policy. Small samples are not evidence of an edge.")
                 return self._json(out)
             if u.path == "/api/bars":
                 return self._json(chartdata.bars(q.get("t", ["SPY"])[0], q.get("tf", ["5"])[0], q.get("ext", ["1"])[0] == "1"))
@@ -345,7 +438,7 @@ class H(BaseHTTPRequestHandler):
                 d = str(b.get("date") or core.now_et().strftime("%Y-%m-%d"))[:10]
                 evs = [{"time": str(e.get("time", ""))[:5], "name": str(e.get("name", ""))[:80]}
                        for e in (b.get("events") or [])[:20] if _re.match(r"^\d{2}:\d{2}$", str(e.get("time", ""))[:5])]
-                (core.HERE / "config" / "events.json").write_text(json.dumps({"date": d, "events": evs}, indent=1))
+                core.EVENTS_FILE.write_text(json.dumps({"date": d, "events": evs}, indent=1))
                 store.event("system", f"Events for {d}: " + (", ".join(f"{e['name']} {e['time']}" for e in evs) or "none"))
                 return self._json({"ok": True, "date": d, "events": evs})
             if u.path == "/api/lessons":
@@ -393,6 +486,11 @@ if __name__ == "__main__":
     store.conn()
     core.policy()
     threading.Thread(target=engine_loop, daemon=True).start()
+    try:
+        import schwab_stream
+        print("Schwab stream:", "starting" if schwab_stream.start() else "not available (install websockets) - Schwab REST polling", flush=True)
+    except Exception as e:
+        print("Schwab stream not started:", e, flush=True)
     start_kronos()
-    print(f"Nick's Desk running: http://localhost:{PORT}  policy {core.policy()['version']}", flush=True)
+    print(f"DeltaDesk running: http://localhost:{PORT}  policy {core.policy()['version']}", flush=True)
     ThreadingHTTPServer(("127.0.0.1", PORT), H).serve_forever()

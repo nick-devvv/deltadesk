@@ -169,6 +169,32 @@ main{min-width:0;min-height:0;overflow:hidden;display:flex;flex-direction:column
 .fhead h1 span{color:var(--ink-3);font-weight:500}
 .fhead .m{margin-left:auto;font-size:12px}
 .chartbox{position:relative;flex:1;min-height:0}
+.chartbox>#desk,.chartbox>#tv{position:absolute;inset:0}
+.fhead .seg.tf button,.fhead .seg.src button{font-size:12.5px;padding:5px 7px}
+.fhead .src{margin-left:auto}
+.feedchip{display:inline-flex;align-items:center;gap:6px;font:500 12px var(--sans);color:var(--ink-2);white-space:nowrap}
+.feedchip:before{content:"";width:7px;height:7px;border-radius:50%;background:var(--ink-3)}
+.feedchip.live:before{background:var(--up)} .feedchip.rest:before{background:var(--warn)} .feedchip.fb{color:var(--warn)} .feedchip.fb:before{background:var(--down)}
+.lgd{position:absolute;left:14px;top:6px;z-index:3;pointer-events:none;font:500 11.5px var(--sans);color:var(--ink-3);display:flex;gap:12px;flex-wrap:wrap}
+.lgd b{font-weight:600;color:var(--ink-2)} .lgd .vw{color:var(--warn)} .lgd .e9{color:#6FA8FF} .lgd .e21{color:#B48CFF}
+.chartmsg{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:24px;color:var(--ink-3);font-size:13px;z-index:2}
+.nums b small{display:block;font:500 12px var(--sans);color:var(--ink-3);margin-top:1px}
+.rr{display:flex;gap:14px;margin-top:10px;font:12px var(--sans);color:var(--ink-3)} .rr b{font:600 13px var(--sans);color:var(--ink)}
+.pos .q{grid-column:1/4;display:flex;gap:12px;flex-wrap:wrap;font:11.5px var(--sans);color:var(--ink-3)}
+.pos .q b{font:inherit;color:var(--ink-2)} .pos .q .stall{color:var(--warn)}
+.ledgers{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:16px}
+.ledger{padding:14px 18px;background:var(--glass);border:1px solid var(--line);border-radius:var(--r);min-width:0}
+.ledger.main{border-color:var(--line-2)}
+.ledger h2{font:600 14px var(--sans);display:flex;justify-content:space-between;gap:8px}
+.ledger h2 span{font-weight:400;color:var(--ink-3);font-size:12px}
+.ledger>p{font-size:12px;color:var(--ink-3);margin:2px 0 10px;min-height:32px}
+.ledger b.big{font:600 24px var(--disp);letter-spacing:.01em;display:block}
+.ledger dl{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;margin-top:8px;font-size:12px}
+.ledger dt{color:var(--ink-3)} .ledger dd{margin:0;text-align:right;color:var(--ink-2)}
+.cands td .tagm{font-size:11px;color:var(--warn);margin-left:6px}
+.dec{font:600 11.5px var(--sans)} .dec.ORDER{color:var(--up)} .dec.SKIP,.dec.SKIP-CONFLICT{color:var(--ink-3)} .dec.BLOCKED-LIMIT{color:var(--warn)}
+@media (max-width:1100px){.ledgers{grid-template-columns:1fr 1fr}}
+@media (max-width:640px){.ledgers{grid-template-columns:1fr}.fhead{flex-wrap:wrap}.fhead .src{margin-left:0}.lgd .e9,.lgd .e21{display:none}}
 #tv{position:absolute;inset:0}
 
 /* options chain under the chart (view only, laid out like Robinhood's list) */
@@ -495,7 +521,7 @@ td.n,th.n{text-align:right;white-space:nowrap}
               <div class="l"><b id="chpName"></b><span id="chpMeta"></span></div>
               <div class="r"><button type="button" id="chpAsk">Ask Chart</button><button type="button" id="chpLog">Log my fill</button></div>
             </div>
-            <p class="chnote" id="chNote"><span class="chfeed" id="chFeed"></span> View only. <span class="fitdot" title="Δ 0.40–0.55, $0.10–$3.00, spread under 10%"></span>fits your rules.</p>
+            <p class="chnote" id="chNote"><span class="chfeed" id="chFeed"></span> You place orders in Robinhood. <span class="fitdot" title="Δ 0.40–0.55, $0.10–$3.00, spread under 10%"></span>fits your rules.</p>
           </div>
         </section>
         <section class="lists" aria-label="Watchlist, feed and news">
@@ -521,8 +547,11 @@ td.n,th.n{text-align:right;white-space:nowrap}
 
       <div class="col center">
         <section class="frame chartwrap" id="chartFrame" aria-labelledby="chartSym">
-          <div class="fhead"><h1 id="chartSym">SPY <span>5m</span></h1><span class="m hide-sm">TradingView</span></div>
-          <div class="chartbox"><div id="tv"></div></div>
+          <div class="fhead"><h1 id="chartSym">SPY <span>2m</span></h1>
+            <div class="seg tf" role="group" aria-label="Candle size" id="tfSeg"><button type="button" data-tf="1">1m</button><button type="button" data-tf="2">2m</button><button type="button" data-tf="5">5m</button></div>
+            <span class="feedchip" id="feedChip" role="status">Connecting</span>
+            <div class="seg src" role="group" aria-label="Chart" id="srcSeg"><button type="button" data-src="desk" title="The desk's own chart, drawn from the same Schwab data the engine decides on">Desk</button><button type="button" data-src="tv" title="TradingView's chart and feed">TradingView</button></div></div>
+          <div class="chartbox"><div id="desk" aria-label="Desk chart"></div><div class="lgd" id="lgd" aria-hidden="true"></div><div id="tv" hidden></div></div>
         </section>
       </div>
 
@@ -569,13 +598,13 @@ td.n,th.n{text-align:right;white-space:nowrap}
     <!-- PAPER -->
     <section class="view page" id="v-paper" hidden aria-label="Paper engine">
       <h1>Paper engine</h1>
-      <p class="lead">Trades SPY/QQQ setups on its own with fake money, using your rules. No AI credits.</p>
-      <div class="metrics" id="paperMetrics"></div>
-      <section class="box" style="margin-bottom:16px"><div class="ph"><h2>Equity<small>closed trades</small></h2></div><canvas id="eq" style="width:100%;height:190px;display:block" aria-label="Paper equity curve"></canvas></section>
+      <p class="lead">Simulated trades on Schwab quotes: buys at the ask, sells at the bid, with costs. No broker and no orders. Each ledger is kept apart so one result can’t hide another.</p>
+      <div class="ledgers" id="ledgers"></div>
+      <section class="box" style="margin-bottom:16px"><div class="ph"><h2>Equity<small>main paper, closed trades</small></h2></div><canvas id="eq" style="width:100%;height:190px;display:block" aria-label="Paper equity curve"></canvas></section>
       <div class="toolbar"><button type="button" id="pauseBtn">Pause paper entries</button><button type="button" id="killBtn" style="border-color:rgba(255,90,78,.5);color:var(--down)">Kill switch</button><span class="m" id="paperBroker"></span></div>
       <div class="grid2">
-        <div class="box"><div class="ph"><h2>Open positions</h2></div><div class="bd" id="paperOpen"></div></div>
-        <div class="box"><div class="ph"><h2>Today's setups</h2></div><div class="bd" id="paperOpps"></div></div>
+        <div class="box"><div class="ph"><h2>Open simulated trades</h2></div><div class="bd" id="paperOpen"></div></div>
+        <div class="box"><div class="ph"><h2>Today’s decisions<small>every setup and why</small></h2><div class="r"><div class="seg" role="group" aria-label="Ledger" id="candSeg"><button type="button" data-pf="paper" aria-pressed="true">Main</button><button type="button" data-pf="research" aria-pressed="false">Research</button></div></div></div><div class="bd cands" id="paperOpps" style="max-height:420px;overflow:auto"></div></div>
       </div>
       <div class="box" style="margin-top:16px"><div class="ph"><h2>History</h2></div><div class="bd" id="paperHist"></div></div>
     </section>
@@ -656,6 +685,7 @@ td.n,th.n{text-align:right;white-space:nowrap}
   <footer class="tape ticker-tape" id="tapeBar" aria-label="Prices and news" title="Tap to pause"><div class="tape-in" id="tape"><span class="ti m">Loading prices…</span></div></footer>
 </div>
 
+<script src="vendor/lwc.js"></script>
 <script src="https://s3.tradingview.com/tv.js"></script>
 <script>
 "use strict";
@@ -691,21 +721,115 @@ tickClock(); setInterval(tickClock, 1000);
 function drawTV(){
   const box = $("#tv"); box.innerHTML = '<div id="tvw" style="height:100%"></div>';
   if (!window.TradingView){ box.innerHTML = '<div class="empty" style="padding:20px">TradingView couldn’t load. Plans, positions and the paper engine still work.</div>'; return; }
-  new TradingView.widget({ container_id:"tvw", autosize:true, symbol:({SPY:"AMEX:SPY",QQQ:"NASDAQ:QQQ"}[ticker] || ticker), interval:"5",
+  new TradingView.widget({ container_id:"tvw", autosize:true, symbol:({SPY:"AMEX:SPY",QQQ:"NASDAQ:QQQ"}[ticker] || ticker), interval:String(DeskChart.tf()),
     timezone:"America/New_York", theme:"dark", style:"1", locale:"en", allow_symbol_change:false, hide_side_toolbar:false,
     withdateranges:true, details:false, save_image:false, backgroundColor:"#0A060A", gridColor:"rgba(255,255,255,0.04)",
     studies:["VWAP@tv-basicstudies",{id:"MAExp@tv-basicstudies",inputs:{length:9}},{id:"MAExp@tv-basicstudies",inputs:{length:21}},{id:"MAExp@tv-basicstudies",inputs:{length:200}}] });
 }
+/* ---------- Desk chart: Lightweight Charts drawn from /api/chart (the engine's own Schwab snapshot) ---------- */
+const DeskChart = (() => {
+  const L = window.LightweightCharts;
+  let chart = null, cs, vol, vw, e9, e21, hist, mac, sig, mk, lines = [], last = null, fitKey = "", busy = false, timer = null, tvDrawn = "";
+  let tf = store.get("tf", 2), src = store.get("chartSrc", "auto");
+  const et = new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",hour:"2-digit",minute:"2-digit",hour12:false});
+  const tfmt = t => et.format(new Date(t * 1000));
+  const LV = {PDH:["#ABA2B1",2,"PDH"], PDL:["#ABA2B1",2,"PDL"], ORB_H:["#FF5C78",0,"ORB high"], ORB_L:["#FF5C78",0,"ORB low"],
+              PMH:["#6C6375",3,"PM high"], PML:["#6C6375",3,"PM low"], POC:["#8E8597",1,"POC"], VAH:["#6C6375",1,"VAH"], VAL:["#6C6375",1,"VAL"]};
+  const line = (c, w=1, pane=0) => chart.addSeries(L.LineSeries, {color:c, lineWidth:w, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false}, pane);
+  const using = () => src === "tv" || (src === "auto" && !(S && S.data && S.data.executable)) ? "tv" : "desk";
+  function init(){
+    if (chart || !L) return !!chart;
+    chart = L.createChart($("#desk"), {autoSize:true,
+      layout:{background:{type:"solid", color:"rgba(0,0,0,0)"}, textColor:"#8E8597", fontFamily:"Public Sans, system-ui, sans-serif", fontSize:11, attributionLogo:true,
+              panes:{separatorColor:"rgba(255,255,255,.07)", separatorHoverColor:"rgba(255,51,85,.25)"}},
+      grid:{vertLines:{color:"rgba(255,255,255,.025)"}, horzLines:{color:"rgba(255,255,255,.035)"}},
+      rightPriceScale:{borderColor:"rgba(255,255,255,.07)"},
+      timeScale:{borderColor:"rgba(255,255,255,.07)", timeVisible:true, secondsVisible:false, rightOffset:4, tickMarkFormatter:tfmt},
+      localization:{timeFormatter:t => tfmt(t) + " ET"}, crosshair:{mode:0}});
+    cs = chart.addSeries(L.CandlestickSeries, {upColor:"#2FE39A", downColor:"#FF5A4E", borderVisible:false, wickUpColor:"#2FE39A", wickDownColor:"#FF5A4E"});
+    vol = chart.addSeries(L.HistogramSeries, {priceFormat:{type:"volume"}, priceScaleId:"vol", lastValueVisible:false, priceLineVisible:false});
+    chart.priceScale("vol").applyOptions({scaleMargins:{top:.88, bottom:0}});
+    vw = line("#FFB547", 2); e9 = line("#6FA8FF"); e21 = line("#B48CFF");
+    hist = chart.addSeries(L.HistogramSeries, {priceLineVisible:false, lastValueVisible:false}, 1);
+    mac = line("#EEE8F0", 1, 1); sig = line("#FF5C78", 1, 1);
+    const pn = chart.panes(); if (pn[1]) { pn[0].setStretchFactor(4); pn[1].setStretchFactor(1); }
+    mk = L.createSeriesMarkers(cs, []);
+    chart.subscribeCrosshairMove(p => legend(p && p.time ? p.time : null));
+    return true;
+  }
+  function legend(t){
+    if (!last || !last.candles.length) { $("#lgd").innerHTML = ""; return; }
+    const c = (t && last.candles.find(x => x.time === t)) || last.candles[last.candles.length - 1];
+    const at = a => { const r = a.find(x => x.time === c.time); return r ? r.value.toFixed(2) : "—"; };
+    $("#lgd").innerHTML = `<span><b>${tfmt(c.time)}</b>${c.final ? "" : " forming"}</span><span>O <b>${c.open.toFixed(2)}</b> H <b>${c.high.toFixed(2)}</b> L <b>${c.low.toFixed(2)}</b> C <b>${c.close.toFixed(2)}</b></span>`
+      + `<span class="vw">VWAP ${at(last.vwap)}</span><span class="e9">EMA 9 ${at(last.ema9)}</span><span class="e21">EMA 21 ${at(last.ema21)}</span>`
+      + (tf === 5 ? `<span>MACD runs on 2m</span>` : "");
+  }
+  function msg(text){ let m = $("#desk .chartmsg"); if (!text){ if (m) m.remove(); return; } if (!m){ m = document.createElement("div"); m.className = "chartmsg"; $("#desk").appendChild(m); } m.textContent = text; }
+  function priceLines(d){
+    lines.forEach(l => cs.removePriceLine(l)); lines = [];
+    const seen = [];
+    const add = (price, color, style, title, solo) => { if (price == null || isNaN(price)) return;
+      if (solo && seen.some(x => Math.abs(x - price) < 0.015)) return;   // one line per stop price, not one per ledger
+      if (solo) seen.push(price);
+      lines.push(cs.createPriceLine({price, color, lineWidth:1, lineStyle:style, axisLabelVisible:true, title})); };
+    (d.levels || []).forEach(l => { const k = LV[l.name]; if (k && l.value != null) add(l.value, k[0], l.complete === false ? 3 : k[1], k[2] + (l.complete === false ? " (forming)" : "")); });
+    const p = S && typeof currentPlan === "function" ? currentPlan() : null, ex = p && p.exit;
+    (S && S.positions || []).filter(x => x.ticker === ticker && x.plan && x.plan.stop_px != null && (x.ledger === "real" || x.ledger === "paper"))
+      .forEach(x => add(x.plan.stop_px, "#FF5A4E", 2, (x.ledger === "real" ? "your" : "paper") + " stop", true));
+    if (ex && ex.stop_px != null) add(ex.stop_px, "#FF5A4E", 0, "plan stop", true);
+    if (ex && ex.t1_level != null) add(ex.t1_level, "#2FE39A", 0, "T1 " + (ex.t1_name || ""));
+  }
+  async function load(){
+    if (busy || using() !== "desk" || !isMain(ticker) || !init()) return;
+    busy = true;
+    try{
+      const d = await api(`api/chart?t=${encodeURIComponent(ticker)}&tf=${tf}`);
+      if (d.ticker !== ticker || d.tf !== tf) return;
+      last = d;
+      if (!d.candles.length){ msg(d.error ? `No Schwab bars yet: ${d.error}. TradingView still works.` : "No bars for today yet."); return; }
+      msg("");
+      cs.setData(d.candles.map(c => c.final ? c : Object.assign({}, c, {color:"rgba(238,232,240,.28)", wickColor:"rgba(238,232,240,.4)"})));
+      vol.setData(d.volume); vw.setData(d.vwap); e9.setData(d.ema9); e21.setData(d.ema21);
+      if (tf === 5){ hist.setData([]); mac.setData([]); sig.setData([]); } else { hist.setData(d.hist); mac.setData(d.macd); sig.setData(d.signal); }
+      mk.setMarkers(d.markers || []);
+      priceLines(d); legend(null);
+      const key = ticker + tf; if (fitKey !== key){ fitKey = key; chart.timeScale().fitContent(); }
+      chip(d.meta);
+    }catch(e){ msg("Desk chart couldn’t load: " + e.message); }
+    finally{ busy = false; }
+  }
+  function chip(meta){
+    const dt = (S && S.data) || {}, el = $("#feedChip");
+    const age = meta && meta.bar_age_s != null ? `, bar ${Math.round(meta.bar_age_s)}s` : "";
+    const cls = !dt.executable ? "fb" : dt.mode === "stream" ? "live" : "rest";
+    el.className = "feedchip " + cls;
+    el.textContent = cls === "live" ? "Schwab live" + age : cls === "rest" ? "Schwab polling" + age : "Delayed, not tradable";
+    el.title = (dt.live_label || "") + (dt.provider ? ` (${dt.provider})` : "") + (cls === "fb" ? ". Paper fills and plan prices wait for Schwab data." : "");
+  }
+  function apply(doLoad = true){
+    const u = using();
+    $$("#srcSeg button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.src === u)));
+    $$("#tfSeg button").forEach(b => b.setAttribute("aria-pressed", String(+b.dataset.tf === tf)));
+    $("#desk").hidden = u !== "desk"; $("#lgd").hidden = u !== "desk"; $("#tv").hidden = u !== "tv";
+    if (u === "tv"){ const k = ticker + tf; if (tvDrawn !== k){ tvDrawn = k; drawTV(); } }
+    else { if (tvDrawn){ tvDrawn = ""; $("#tv").innerHTML = ""; doLoad = true; } if (!L) msg("The desk chart script didn’t load. Switch to TradingView."); if (doLoad || !last) load(); }
+    chip(last && last.meta);
+  }
+  $$("#tfSeg button").forEach(b => b.onclick = () => { tf = +b.dataset.tf; store.set("tf", tf); $("#chartSym").innerHTML = esc(ticker) + ` <span>${tf}m</span>`; apply(); });
+  $$("#srcSeg button").forEach(b => b.onclick = () => { src = b.dataset.src; store.set("chartSrc", src); apply(); });
+  return {tf: () => tf, onTicker(){ last = null; fitKey = ""; apply(); }, tick(){ apply(false); }, start(){ if (!timer) timer = setInterval(() => { if (!document.hidden && !$("#v-trade").hidden) load(); }, 5000); }};
+})();
 const MAIN = ["SPY","QQQ"];
 const isMain = t => MAIN.includes(t);
 function setTicker(t){
   ticker = t; store.set("ticker", t);
   const op = $("#otherPill"); op.hidden = isMain(t); op.dataset.t = t; op.textContent = isMain(t) ? "" : t;
   $$("header .seg button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.t === t)));
-  $("#chartSym").innerHTML = esc(t) + " <span>5m</span>";
+  $("#chartSym").innerHTML = esc(t) + ` <span>${DeskChart.tf()}m</span>`;
   $("#msg").placeholder = isMain(t) ? "Ask Chart, or IN 2 at 0.95…" : `Ask Chart about ${t}…`;
   $$(".wlrow").forEach(r => r.setAttribute("aria-pressed", String(r.dataset.t === t)));
-  drawTV(); render(); if (window.Chain) Chain.onTicker();
+  DeskChart.onTicker(); render(); if (window.Chain) Chain.onTicker();
 }
 $$("header .seg button").forEach(b => b.onclick = () => { if (b.dataset.t && b.dataset.t !== ticker) setTicker(b.dataset.t); });
 
@@ -913,7 +1037,9 @@ window.Chain = (() => {
   function paintSide(){ $$("#chain [data-cs]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.cs === side))); }
   function draw(){
     const d = data || {}, body = $("#chBody");
-    $("#chFeed").textContent = d.feed ? (/live/i.test(d.feed) ? "Live (Schwab)" : "Delayed, check Legend") + (d.fetched ? ` (${d.fetched.slice(11, 16)}).` : ".") : "";
+    { const ok = S && S.data ? S.data.executable : /live|schwab/i.test(d.feed || "");
+      $("#chFeed").textContent = d.feed ? (ok ? "Schwab quotes" : "Delayed, check Robinhood") + (d.fetched ? ` (${d.fetched.slice(11, 16)}).` : ".") : "";
+      $("#chFeed").classList.toggle("live", !!ok); }
     $("#chFeed").classList.toggle("live", /live/i.test(d.feed || ""));
     $("#chSpot").innerHTML = d.spot ? `${esc(d.ticker)} ${fmt(d.spot)}<small>share price</small>` : esc(d.ticker || ticker);
     const ex = $("#chExp"); const opts = (d.expiries || []).map(e => { const dte = Math.round((new Date(e + "T12:00:00") - new Date(todayET() + "T12:00:00")) / 864e5);
@@ -999,7 +1125,7 @@ function render(){
   const sw = (S.data || {}).schwab || {};
   if (sw.state === "connected" && sw.days_left < 1 && !$("#banner").classList.contains("show")) { $("#banner").classList.add("show"); $("#bannerText").innerHTML = 'Schwab live data needs a 1-minute reconnect today (Rules → Data sources), or the desk falls back to delayed quotes.'; }
   const jb = $("#jBadge"); jb.hidden = !S.unreviewed_today; jb.textContent = S.unreviewed_today || "";
-  renderPlan(plan); renderPositions();
+  renderPlan(plan); renderPositions(); DeskChart.tick();
   Core.update(S, plan); if (window.Chain) Chain.refresh();
   Reviews.sync(S.unreviewed); DayWrap.maybe();
   if (!$("#v-paper").hidden) renderPaperLive();
@@ -1015,6 +1141,14 @@ function renderStrip(p){
   $("#chartFrame").classList.toggle("armed", /READY|TRIGGER/.test(st || ""));
 }
 let planOpen = store.get("planOpen", false);
+function regimeWhy(e){
+  const b = [];
+  if (e.adx != null) b.push(`ADX ${Number(e.adx).toFixed(0)}`);
+  if (e.efficiency != null) b.push(`efficiency ${Number(e.efficiency).toFixed(2)}`);
+  if (e.vwap_crossings_60m != null) b.push(`${e.vwap_crossings_60m} VWAP crosses in 60m`);
+  if (e.event_state && e.event_state !== "none") b.push(`news: ${e.event_state}`);
+  return b.join(", ");
+}
 function renderPlan(p){
   const el = $("#plan");
   const keepOpen = () => { const d = el.querySelector("details.more"); if (d) d.ontoggle = () => { planOpen = d.open; store.set("planOpen", planOpen); }; };
@@ -1028,7 +1162,7 @@ function renderPlan(p){
       <div class="quick" style="margin-top:12px;flex-wrap:wrap">${["Earnings play?","Key levels?","News?","Expected move?","Smart money?"].map(x => `<button type="button" data-ask="${esc(ticker)}: ${x}">${x}</button>`).join("")}</div>
       <details class="more"${planOpen ? " open" : ""}><summary>Details</summary>
         <dl class="kv"><dt>Earnings</dt><dd>${q.earnings ? esc(q.earnings.date) + ` <small>in ${q.earnings.days} day${q.earnings.days === 1 ? "" : "s"}, check before or after the bell</small>` : "<small>none in Yahoo’s calendar</small>"}</dd>
-        <dt>Stops</dt><dd><small>Your time-of-day stop: 20% morning, 12% midday, 10% afternoon. You manage the exit with Chart.</small></dd></dl>
+        <dt>Stops</dt><dd><small>Starts at the 20% premium ceiling. Ask Chart which chart level proves the trade wrong, then tighten it with <b>STOP 2.60</b>. You manage the exit with Chart.</small></dd></dl>
         <div id="altBox" class="obj"></div></details>`;
     el.querySelectorAll("[data-ask]").forEach(b => b.onclick = () => send(b.dataset.ask));
     keepOpen(); loadAlt(ticker);
@@ -1045,25 +1179,37 @@ function renderPlan(p){
     return;
   }
   const c = p.contract, ex = p.exit || {};
-  const pct = Math.round((ex.stop_pct ?? 0.2) * 100);
-  const nums = c ? `<div class="nums">
+  const v3 = ex.stop_px != null;
+  const below = p.side === "C" ? "<" : ">";
+  const nums = c ? (v3 ? `<div class="nums">
       <div><small>Max buy</small><b>${usd(p.premium_limit)}</b></div>
-      <div><small>Stop (${pct}%)</small><b class="d">${ex.stop ? usd(ex.stop) : "—"}</b></div>
-      <div><small>Target 1</small><b class="u">${ex.t1 ? usd(ex.t1) : "—"}</b></div></div>` : "";
+      <div title="Exit if a 1-minute close goes past this underlying price. The premium stop is the 20% ceiling."><small>Stop</small><b class="d">${below}${Number(ex.stop_px).toFixed(2)}<small>${usd(ex.stop)}</small></b></div>
+      <div title="Next opposing key level (model premium in small)"><small>T1 ${esc(ex.t1_name || "")}</small><b class="u">${ex.t1_level != null ? Number(ex.t1_level).toFixed(2) : "—"}<small>~${usd(ex.t1)}</small></b></div></div>
+      <div class="rr"><span>Reward/risk <b>${ex.rr_underlying ?? "—"}</b> stock, <b>${ex.rr_option ?? "—"}</b> option</span>${p.entry_mode ? `<span>Entry <b>${esc(p.entry_mode)}</b></span>` : ""}</div>`
+    : `<div class="nums">
+      <div><small>Max buy</small><b>${usd(p.premium_limit)}</b></div>
+      <div><small>Stop (${Math.round((ex.stop_pct ?? 0.2) * 100)}%)</small><b class="d">${ex.stop ? usd(ex.stop) : "—"}</b></div>
+      <div><small>Target 1</small><b class="u">${ex.t1 ? usd(ex.t1) : "—"}</b></div></div>`) : "";
   const watchLine = p.watch ? `, watching to ${p.watch.until}` : p.mode === "check" ? ", checked once" : "";
   const obj = p.objections || [];
   const lead = obj.find(o => /STOP FOR TODAY|A setups only|cooldown/i.test(o)) || obj[0];
   const rows = [
-    ["Setup", `${esc(p.setup||"—")} <small>${esc(p.setup_note||"")}</small>`],
+    ["Setup", `${esc(p.setup ? fam(p.setup) : "—")} <small>${esc(p.setup_note||"")}</small>`],
     ["Invalid if", p.invalidation != null ? `<span class="d">${Number(p.invalidation).toFixed(2)}</span> <small>1m close, underlying</small>` : "—"],
   ];
+  const live = p.data ? p.data.executable : /live|schwab/i.test(c && c.feed || "");
+  if (p.regime) rows.push(["Market", `${esc(p.regime)} <small>${p.regime_evidence ? esc(regimeWhy(p.regime_evidence)) : ""}</small>`]);
   if (c) rows.push(
-    ["Quote", `bid ${Number(c.bid).toFixed(2)}, ask ${Number(c.ask).toFixed(2)} <small>${/live/i.test(c.feed || "") ? "live (Schwab)" : "delayed, check Legend"}</small>`],
-    ["Size", `${p.qty} contract${p.qty===1?"":"s"} <small>${p.risk_per_contract ? "$" + p.risk_per_contract.toFixed(2) + " max loss each" : ""}</small>`],
-    ["Breakeven", ex.be_trigger ? `at ${usd(ex.be_trigger)}, move the stop to ${usd(ex.be_stop)}` : "—"],
-    ["If flat", ex.flat_by ? `out by ${ex.flat_by}` : "—"],
+    ["Quote", `bid ${Number(c.bid).toFixed(2)}, ask ${Number(c.ask).toFixed(2)} <small>${live ? "Schwab, tradable" : "delayed, not tradable: check Robinhood"}</small>`],
+    ["Size", `${p.qty} contract${p.qty===1?"":"s"} <small>${ex.loss_per_contract != null ? `worst case ${usd(ex.loss_per_contract)} each with costs, ceiling ${usd(ex.ceiling_per_contract)}` : p.risk_per_contract ? "$" + p.risk_per_contract.toFixed(2) + " max loss each" : ""}</small>`],
+    ["Breakeven", ex.be_trigger ? `at ${usd(ex.be_trigger)}, move the stop to ${usd(ex.be_stop)} <small>covers costs</small>` : "—"],
+    ...(v3 ? [["Stall", `green but no new high for ${ex.stall_min || 10} min: sell`], ["Momentum", "green and MACD fades 3 bars or crosses against you: sell"],
+              ["At T1", "2+ contracts: sell 1, keep a runner only on a clean break. 1 contract: sell it"]] : []),
+    ["If flat", ex.flat_by ? `not green by ${ex.flat_by}: out` : "—"],
     ["All out", esc(ex.all_out || S.session.all_out)],
   );
+  if ((p.grade_passed || []).length || (p.grade_failed || []).length)
+    rows.push(["Grade", `${esc(p.grade)} <small>${(p.grade_passed||[]).length} checks passed${(p.grade_failed||[]).length ? ", missed: " + esc(p.grade_failed.join(", ")) : ""}</small>`]);
   el.innerHTML = `<div class="plan-head"><span class="state ${cls}">${esc(state)}</span><span class="side ${p.side}">${side}</span><span class="pill dim">Grade ${esc(p.grade||"—")}</span>${p.chop_day?'<span class="pill warn">Chop day</span>':''}</div>
     ${c ? `<div class="contract">${esc(p.ticker)} ${esc(c.label)} 0DTE<span>Δ ${c.delta != null ? Math.abs(c.delta).toFixed(2) : "—"}${c.delta_src === "estimated" ? " est." : ""}</span></div>` : `<div class="contract">${esc(p.ticker)}<span>${esc(p.contract_note || "no contract yet")}</span></div>`}
     ${nums}
@@ -1076,14 +1222,33 @@ function renderPlan(p){
     </details>`;
   keepOpen();
 }
+const LEDGER = {real:"You", paper:"Paper", research:"Research", old:"Old rules"};
+function posV3(p, pl, vq, upl, real){
+  const up = p.side === "C", stopPx = pl.stop_px != null ? `${up ? "<" : ">"}${Number(pl.stop_px).toFixed(2)}` : "";
+  const stage = pl.runner ? `Runner, trailing ${pl.trail != null ? Number(pl.trail).toFixed(2) : "the swing"}` :
+                pl.t1_done ? "T1 taken" : pl.lock_hit ? "Profit locked" : pl.be_hit ? "At breakeven" : "Initial stop";
+  const next = `${stage}. Stop ${stopPx ? stopPx + " or " : ""}${usd(pl.premium_stop)}` + (pl.t1_level != null && !pl.t1_done ? `. <em>T1 ${esc(pl.t1 || "")} ${Number(pl.t1_level).toFixed(2)}</em>` : "")
+             + (!pl.be_hit && pl.be_trigger ? `, breakeven at ${usd(pl.be_trigger)}` : "");
+  const st = p.view && p.view.stall_left_min != null ? `<span class="stall">stall exit in ${p.view.stall_left_min.toFixed(1)} min</span>` : "";
+  const q = vq ? `<span>bid <b>${usd(vq.bid)}</b> ask <b>${usd(vq.ask)}</b></span><span>spread ${vq.spread != null ? "$" + vq.spread.toFixed(2) : "—"}</span><span>${vq.age_s != null ? Math.round(vq.age_s) + "s old" : ""}${vq.executable ? "" : ", not tradable"}</span>${st}`
+              : `<span>no quote${p.view && p.view.quote_error ? ": " + esc(p.view.quote_error) : ""}</span>`;
+  const hist = (pl.stops || []).map(x => `${hhmm(x.t)} ${usd(x.prev)}→${usd(x.new)} ${x.why || ""}`).join("\n");
+  return `<div class="pos" title="${real ? "Yours, reported by you. You place every order in Robinhood." : "Simulated on Schwab quotes, no broker"}${hist ? "\nStops:\n" + esc(hist) : ""}">
+    <span class="who2 ${real ? "" : "paper"}">${LEDGER[p.ledger] || p.ledger}</span>
+    <b>${esc(p.ticker)} ${esc(p.contract)} ×${p.qty_open}${p.qty_init > p.qty_open ? `<span class="m" style="font-weight:400"> of ${p.qty_init}</span>` : ""} <span class="m" style="font-weight:400">@ ${usd(p.fill)}</span></b>
+    <span class="pl ${tone(upl)}" title="Liquidation value: sell at the bid minus costs">${upl == null ? "—" : money(upl)}</span>
+    <span class="q">${q}</span>
+    <span class="next">${next}</span></div>`;
+}
 function renderPositions(){
   const ps = (S.positions || []).slice().sort((a,b) => (a.ledger === "real" ? -1 : 1) - (b.ledger === "real" ? -1 : 1));
   const el = $("#positions");
   if (!ps.length){ el.innerHTML = '<div class="empty">No open positions.</div>'; return; }
   el.innerHTML = ps.map(p => {
-    const pl = p.plan || {}, bid = pl.last_bid;
-    const upl = bid != null ? (bid - p.fill) * 100 * p.qty_open : null;
+    const pl = p.plan || {}, vq = (p.view || {}).quote, bid = vq && vq.bid != null ? vq.bid : pl.last_bid;
+    const upl = p.view && p.view.pnl_liquidation != null ? p.view.pnl_liquidation : bid != null ? (bid - p.fill) * 100 * p.qty_open : null;
     const real = p.ledger === "real";
+    if (pl.v === 3) return posV3(p, pl, vq, upl, real);
     const next = p.status === "PENDING" ? "Paper order pending at the broker" :
                  !pl.be_hit ? `Stop ${usd(pl.stop)}. <em>At ${usd(pl.be_trigger)} move it to ${usd(pl.be_stop)}</em>${pl.flat_by ? `, flat exit ${pl.flat_by}` : ""}` :
                  !pl.t1_done ? `Stop at breakeven ${usd(pl.stop)}. <em>Next: T1 ${usd(pl.t1)}</em>` :
@@ -1220,29 +1385,60 @@ function histTable(rows, showDay=true){
 const metricRow = items => items.map(m=>`<div><small>${m[0]}</small><b class="${m[2]||""}">${m[1]}</b></div>`).join("");
 
 /* ---------- paper ---------- */
+const LEDGERS = [["paper","Main paper","The desk’s rules: 4 ideas a day, stops after the losing streak, flat by 15:25.", true],
+  ["research","Research","Same setups, keeps watching after the main limits so we learn what the limits cost or saved."],
+  ["old","Old rules","Yesterday’s 20/12/10% stops, frozen, run side by side for a fair comparison."],
+  ["real","You","Your Robinhood trades, as you report them."]];
+let candPf = "paper", CANDS = [], PF = null;
+const FAM = {ORB_BREAK:"ORB break", ORB_RETEST:"ORB retest", FAILED_BREAK:"Failed break", PDH_RETEST:"PDH retest", PDL_RETEST:"PDL retest",
+             VWAP_RECLAIM:"VWAP reclaim", VWAP_MACD:"VWAP + MACD", LEVEL:"Your level"};
+const fam = f => FAM[f] || String(f || "").replace(/_/g, " ").toLowerCase();
+function renderLedgers(pf){
+  const c = (S && S.counters) || {}, b = (S && S.budget) || {};
+  $("#ledgers").innerHTML = LEDGERS.map(([k, name, what, main]) => {
+    const r = (pf || {})[k] || {}, td = b[k] || {}, cc = c[k] || {};
+    const today = td.trades_today ? money(td.realized_day) : "—";
+    const extra = k === "paper" ? `<dt>Ideas today</dt><dd>${cc.ideas ?? 0} of ${cc.cap ?? 4}</dd><dt>Losing streak</dt><dd>${cc.streak ?? 0}${cc.stop_after ? ` (stop at ${cc.stop_after})` : ""}</dd>`
+                : k === "real" ? `<dt>Losing streak</dt><dd>${cc.streak ?? 0}</dd>` : `<dt>Ideas today</dt><dd>${cc.ideas ?? 0}</dd>`;
+    return `<section class="ledger${main ? " main" : ""}"><h2>${name}<span>30 days</span></h2><p>${what}</p>
+      <b class="big ${tone(r.net)}">${r.trades ? money(r.net) : "—"}</b>
+      <dl><dt>Today</dt><dd class="${tone(td.realized_day)}">${today}</dd>${extra}
+      <dt>Trades</dt><dd>${r.trades ?? 0}${r.trades ? `, ${r.win_rate}% won` : ""}</dd>
+      <dt>Per trade</dt><dd>${r.expectancy != null ? money(r.expectancy) : "—"}</dd>
+      <dt>Profit factor</dt><dd>${r.profit_factor ?? "—"}</dd></dl>
+      ${r.trades && r.small_sample ? `<p class="m" style="margin:8px 0 0;min-height:0;font-size:11.5px">Under 30 trades: too few to call an edge.</p>` : ""}</section>`;
+  }).join("");
+}
+function renderCands(){
+  const rows = CANDS.filter(x => x.portfolio === candPf);
+  $$("#candSeg button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.pf === candPf)));
+  if (!rows.length){ $("#paperOpps").innerHTML = '<div class="empty">No setups yet today. The desk records every one it sees, taken or not.</div>'; return; }
+  $("#paperOpps").innerHTML = `<table><thead><tr><th>Bar</th><th>Setup</th><th>Decision</th><th>Why</th></tr></thead><tbody>${rows.slice(0, 80).map(x => {
+    const pl = x.plan || {}, why = [...(x.reasons || []), ...(x.limit_blocked ? [x.limit_blocked] : [])];
+    const ok = x.decision === "ORDER" && pl.rr_option ? `R/R ${pl.rr_underlying} stock, ${pl.rr_option} option${pl.qty ? `, ${pl.qty} ct` : ""}` : "";
+    return `<tr><td class="mono">${esc(hhmm(x.decision_t || x.ts))}</td><td>${esc(x.ticker)} ${esc(fam(x.family))} ${x.side === "C" ? "calls" : "puts"}${pl.grade ? ` <span class="m">${esc(pl.grade)}</span>` : ""}${pl.entry_mode ? `<span class="tagm">${esc(pl.entry_mode)}</span>` : ""}</td>
+      <td><span class="dec ${esc(x.decision)}">${esc({ORDER:"Taken", SKIP:"Skipped", "BLOCKED-LIMIT":"Limit", "SKIP-CONFLICT":"Conflict"}[x.decision] || x.decision)}</span></td>
+      <td class="m" style="font-size:12px">${esc(ok || why.slice(0, 2).join("; "))}</td></tr>`; }).join("")}</tbody></table>`;
+}
+$$("#candSeg button").forEach(b => b.onclick = () => { candPf = b.dataset.pf; renderCands(); });
 async function loadPaper(){
   renderPaperLive();
   try{
-    const [h, rv] = await Promise.all([api("api/history?ledger=paper"), api("api/review")]);
-    const s = stats(h.filter(r => r.date >= since30()));
-    const td = S ? S.budget.paper : null;
-    $("#paperMetrics").innerHTML = metricRow([["Today", td && td.trades_today ? money(td.realized_day) : "—", td ? tone(td.realized_day) : ""],
-      ["30-day P/L", s.n ? money(s.total) : "—", tone(s.total)], ["Win rate", s.win==null ? "—" : `${s.win}% of ${s.n}`],
-      ["Avg win / loss", s.n ? `${money(s.avgW)} / ${money(s.avgL)}` : "—"]]);
+    const [h, pf, cd] = await Promise.all([api("api/history?ledger=paper"), api("api/portfolios"), api("api/candidates")]);
+    PF = pf; renderLedgers(pf); CANDS = cd || []; renderCands();
     $("#paperHist").innerHTML = histTable(h); drawEquity(h);
-    const o = rv.opportunities || [];
-    $("#paperOpps").innerHTML = o.length ? `<table><thead><tr><th>Time</th><th>Setup</th><th>Grade</th><th>Decision</th></tr></thead><tbody>${o.slice(-30).reverse().map(x=>`<tr><td class="mono">${esc(hhmm(x.ts))}</td><td>${esc(x.ticker)} ${esc(x.setup)} ${x.side==="C"?"calls":"puts"}</td><td>${esc(x.grade)}</td><td>${esc(x.decision)}${x.reason?` <span class="m">· ${esc(x.reason)}</span>`:""}</td></tr>`).join("")}</tbody></table>`
-      : `<div class="empty">${esc(rv.no_trade_reason || "No setups yet today.")}</div>`;
   }catch(e){ $("#paperHist").innerHTML = `<div class="d">Couldn’t load history: ${esc(e.message)}</div>`; }
 }
 function renderPaperLive(){
   if (!S) return;
   $("#pauseBtn").textContent = S.paper.enabled ? "Pause paper entries" : "Resume paper entries";
-  $("#paperBroker").textContent = `Status: ${S.paper.status} · broker: ${S.paper.broker} · open paper positions are managed even when paused`;
-  const ps = (S.positions||[]).filter(p => p.ledger === "paper");
-  $("#paperOpen").innerHTML = ps.length ? ps.map(p => { const b = p.plan.last_bid, u = b!=null ? (b-p.fill)*100*p.qty_open : null;
-    return `<div class="pos"><b>${esc(p.ticker)} ${esc(p.contract)} × ${p.qty_open} @ ${usd(p.fill)}</b><span class="pl ${tone(u)}">${money(u)}</span><span class="meta">stop ${usd(p.plan.stop)} · T1 ${usd(p.plan.t1)} · ${esc(p.setup)} ${esc(p.grade)}</span></div>`; }).join("")
-    : '<div class="empty">No open paper positions.</div>';
+  $("#paperBroker").textContent = `${S.paper.status === "RUNNING" ? "Running" : S.paper.status}. Open simulated trades keep being managed while entries are paused.`;
+  const ps = (S.positions||[]).filter(p => p.ledger !== "real");
+  $("#paperOpen").innerHTML = ps.length ? ps.map(p => { const pl = p.plan || {}, vq = (p.view||{}).quote;
+    const u = p.view && p.view.pnl_liquidation != null ? p.view.pnl_liquidation : null;
+    return pl.v === 3 ? posV3(p, pl, vq, u, false) : `<div class="pos"><span class="who2 paper">${LEDGER[p.ledger] || p.ledger}</span><b>${esc(p.ticker)} ${esc(p.contract)} ×${p.qty_open} @ ${usd(p.fill)}</b><span class="pl ${tone(u)}">${money(u)}</span><span class="next">stop ${usd(pl.stop)}, T1 ${usd(pl.t1)}</span></div>`; }).join("")
+    : '<div class="empty">No open simulated trades.</div>';
+  if (PF) renderLedgers(PF);
 }
 $("#killBtn").onclick = async () => {
   const b = $("#killBtn");
@@ -1358,23 +1554,20 @@ async function loadReview(){
 
 /* ---------- rules ---------- */
 const CATALOG = [
-  ["ORB break / retest", "automated (paper)", "5m close beyond the 9:30–9:45 range; extended breaks wait for the retest"],
-  ["PDH/PDL retest + 9 EMA pullback", "automated (paper)", "broke past the prior-day high/low (and premarket extreme), pulled back to it or the 5m 9 EMA, then closed back in the trend direction"],
-  ["Failed break + reclaim", "automated (paper)", "5m close back inside the opening range after a break; trade the other way"],
-  ["VWAP reclaim / loss", "automated (paper)", "first 5m close back across VWAP (at most 2 crosses in the last hour)"],
-  ["Level retest (your call)", "your plans", "1m close through a level you name, e.g. PDH 765.50"],
-  ["King & Queen", "catalog", "VWAP lined up with another level; treated as VWAP reclaim for now"],
+  ["VWAP + MACD", "automated (paper)", "one strategy: a 2m MACD cross with the close beyond VWAP arms it; buy the VWAP retest (a tap of the zone plus a confirming close); enter early on the cross only in a clearly strong trend; cancelled by a close back through VWAP or a cross back"],
+  ["ORB break / retest", "automated (paper)", "5m close beyond the finished 9:30–9:45 range; a retest needs a real tap of the zone and a confirming close"],
+  ["PDH/PDL retest", "automated (paper)", "an earlier close past yesterday’s high or low, then a bar that actually taps that zone and closes back in the trend direction"],
+  ["Failed break", "automated (paper)", "5m close back inside the opening range after a break; trades the other way"],
+  ["VWAP reclaim / loss", "automated (paper)", "first 5m close back across VWAP, at most 2 crosses in the last hour"],
+  ["Level retest (your call)", "your plans", "1m close through a level you name, like PDH 765.50"],
   ["Level / momentum flag", "research", "needs a tested flag definition before the paper engine uses it"],
   ["Fib pullback", "research", "needs causal swing detection"],
-  ["Scalp mode (1m)", "research", "kept from the Playbook; not automated"],
-  ["Compression → expansion (TTM squeeze)", "research", "volatility squeeze release at a level; idea from bandaru-trade-analysis"],
-  ["VWAP pullback in a trend (K22)", "research", "50 EMA rising, prior candle dips to VWAP, close back above, volume up; from celo-trader"],
-  ["Trend continuation (K23)", "research", "fresh higher low / lower high within 20 candles, close beyond it, RVOL ≥ 1.2; from celo-trader"],
-  ["Break of structure (K24)", "research", "5m close beyond the last confirmed swing; volume ≥ 1.5×; from celo-trader"],
-  ["Fair value gap retest (K25)", "research", "3-candle gap ≥ ½ average candle, retest with volume; from celo-trader"],
-  ["Midday breakdown, puts (K26)", "research", "10:30–1:00, lower high + below ORB low and VWAP; from celo-trader"],
-  ["Afternoon reversal, calls (K27)", "research", "1:00–3:30, higher low then close above swing high; from celo-trader"],
-  ["Channel trendline rejection (K28)", "research", "tag within 0.3% of a 2-pivot line and reject; skips 12:00–1:30; from celo-trader"],
+  ["Compression → expansion (TTM squeeze)", "research", "volatility squeeze release at a level"],
+  ["Trend continuation (K23)", "research", "fresh higher low or lower high within 20 candles, close beyond it, RVOL ≥ 1.2"],
+  ["Break of structure (K24)", "research", "5m close beyond the last confirmed swing on 1.5× volume"],
+  ["Fair value gap retest (K25)", "research", "3-candle gap at least half an average candle, retest with volume"],
+  ["Midday breakdown, puts (K26)", "research", "10:30–1:00, lower high below the ORB low and VWAP"],
+  ["Afternoon reversal, calls (K27)", "research", "1:00–3:30, higher low then a close above the swing high"],
 ];
 async function loadResearch(){
   $("#catalog").innerHTML = `<table><thead><tr><th>Setup</th><th>Status</th><th>Definition</th></tr></thead><tbody>${CATALOG.map(c=>`<tr><td>${c[0]}</td><td style="white-space:nowrap">${c[1]}</td><td class="m">${c[2]}</td></tr>`).join("")}</tbody></table>`;
@@ -1383,12 +1576,22 @@ async function loadResearch(){
   try{
     const p = await api("api/policy");
     $("#polVer").textContent = p.version;
-    const d = p.discipline, s = p.session, c = p.contract;
-    const w = p.windows.map(x=>`<tr><td>${esc(x.name)}</td><td class="mono">${x.start}–${x.end}</td><td class="n d">−${Math.round((x.stop_pct ?? 0.2) * 100)}%</td><td class="n">×${x.be}</td><td class="n">×${x.t1_lo}–${x.t1_hi}</td><td class="n">${x.flat_min} min</td></tr>`).join("");
-    $("#policy").innerHTML = `<p><b>Stops by time of day: ${p.windows.map(w => w.name.toLowerCase() + " " + Math.round((w.stop_pct ?? p.risk.stop_cap_pct) * 100) + "%").join(" · ")}.</b> ${Math.round(p.risk.stop_cap_pct*100)}% is the hard all-in ceiling (spread + fees included): if a contract can't fit, it's skipped. Stops only ever tighten.</p>
-      <p><b>No dollar limits.</b> Losing streak: ${d.a_only_after_consecutive_losses} in a row → A setups only + ${d.cooldown_min_after_loss} min cooldown; ${d.stop_day_after_consecutive_losses} in a row → stop for today. Max ${d.max_trades_day} trades a day.</p>
-      <p class="m">Size: A = 2 contracts, B = 1 (chop days 1). Entries ${s.first_entry}–${s.last_entry} ET · all out ${s.all_out} · contracts $${c.premium_min.toFixed(2)}–$${c.premium_max.toFixed(2)}, |Δ| ${c.abs_delta_min}–${c.abs_delta_max}, spread ≤ ${Math.round(c.max_spread_pct*100)}%</p>
-      <table style="margin-top:10px"><thead><tr><th>Window</th><th>Time</th><th class="n">Stop</th><th class="n">Breakeven</th><th class="n">T1</th><th class="n">If flat</th></tr></thead><tbody>${w}</tbody></table>`;
+    const d = p.discipline, s = p.session, c = p.contract, v = p.v3 || {}, x = v.exits || {}, lim = v.limits || {};
+    const pc = n => Math.round(n * 100) + "%";
+    const steps = [
+      ["Session", `all out at ${s.all_out} (${s.early_close_all_out} on early-close days)`],
+      ["Premium stop", `the ${pc(p.risk.stop_cap_pct)} ceiling, or breakeven / locked profit once it has moved up`],
+      ["Structure", "a finished 1-minute close past the level that proves the idea wrong"],
+      ["Green trade", `momentum fades (3 weaker 2m MACD bars) or MACD crosses against you: out. No new high for ${x.stall_min} min: out`],
+      ["Not green", "still not green by the if-flat time: out"],
+      ["Target 1", "2 contracts: sell 1 and keep a runner only on a clean break. 1 contract: sell it"],
+      ["Protect", `breakeven at +${pc(x.be_trigger_pct)}, lock +${pc(x.lock_keep_pct)} after +${pc(x.lock_trigger_pct)}, trail the runner on swings`]];
+    $("#policy").innerHTML = `<p><b>Stops come from the chart.</b> The stop sits just past the level or swing that would prove the trade wrong. A ${pc(p.risk.stop_cap_pct)} premium-loss ceiling, costs included, caps every trade: if the chart stop doesn’t fit inside it, the desk skips the trade or picks another contract. Stops only ever tighten.</p>
+      <p><b>Worth it or skip it.</b> Target 1 is the next opposing key level. The reward to T1 has to be at least ${v.min_reward_risk}× the risk, on the stock move and on the option dollars after spread, fees and time decay.</p>
+      <p><b>Limits.</b> Main paper takes ${lim.main_ideas_per_day} ideas a day, one direction at a time across SPY and QQQ. ${d.a_only_after_consecutive_losses} losses in a row → A setups only and a ${d.cooldown_min_after_loss} min cooldown; ${d.stop_day_after_consecutive_losses} in a row → stop for today. Calls and puts firing on the same bar → skip the bar.</p>
+      <p class="m">Size: A = 2 contracts, B = 1, C = none on paper. Entries ${s.first_entry}–${s.last_entry} ET. Contracts $${c.premium_min.toFixed(2)}–$${c.premium_max.toFixed(2)}, |Δ| ${c.abs_delta_min}–${c.abs_delta_max}, spread ≤ ${Math.round(c.max_spread_pct*100)}%. After ${(v.afternoon||{}).start || "14:00"} the chart has to be cleaner.</p>
+      <table style="margin-top:10px" aria-label="Exit order"><thead><tr><th>Exit order, first match wins</th><th></th></tr></thead><tbody>${steps.map((r, i) => `<tr><td style="white-space:nowrap">${i + 1}. ${r[0]}</td><td class="m">${r[1]}</td></tr>`).join("")}</tbody></table>
+      <p class="m" style="margin-top:10px;font-size:11.5px">The old 20/12/10% time-of-day stops are retired. They still run, frozen, in the Old rules ledger on the Paper page so the two can be compared fairly.</p>`;
   }catch(e){ $("#policy").innerHTML = `<div class="d">${esc(e.message)}</div>`; }
 }
 
@@ -1747,16 +1950,19 @@ async function loadData(){
   const pill = $("#schStatus"); pill.textContent = "Schwab: " + st.state;
   pill.className = "pill " + (st.state === "connected" ? (st.days_left < 1.5 ? "warn" : "up") : st.state === "expired" ? "down" : "dim");
   const live = st.state === "connected";
-  const rows = [["Candles (levels, VWAP, EMAs, setups)", live ? "Schwab live" : "Yahoo (free, unofficial, can lag or rate-limit)"],
-    ["Option quotes + greeks", live ? "Schwab live" : "Alpaca indicative (delayed)"], ["Last price", "Alpaca IEX (one exchange)"],
-    ["Watchlist", live ? "Schwab → Alpaca → Yahoo" : "Alpaca → Yahoo"], ["Paper orders", "Alpaca paper only"], ["Chart on the Deck", "TradingView's own feed"]];
+  const dt = (S && S.data) || {};
+  const rows = [["Candles, levels, VWAP, MACD, setups", live ? "Schwab live" : "Fallback: Yahoo/Alpaca, delayed and labeled not tradable"],
+    ["Option quotes and greeks", live ? "Schwab live" : "Fallback (not tradable)"],
+    ["Feed right now", esc(dt.live_label || "—") + (dt.reconnects ? `, ${dt.reconnects} reconnects` : "")],
+    ["Paper fills", live ? "Internal simulator on Schwab quotes" : "Wait for Schwab: no fills on fallback data"],
+    ["Desk chart", "Same Schwab bars the engine decides on"], ["TradingView chart", "TradingView’s own feed (can differ slightly)"]];
   let connect = "";
   if (st.state === "off") connect = `<p class="m" style="margin-top:10px">To get live data: open a Schwab account and a free developer app (developer.schwab.com, callback URL <span class="mono">${esc(st.callback || "https://127.0.0.1")}</span>), then add <span class="mono">SCHWAB_APP_KEY</span> and <span class="mono">SCHWAB_APP_SECRET</span> to Chart's Secrets yourself.</p>`;
   else if (!live) connect = `<div style="margin-top:12px"><p>1. <a href="api/schwab/login" target="_blank" rel="noopener" style="color:var(--brand)">Open Schwab login ↗</a>, log in yourself and press Done. You'll land on a page that won't load. That's expected.</p>
     <p>2. Copy that page's whole address (it has <span class="mono">?code=</span>) and paste it here within 30 seconds:</p>
     <form id="schForm" class="wladd" style="padding:6px 0 0"><input id="schUrl" placeholder="https://127.0.0.1/?code=…" style="text-transform:none" autocomplete="off"><button type="submit">Connect</button></form><p class="m" id="schMsg"></p></div>`;
   else connect = `<p class="m" style="margin-top:10px">Connected. Schwab makes you log in again every 7 days: ${st.days_left} day(s) left. The desk will remind you the day before.${st.last_error ? " Last issue: " + esc(st.last_error) : ""}</p>`;
-  $("#dataSrc").innerHTML = `<table><tbody>${rows.map(r => `<tr><td>${r[0]}</td><td class="${/live/.test(r[1]) ? "u" : ""}">${r[1]}</td></tr>`).join("")}</tbody></table>${connect}<p class="m" style="margin-top:8px;font-size:11.5px">The Schwab connection is read-only market data. The desk can't place orders or see your Schwab account.</p>`;
+  $("#dataSrc").innerHTML = `<table><tbody>${rows.map(r => `<tr><td>${r[0]}</td><td class="${/live/.test(r[1]) ? "u" : ""}">${r[1]}</td></tr>`).join("")}</tbody></table>${connect}<p class="m" style="margin-top:8px;font-size:11.5px">The Schwab connection is read-only market data. The desk can’t place orders or see your Schwab account: those calls are blocked in code.</p>`;
   const f = $("#schForm");
   if (f) f.onsubmit = async e => { e.preventDefault(); $("#schMsg").textContent = "Connecting…";
     try { const r = await api("api/schwab/connect", {url: $("#schUrl").value}); $("#schMsg").textContent = r.message; loadData(); }
@@ -1779,7 +1985,7 @@ async function loadKronos(){
       return `<tr><td style="white-space:nowrap">${h} min</td><td class="n">${m.n || 0}</td>${c(m.mae_kronos)}${c(m.mae_nochange)}${c(m.mae_momentum)}<td class="n">${m.dir_kronos ?? "—"}${m.dir_kronos != null ? "%" : ""}</td><td class="n">${m.dir_momentum ?? "—"}${m.dir_momentum != null ? "%" : ""}</td></tr>`; }).join("");
     $("#kronos").innerHTML = `<p><b>${esc(k.verdict)}</b></p>
       <table style="margin-top:8px"><thead><tr><th>Ahead</th><th class="n">n</th><th class="n" title="average $ miss">Miss: Kronos</th><th class="n">No-change</th><th class="n">Momentum</th><th class="n" title="direction right">Dir: Kronos</th><th class="n">Momentum</th></tr></thead><tbody>${rows}</tbody></table>
-      <p class="m" style="margin-top:8px;font-size:11.5px">Miss = average $ miss on the underlying (lower is better; green = best). Dir = how often it called the direction right. ${esc(st.model || "")} · rev ${esc(st.rev || "")} · point forecast, not a probability.</p>`;
+      <p class="m" style="margin-top:8px;font-size:11.5px">Miss = average $ miss on the underlying (lower is better; green = best). Dir = how often it called the direction right. ${esc(st.model || "")}, rev ${esc(st.rev || "")}. Point forecast, not a probability. Scored data: ${esc(Object.entries(k.metrics.sources || {}).map(([a, b]) => `${a} ${b}`).join(", ") || "none yet")}.</p>`;
   }catch(e){ $("#kronos").innerHTML = `<span class="m">Kronos status unavailable: ${esc(e.message)}</span>`; }
 }
 
@@ -1788,7 +1994,7 @@ setTicker(ticker);
 { const lt = store.get("leftTab","watch"); if (lt !== "watch") $(`.tab[data-tab="${lt}"]`)?.click(); }
 loadWatch();
 show(location.hash.slice(1));
-poll(); setInterval(poll, 2000);
+poll(); setInterval(poll, 2000); DeskChart.start();
 </script>
 </body>
 </html>

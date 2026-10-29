@@ -1,4 +1,4 @@
-# Design System: Nick's Desk (v2.9)
+# Design System: DeltaDesk (v3)
 
 Source of truth for the desk's look. Any change to `index.html` should follow it. Format from the design-md skill. Rules from taste-skill (app-screen run, "data terminal" style, seed 1121322569) and the Vercel web interface guidelines.
 
@@ -58,3 +58,10 @@ Numbers carry their sign in the text (+$6.00, −$38.20), so the meaning never d
 - **The frame sweep and the tape's edge fade use gradients.** Nick asked for "cool animations" like the Algory video. This is the one signature move, marked `taste-skill-ignore` in the CSS.
 - **heavy-borders warning:** the inspector reads the 6.5%-white divider as solid white. On screen it is a whisper line.
 - **hero-void / panel-void warnings:** they come from the chart area being empty in the offline test (TradingView can't load there). On the real desk the TradingView chart fills it.
+
+## v3 additions
+- **Desk chart.** Lightweight Charts 5.2.1, transparent background on the frame. Candles use the up/down tokens; a forming candle is drawn in a dim neutral until it finishes. VWAP is warn amber, EMA 9 blue (#6FA8FF), EMA 21 violet (#B48CFF), and the MACD pane sits under the candles (2m only). Level lines are dashed and grey (PDH/PDL), brand pink (ORB) or dotted (value area and premarket). "Forming" is added while a level is still developing. Stop lines are red and T1 is green. One line is drawn per stop price, never one per ledger.
+- **Feed chip.** A dot and a few words next to the timeframe. Green: "Schwab live". Amber: "Schwab polling". Red dot with amber text: "Delayed, not tradable". It carries the bar age.
+- **Plan numbers.** Max buy, then Stop as an underlying price with the premium ceiling in small text under it, then T1 as the level price with the model premium under it. A reward/risk line follows (stock, option) with the entry mode.
+- **Ledger cards.** Four cards (Main paper outlined in the brand line, then Research, Old rules, You). Each has one big 30-day number, a short definition-list of today and sample stats, and a "too few trades" note under 30 trades.
+- **Decisions table.** Setups use plain names ("VWAP + MACD", "ORB retest"), and each row shows Taken / Skipped / Limit / Conflict with the desk's own reason.
