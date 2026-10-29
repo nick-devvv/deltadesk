@@ -33,22 +33,61 @@ TOKENIZER = "NeoQuasar/Kronos-Tokenizer-2k"
 REV = "67b630e"
 
 SCHEMA = """CREATE TABLE IF NOT EXISTS forecasts(id TEXT PRIMARY KEY, ticker TEXT, made_at TEXT, bar_ts TEXT,
-  horizon INTEGER, target_ts TEXT, base REAL, pred REAL, pred_mom REAL, actual REAL, model TEXT, runtime_ms INTEGER)"""
+  horizon INTEGER, target_ts TEXT, base REAL, pred REAL, pred_mom REAL, actual REAL, model TEXT, runtime_ms INTEGER,
+  data_src TEXT)"""
+YAHOO = "yahoo 5m (research input)"
+SCHWAB = "schwab 1m->5m (desk archive)"
+PRE_V3 = "yahoo (pre-v3)"           # forecasts made before the data migration have NULL data_src
+
+
+def migrate():
+    store.x(SCHEMA)
+    try:
+        store.x("ALTER TABLE forecasts ADD COLUMN data_src TEXT")
+    except Exception:
+        pass                                   # already there
 
 
 def status(state, **kw):
     store.kv_set("kronos_status", dict(state=state, at=store.ts(), **kw))
 
 
+def _archive_5m(ticker):
+    """Schwab 1m bars the desk engine archives every tick, rebuilt into 09:30-anchored 5m RTH bars (complete ones only)."""
+    import pandas as pd
+    since = (core.now_et() - timedelta(days=10)).isoformat()
+    rows = store.q("SELECT open, o, h, l, c, v FROM bars_archive WHERE ticker=? AND open>=? AND src LIKE 'Schwab%' ORDER BY open",
+                   (ticker, since))
+    if not rows:
+        return None
+    df = pd.DataFrame(rows)
+    df.index = pd.to_datetime(df["open"], utc=True).dt.tz_convert(core.ET)
+    df = df.rename(columns={"o": "Open", "h": "High", "l": "Low", "c": "Close", "v": "Volume"})[["Open", "High", "Low", "Close", "Volume"]]
+    df = df.between_time("09:30", "15:59")
+    out = []
+    for _, g in df.groupby(df.index.date):
+        r = g.resample("5min", origin="start_day", offset="30min").agg(
+            {"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"})
+        n = g["Close"].resample("5min", origin="start_day", offset="30min").count()
+        out.append(r[n == 5])                                  # a 5m bar needs all five minutes: no partial bars
+    return pd.concat(out) if out else None
+
+
 def rth_5m(ticker):
+    """(completed RTH 5m bars, source). One source per forecast, never mixed: the desk's Schwab archive once it holds
+    enough history (about 5 sessions after v3 starts), Yahoo before that. The source is stored on every forecast so
+    pre- and post-migration results stay separate."""
+    now = core.now_et()
+    a = _archive_5m(ticker)
+    if a is not None and len(a) >= LOOKBACK - 10:
+        return a[a.index + timedelta(minutes=5) <= now], SCHWAB
     import chartdata
     df = chartdata._dl(ticker, "7d", "5m", True)   # ~400 RTH bars; small request
     if df is None or df.empty:
-        return None
+        return None, YAHOO
     df = df.tz_convert(core.ET) if df.index.tz is not None else df.tz_localize(core.ET)
     df = df.between_time("09:30", "15:55")
-    now = core.now_et()
-    return df[df.index + timedelta(minutes=5) <= now]          # completed bars only
+    return df[df.index + timedelta(minutes=5) <= now], YAHOO   # completed bars only
 
 
 def momentum(closes, h):
@@ -58,7 +97,7 @@ def momentum(closes, h):
     return float(closes[-1] + (closes[-1] - closes[-4]) * h / 15)
 
 
-def forecast(ticker, bars, predict_fn, model_name=MODEL):
+def forecast(ticker, bars, predict_fn, model_name=MODEL, src=YAHOO):
     """bars: completed RTH 5m OHLCV DataFrame. predict_fn(x_df, x_ts, y_ts, n) -> list of predicted closes."""
     import pandas as pd
     if bars is None or len(bars) < 60:
@@ -83,21 +122,22 @@ def forecast(ticker, bars, predict_fn, model_name=MODEL):
         i = h // 5 - 1
         tgt = last_ts + timedelta(minutes=5 * (i + 1))          # the bar starting here closes h minutes after base
         rid = f"{key}-{h}"
-        store.x("INSERT OR IGNORE INTO forecasts(id,ticker,made_at,bar_ts,horizon,target_ts,base,pred,pred_mom,actual,model,runtime_ms) "
-                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+        store.x("INSERT OR IGNORE INTO forecasts(id,ticker,made_at,bar_ts,horizon,target_ts,base,pred,pred_mom,actual,model,runtime_ms,data_src) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (rid, ticker, store.ts(), last_ts.isoformat(), h, tgt.isoformat(), base, float(preds[i]),
-                 momentum(closes, h), None, model_name, ms))
+                 momentum(closes, h), None, model_name, ms, src))
         rows.append(rid)
     return rows
 
 
-def score(ticker, bars):
-    """Fill in the actual close for forecasts whose target bar has completed."""
+def score(ticker, bars, src=YAHOO):
+    """Fill in the actual close for forecasts whose target bar has completed, from the SAME source they used."""
     if bars is None or bars.empty:
         return 0
     closes = {ts.isoformat(): float(c) for ts, c in bars["Close"].items()}
     n = 0
-    for r in store.q("SELECT id, target_ts FROM forecasts WHERE ticker=? AND actual IS NULL", (ticker,)):
+    cond = "(data_src=? OR data_src IS NULL)" if src == YAHOO else "data_src=?"
+    for r in store.q(f"SELECT id, target_ts FROM forecasts WHERE ticker=? AND actual IS NULL AND {cond}", (ticker, src)):
         if r["target_ts"] in closes:
             store.x("UPDATE forecasts SET actual=? WHERE id=?", (closes[r["target_ts"]], r["id"]))
             n += 1
@@ -105,8 +145,11 @@ def score(ticker, bars):
 
 
 def metrics():
-    """Per horizon: n, mean abs error (Kronos vs no-change vs momentum), direction hits vs momentum."""
-    out = {}
+    """Per horizon: n, mean abs error (Kronos vs no-change vs momentum), direction hits vs momentum.
+    Direction is scored only on bars that moved (flat outcomes excluded and counted). 'sources' shows how many
+    scored forecasts came from each data source, so a data change can't hide inside one number."""
+    out = {"sources": {(r["s"] or PRE_V3): r["n"] for r in
+                       store.q("SELECT data_src s, COUNT(*) n FROM forecasts WHERE actual IS NOT NULL GROUP BY data_src")}}
     for h in HORIZONS:
         rs = store.q("SELECT base, pred, pred_mom, actual FROM forecasts WHERE horizon=? AND actual IS NOT NULL", (h,))
         if not rs:
@@ -161,7 +204,7 @@ def _until_next_bar():
 
 
 def main():
-    store.x(SCHEMA)
+    migrate()
     status("loading", model=MODEL, rev=REV)
     try:
         predict_fn = load_predictor()
@@ -175,10 +218,10 @@ def main():
             scoring_window = sess["state"] != "AFTER HOURS" or sess["time"] <= "16:30"
             if sess["state"] in ("OPEN", "NO NEW ENTRIES", "ALL OUT", "AFTER HOURS") and not sess["holiday"] and scoring_window:
                 for t in TICKERS:
-                    bars = rth_5m(t)
-                    score(t, bars)
+                    bars, src = rth_5m(t)
+                    score(t, bars, src)
                     if sess["state"] != "AFTER HOURS" and bars is not None and len(bars) and bars.index[-1].date() == core.now_et().date():
-                        forecast(t, bars, predict_fn)
+                        forecast(t, bars, predict_fn, src=src)
             status("running", model=MODEL, rev=REV, verdict=verdict(metrics()))
         except Exception as e:
             status("running", model=MODEL, rev=REV, last_error=f"{type(e).__name__}: {e}"[:300])
