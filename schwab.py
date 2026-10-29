@@ -3,11 +3,13 @@
 Off until Nick adds SCHWAB_APP_KEY + SCHWAB_APP_SECRET to Chart's Secrets and connects once on the desk's
 Rules page (he logs in on Schwab's own site himself; the desk never sees his password).
 
-Safety: this client can only call /marketdata/v1/* and /v1/oauth/*. Any other path (accounts, orders, trading)
-is refused in code, so the desk can never trade or read the Schwab account. Tokens stay in journal/schwab_token.json
+Safety: this client can only call /marketdata/v1/*, /v1/oauth/* and ONE read-only preferences call
+(GET /trader/v1/userPreference), which Schwab requires to get the streaming address/IDs. Every other path
+(accounts, positions, orders, trading) is refused in code, so the desk can never trade or read balances. Tokens stay in journal/schwab_token.json
 on Chart's computer and are never sent to the browser or to Chart.
 
-Schwab rules (verified Oct 27 2026 against schwab-py 1.5.1 and the schwabr docs): access token lasts 30 minutes
+Schwab rules (checked Oct 29 2026 against the schwab-py v1.5.0 source, an UNOFFICIAL wrapper; confirm in the
+official Trader API docs for your app): access token lasts 30 minutes
 (refreshed automatically); the login (refresh token) lasts 7 days, then Nick reconnects (about 1 minute).
 """
 import base64
@@ -26,6 +28,7 @@ API = "https://api.schwabapi.com"
 AUTH_URL = API + "/v1/oauth/authorize"
 TOKEN_URL = API + "/v1/oauth/token"
 ALLOWED_PREFIXES = ("/marketdata/v1/", "/v1/oauth/")
+STREAMER_PREFS = "/trader/v1/userPreference"   # read-only: streamer URL + IDs (the only /trader path allowed)
 TOKEN_FILE = core.HERE / "journal" / "schwab_token.json"
 REFRESH_LIFE_S = 7 * 24 * 3600
 _lock = threading.Lock()
@@ -133,7 +136,7 @@ def _access():
 
 
 def _get(path, params):
-    if not path.startswith(ALLOWED_PREFIXES[0]):
+    if not (path.startswith(ALLOWED_PREFIXES[0]) or path == STREAMER_PREFS):
         raise RuntimeError("REFUSED: the desk only reads Schwab market data")
     tok = _access()
     if not tok:
@@ -147,6 +150,18 @@ def _get(path, params):
         return None, f"HTTP {e.code}"
     except Exception as e:
         return None, f"{type(e).__name__}"
+
+
+def access_token():
+    """For the streamer LOGIN only (sent to Schwab's own websocket, never to the browser, Chart or logs)."""
+    return _access()
+
+
+def streamer_info():
+    """{streamerSocketUrl, schwabClientCustomerId, schwabClientCorrelId, schwabClientChannel, schwabClientFunctionId}."""
+    j, err = _get(STREAMER_PREFS, {})
+    info = ((j or {}).get("streamerInfo") or [None])[0]
+    return (info, None) if info else (None, err or "no streamerInfo (is Market Data/Trader API enabled for the app?)")
 
 
 def _cached(key, ttl, fn):
@@ -170,7 +185,7 @@ def _frame(candles):
                          "Volume": [c.get("volume", 0) for c in candles]}, index=idx)
 
 
-def bars_1m(ticker, days=5):
+def bars_1m(ticker, days=10):
     """1-minute candles incl. extended hours (consolidated volume), ET index. None if unavailable."""
     def f():
         j, _ = _get("/marketdata/v1/pricehistory", {"symbol": ticker.upper(), "periodType": "day", "period": days,
@@ -178,6 +193,16 @@ def bars_1m(ticker, days=5):
                                                      "needExtendedHoursData": "true", "needPreviousClose": "false"})
         return _frame((j or {}).get("candles"))
     return _cached(("1m", ticker, days), 8, f)
+
+
+def bars_1m_range(ticker, start, end):
+    """1-minute candles between two datetimes (Schwab keeps roughly the last 48 days of 1m history). Used by replay.py.
+    Market data only, same pricehistory endpoint. Returns an ET-indexed frame or None."""
+    j, err = _get("/marketdata/v1/pricehistory", {"symbol": ticker.upper(), "periodType": "day", "frequencyType": "minute",
+                                                   "frequency": 1, "startDate": int(start.timestamp() * 1000),
+                                                   "endDate": int(end.timestamp() * 1000), "needExtendedHoursData": "true",
+                                                   "needPreviousClose": "false"})
+    return _frame((j or {}).get("candles"))
 
 
 def bars_daily(ticker):
@@ -225,7 +250,9 @@ def chain(ticker, side, expiry, through=None):
                 iv = _num(o.get("volatility"))
                 rows.append({"symbol": occ(o.get("symbol")), "strike": float(o.get("strikePrice") or k), "bid": bid, "ask": ask,
                              "ts": datetime.fromtimestamp((o.get("quoteTimeInLong") or 0) / 1000, core.ET).isoformat() if o.get("quoteTimeInLong") else None,
-                             "delta": _num(o.get("delta")), "iv": iv / 100 if iv and iv > 3 else iv,
+                             "delta": _num(o.get("delta")), "gamma": _num(o.get("gamma")), "theta": _num(o.get("theta")),
+                             "vega": _num(o.get("vega")), "iv": iv / 100 if iv and iv > 3 else iv,
+                             "bid_size": o.get("bidSize"), "ask_size": o.get("askSize"), "multiplier": o.get("multiplier") or 100,
                              "exp": exp_key[:10], "last": _num(o.get("last")), "prev": _num(o.get("closePrice")),
                              "volume": o.get("totalVolume"), "oi": o.get("openInterest"), "feed": "Schwab live"})
     return rows, None if rows else "empty chain"
