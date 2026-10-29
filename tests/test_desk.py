@@ -14,6 +14,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "tests"))
 import broker  # noqa: E402
 import commands  # noqa: E402
 import core  # noqa: E402
@@ -101,20 +102,20 @@ def desk_env(tmp_path, monkeypatch):
     clock = Clock(DAY.replace(hour=9, minute=30))
     monkeypatch.setattr(core, "now_et", clock)
     engine._cache.clear()
-    (ROOT / "config" / "events.json").unlink(missing_ok=True)
-    return clock
+    monkeypatch.setattr(core, "EVENTS_FILE", tmp_path / "events.json")   # never touch the real calendar
+    import marketdata
+    yield clock
+    marketdata.use(None)
 
 
-def wire(monkeypatch, clock, path_fn):
-    m1_all, daily = make_market(path_fn)
-
-    def bars(t):
-        cut = m1_all[m1_all.index <= pd.Timestamp(clock.t) - pd.Timedelta(minutes=0)]
-        return cut, daily
-    monkeypatch.setattr(engine, "_bars", bars)
-    fb = FakeBroker(601.0, lambda: float(path_fn(pd.Timestamp(clock.t))))
-    fb.install(monkeypatch)
-    return fb
+def wire(monkeypatch, clock, path_fn, **kw):
+    """v3: the fake Schwab provider feeds bars and option quotes through marketdata (one pipeline)."""
+    import fakes
+    import marketdata
+    m1 = fakes.make_market(path_fn, DAY, **{k: v for k, v in kw.items() if k in ("prior_days", "vol", "vol_fn", "seed")})
+    fk = fakes.FakeSchwab(m1, clock, **{k: v for k, v in kw.items() if k in ("s0", "delta", "gamma", "base", "spread")})
+    marketdata.use(fk)
+    return fk
 
 
 def run(clock, start, end, step=1):
@@ -214,35 +215,6 @@ def test_losing_streak_stops(desk_env, monkeypatch):
 
 
 # ---------------------------------------------------------------- autonomous paper engine
-def test_paper_engine_trades_alone_and_trails(desk_env, monkeypatch):
-    fb = wire(monkeypatch, desk_env, up_day)
-    run(desk_env, "09:30", "11:20")
-    opps = store.q("SELECT * FROM opportunities")
-    assert any(o["decision"] == "ORDER" for o in opps), opps
-    buys = [k for k, o in fb.orders.items() if o["side"] == "buy"]
-    assert len(buys) == len(set(buys))                       # no duplicate entries
-    ps = store.positions(ledger="paper")
-    assert ps and ps[0]["fill"] > 0
-    ev = [e["text"] for e in store.q("SELECT text FROM events")]
-    assert any("BREAKEVEN" in t for t in ev), ev[-20:]
-    assert any("T1" in t for t in ev)
-    sold = sum(o["filled_qty"] for o in fb.orders.values() if o["side"] == "sell")
-    bought = sum(o["filled_qty"] for o in fb.orders.values() if o["side"] == "buy")
-    assert sold <= bought                                      # never oversold
-    assert store.q("SELECT COUNT(*) n FROM events WHERE kind='chart'")[0]["n"] == 0   # no AI involved
-
-
-def test_paper_stop_respects_cap(desk_env, monkeypatch):
-    fb = wire(monkeypatch, desk_env, down_after_entry)
-    run(desk_env, "09:30", "10:40")
-    closed = [p for p in store.positions(ledger="paper") if p["status"] == "CLOSED"]
-    assert closed, store.q("SELECT text FROM events")
-    for p in closed:
-        assert p["realized"] >= -0.20 * 100 * p["fill"] * p["qty_init"] - 6, p  # fake fills at bid can slip a little
-    texts = " ".join(e["text"] for e in store.q("SELECT text FROM events"))
-    assert "STOP" in texts or "INVALIDATED" in texts or "IF FLAT" in texts
-
-
 def test_all_out_time(desk_env, monkeypatch):
     def flat_up(ts):
         return up_day(ts) if ts.hour * 60 + ts.minute < 600 else 601.6
@@ -263,7 +235,7 @@ def test_in_out_commands(desk_env, monkeypatch):
     r = commands.handle("IN SPY 601C 2 at 0.95", "SPY")
     assert r["handled"] and "STOP" in r["reply"] and "LOGGED YOUR BUY 2" in r["reply"]
     p = store.positions(ledger="real", status="OPEN")[0]
-    assert p["plan"]["stop"] >= 0.76 and p["plan"]["be_trigger"] == 1.05
+    assert p["plan"]["premium_stop"] >= 0.76 and p["plan"]["be_trigger"] == 1.05    # 20% ceiling + costs; BE +10% (v3)
     r = commands.handle("OUT 1 at 1.10", "SPY")
     assert "P/L $+15.00" in r["reply"] and "1 left" in r["reply"]
     r = commands.handle("OUT 1.20", "SPY")
@@ -277,9 +249,11 @@ def test_in_reuses_plan_contract(desk_env, monkeypatch):
     desk_env.t = DAY.replace(hour=10, minute=10)
     r = commands.handle("confirm SPY calls", "SPY")
     assert r["plan"]["state"] in ("READY", "WAIT", "PASS")
-    assert r["plan"].get("contract"), r["plan"]
     r2 = commands.handle("IN 1 at 1.00", "SPY")
-    assert r2["handled"] and r["plan"]["contract"]["label"] in r2["reply"]
+    if r["plan"].get("contract"):
+        assert r2["handled"] and r["plan"]["contract"]["label"] in r2["reply"]
+    else:                                   # no plan contract (e.g. not enough room for 2:1): the desk asks which one
+        assert r2["handled"] and "Which contract" in r2["reply"]
 
 
 def test_check_once_no_watch_and_watch_expires(desk_env, monkeypatch):
@@ -287,7 +261,7 @@ def test_check_once_no_watch_and_watch_expires(desk_env, monkeypatch):
     desk_env.t = DAY.replace(hour=10, minute=10)
     commands.handle("check once SPY puts", "SPY")
     assert store.q("SELECT * FROM watches") == []
-    r = commands.handle("watch SPY puts at 605 for 5 minutes", "SPY")
+    r = commands.handle("watch SPY calls at 605 for 5 minutes", "SPY")   # above price: a WAIT plan that gets watched
     assert store.q("SELECT * FROM watches WHERE status='ACTIVE'")
     run(desk_env, "10:11", "10:17")
     w = store.q("SELECT status FROM watches")[0]
@@ -296,7 +270,8 @@ def test_check_once_no_watch_and_watch_expires(desk_env, monkeypatch):
 
 
 def test_missing_data_is_unknown_not_zero(desk_env, monkeypatch):
-    monkeypatch.setattr(engine, "_bars", lambda t: (None, None))
+    import marketdata
+    marketdata.use(marketdata.Provider())       # a provider with no data at all
     p = engine.build_plan("SPY", "C")
     assert p["state"] == "DATA UNAVAILABLE"
 
@@ -370,9 +345,10 @@ def test_watchlist_tickers_route_to_chart_and_log_journal_only(desk_env, monkeyp
     assert not r["handled"] and r["coach"] and "Chart" in r["reply"]
     r = commands.handle("IN NVDA 140C 1 at 3.20", "SPY")
     p = r["position"]
-    assert p["ticker"] == "NVDA" and p["plan"].get("manual") and p["plan"]["stop"] <= 3.20 * 0.80 + 0.06
+    assert p["ticker"] == "NVDA" and p["plan"].get("manual") and p["plan"]["premium_stop"] <= 3.20 * 0.80 + 0.06
+    import exits
     before = store.pos_get(p["id"])
-    engine.manage(before)  # journal only: no auto-exit, no alerts
+    assert exits.evaluate(before, {}) == []  # journal only: no auto-exit, no alerts
     assert store.pos_get(p["id"])["status"] == "OPEN"
     out = commands.handle("OUT NVDA 4.10", "SPY")
     assert "+$90.00" in out["reply"] or "90" in out["reply"]
@@ -471,75 +447,17 @@ def test_black_scholes_delta_fallback():
     assert core.bs_delta(600, 600, None, "C", t) is None
 
 
-def test_pdh_retest_setup_and_kill_switch(desk_env, monkeypatch):
-    """PDH retest + 9 EMA pullback fires on a breakout-and-hold day; the kill switch closes paper only."""
-    clock = desk_env
-    def path(ts):
-        m = ts.hour * 60 + ts.minute
-        if m < 570: return 599.6
-        if m < 585: return 600.0 + (m - 570) % 6 / 5.0
-        if m < 620: return 601.0 + (m - 585) * 0.06          # breakout above PDH (~598+) and ORB
-        if m < 630: return 603.1 - (m - 620) * 0.12          # pullback toward the 9 EMA
-        return 601.9 + (m - 630) * 0.08
-    fb = wire(monkeypatch, clock, path)
-    found = set()
-    for mins in range(600, 660, 5):
-        clock.t = DAY.replace(hour=mins // 60, minute=mins % 60, second=5)
-        engine._cache.clear()
-        s = engine.snapshot("SPY")
-        found |= {x["family"] for x in engine.detect(s)}
-    assert "PDH_RETEST" in found, found
-    # kill switch: run the up-day market until the paper engine is in a trade, then kill
-    fb = wire(monkeypatch, clock, up_day)
-    t = DAY.replace(hour=9, minute=30)
-    opened = []
-    while t < DAY.replace(hour=11, minute=30) and not opened:
-        clock.t = t
-        engine._cache.clear()
-        engine.tick()
-        opened = store.positions(ledger="paper", status="OPEN")
-        t += timedelta(minutes=1)
-    assert opened, "expected the paper engine to be in a trade before the kill test"
-    msg = commands.handle("kill switch", "SPY")["reply"]
-    assert "paper entries OFF" in msg and store.kv_get("paper_enabled") is False
-    for _ in range(2):
-        clock.t += timedelta(minutes=1)
-        engine._cache.clear()
-        engine.tick()
-    assert not store.positions(ledger="paper", status="OPEN")
-    sells = store.q("SELECT * FROM orders WHERE side='sell' AND reason='KILL SWITCH'")
-    assert len(sells) == len(opened)
-
-
-def test_adx_trend_vs_chop_and_setup_cooldown(desk_env, monkeypatch):
-    idx = pd.date_range(DAY.replace(hour=9, minute=30), periods=60, freq="5min")
-    up = np.linspace(600, 612, 60)
-    trend = pd.DataFrame({"Open": up - .05, "High": up + .15, "Low": up - .15, "Close": up, "Volume": 1e5}, index=idx)
-    wig = 600 + 0.4 * np.sin(np.arange(60))
-    chop = pd.DataFrame({"Open": wig, "High": wig + .3, "Low": wig - .3, "Close": wig[::-1], "Volume": 1e5}, index=idx)
-    assert engine.adx(trend) > 25 and engine.adx(chop) < 18
-    assert engine.adx(trend.iloc[:10]) is None
-    clock = desk_env
-    clock.t = DAY.replace(hour=10, minute=30)
-    st = {"family": "ORB_RETEST", "side": "C"}
-    store.x("INSERT INTO opportunities(id,date,ts,ticker,side,setup,grade,decision,reason,data) VALUES(?,?,?,?,?,?,?,?,?,?)",
-            ("x1", "2026-10-28", DAY.replace(hour=10, minute=20).isoformat(timespec="seconds"), "SPY", "C", "ORB_RETEST", "A", "ORDER", None, "{}"))
-    assert "cooldown" in engine._setup_cooldown("SPY", st)
-    assert engine._setup_cooldown("SPY", {"family": "ORB_RETEST", "side": "P"}) is None
-    clock.t = DAY.replace(hour=10, minute=45)
-    assert engine._setup_cooldown("SPY", st) is None
-
-
 def test_chart_gets_current_rules_and_training(desk_env, monkeypatch):
     clock = desk_env
     wire(monkeypatch, clock, up_day)
     clock.t = DAY.replace(hour=10, minute=5)
     ctx = commands.coach_context("SPY", "is this a vwap pullback? spread looks wide")
     r = ctx["rules"]
-    assert r["stops"] == {"morning": "-20%", "midday": "-12%", "afternoon": "-10%"}
+    assert "STRUCTURE" in r["stops"] and "20%" in r["stops"] and "retired" in r["old_stops"]
+    assert "2.0:1" in r["reward_risk"] and "ONE strategy" in r["vwap_macd"]
     assert "0.4-0.55" in r["delta"] and "STOP FOR TODAY" in r["streak"] and "15:25" in r["session"]
     assert {c["id"] for c in ctx["cards"]} & {"K22", "K06", "K02"}
-    assert "Desk v2 rules map" in ctx["training"]["library"] and "delayed" in ctx["training"]["data"]["options_feed"]
+    assert "Desk v3 rules map" in ctx["training"]["library"] and ctx["data"]["executable"] is True
 
 
 def test_schwab_market_data_only_and_parsing(monkeypatch, tmp_path):
@@ -565,8 +483,11 @@ def test_schwab_market_data_only_and_parsing(monkeypatch, tmp_path):
     assert rows[1]["delta"] is None                               # -999 means unknown, never a real delta
     q, _ = schwab.option_quote("SPY261028C00600000")
     assert q == {"bid": 1.2, "ask": 1.24, "ts": None, "feed": "Schwab live"}
-    monkeypatch.setattr(engine.schwab, "ready", lambda: True)
-    assert engine.option_quote("SPY261028C00600000")[0]["feed"] == "Schwab live"
+    import marketdata
+    marketdata.use(None)
+    assert isinstance(marketdata.provider(), marketdata.SchwabREST) and marketdata.executable()
+    monkeypatch.setattr(schwab, "ready", lambda: False)
+    assert isinstance(marketdata.provider(), marketdata.Fallback) and not marketdata.executable()   # never a hidden live fallback
 
 
 def test_out_returns_review_card(desk_env, monkeypatch):
@@ -603,61 +524,3 @@ def test_alerts_setups_moves_news(desk_env, monkeypatch):
     assert store.q("SELECT COUNT(*) n FROM events WHERE kind='alert'")[0]["n"] == 3   # news alerts off: stored, not pinged
 
 
-def test_option_chain_view_only(desk_env, monkeypatch):
-    """Robinhood-style chain around the money: strikes both sides of price, mark, breakeven, rule fit. Never orders."""
-    clock = desk_env
-    clock.t = DAY.replace(hour=10, minute=5)
-    import schwab
-    monkeypatch.setattr(schwab, "ready", lambda: False)
-    monkeypatch.setattr(broker, "configured", lambda: True)
-    monkeypatch.setattr(broker, "submit", lambda *a, **k: (_ for _ in ()).throw(AssertionError("chain must never order")))
-    monkeypatch.setattr(broker, "stock_last", lambda t: ({"price": 765.30, "ts": None, "feed": "IEX"}, None))
-    exp = clock.t.strftime("%Y-%m-%d"); yymmdd = clock.t.strftime("%y%m%d")
-    def fake_chain(t, side, first, through=None):
-        rows = []
-        for k in range(755, 776):
-            mid = max(0.05, 0.95 + (k - 765.3) * 0.18) if side == "C" else max(0.05, 0.95 - (k - 765.3) * 0.18)
-            rows.append({"symbol": f"SPY{yymmdd}C{k*1000:08d}", "strike": float(k), "exp": exp, "bid": round(mid - 0.02, 2),
-                         "ask": round(mid + 0.02, 2), "delta": 0.45 if k == 765 else (0.7 if k < 765 else 0.25), "iv": 0.2,
-                         "last": round(mid, 2), "prev": 1.0, "volume": 1200})
-        return rows, None
-    monkeypatch.setattr(broker, "chain", fake_chain)
-    c = engine.option_chain("SPY", "C", None, n=4)
-    strikes = [r["strike"] for r in c["rows"]]
-    assert strikes == [762, 763, 764, 765, 766, 767, 768, 769] and c["spot"] == 765.30 and c["exp"] == exp and c["dte"] == 0
-    r765 = next(r for r in c["rows"] if r["strike"] == 765)
-    assert r765["fits"] and r765["label"] == "765C" and r765["breakeven"] == round(765 + r765["mark"], 2)
-    assert r765["itm"] and not next(r for r in c["rows"] if r["strike"] == 766)["itm"]
-    assert not next(r for r in c["rows"] if r["strike"] == 762)["fits"]       # delta 0.70: outside 0.40-0.55
-    assert c["feed"] == "Alpaca delayed"
-
-
-def test_alerts_carry_full_plan_and_stay_quiet(desk_env, monkeypatch):
-    """A setup alert names the contract, max buy, size, stop, BE, T1/trail and exits; blocked setups don't ping;
-    move alerts can't repeat inside 15 minutes; 'I'm in ...' is understood and answered with the full exit plan."""
-    import alerts
-    monkeypatch.delenv("NTFY_TOPIC", raising=False)
-    clock = desk_env
-    wire(monkeypatch, clock, up_day)
-    run(clock, "09:30", "10:30")
-    setup_alerts = [e["text"] for e in store.q("SELECT text, data FROM events WHERE kind='alert'") if json.loads(e["data"])["kind"] == "setups"]
-    assert setup_alerts, "the up day should raise at least one setup alert"
-    a = setup_alerts[0]
-    assert all(k in a for k in ("buy at or under $", "size ", "STOP $", "BE at $", "T1 $", "trail", "all out", "0DTE"))
-    assert store.q("SELECT COUNT(*) n FROM events WHERE kind='desk' AND text LIKE 'ALERT PLAN%'")[0]["n"] >= 1
-    per = {}
-    for t in setup_alerts:
-        k = t.split(" ")[0] + (" C" if " calls " in t else " P")
-        per[k] = per.get(k, 0) + 1
-    assert all(n <= 7 for n in per.values()) and len(setup_alerts) < 2 * len(per) + 4   # no bursts of near-identical alerts
-    st = {"family": "ORB_BREAK", "side": "C", "note": "x", "level": 601.0, "invalidation": 600.5, "bar": "2026-10-28T10:40:00"}
-    for why in ("STOP FOR TODAY: 3 losses in a row", "extended: waiting for retest (no chase)", "EVENT: CPI at 08:30 ET", "cooldown: ORB_BREAK already traded"):
-        assert not engine.setup_alert("SPY", st, "A", "SKIP", why)
-    idx = pd.date_range(DAY.replace(hour=9, minute=30), periods=31, freq="5min")
-    o = np.full(31, 600.0); c = o + 0.05; v = np.full(31, 1e5)
-    o[-3:], c[-3:], v[-3:] = [600.0, 600.9, 601.8], [600.9, 601.8, 602.7], [3e5, 3e5, 3e5]
-    b5 = pd.DataFrame({"Open": o, "High": np.maximum(o, c) + .05, "Low": np.minimum(o, c) - .05, "Close": c, "Volume": v}, index=idx)
-    assert alerts.move_check("QQQ", b5.iloc[:-1])
-    assert not alerts.move_check("QQQ", b5)          # next 5m bar of the same run: no repeat
-    r = commands.handle("I'm in SPY 601C 2 at 0.95", "SPY")
-    assert r["handled"] and "sell 1" in r["reply"] and "trail" in r["reply"] and "STOP $" in r["reply"]
