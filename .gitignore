@@ -16,3 +16,4 @@ __pycache__/
 .pytest_cache/
 .taste-skill/
 .DS_Store
+reports/

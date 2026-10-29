@@ -1,21 +1,22 @@
 # DeltaDesk
 
 [![tests](https://github.com/nick-devvv/deltadesk/actions/workflows/tests.yml/badge.svg)](https://github.com/nick-devvv/deltadesk/actions/workflows/tests.yml)
-![Python](https://img.shields.io/badge/python-3.12-blue) ![SQLite](https://img.shields.io/badge/storage-SQLite-lightgrey) ![Paper only](https://img.shields.io/badge/broker-paper%20only-red)
+![Python](https://img.shields.io/badge/python-3.12-blue) ![SQLite](https://img.shields.io/badge/storage-SQLite-lightgrey) ![Paper only](https://img.shields.io/badge/execution-simulated%20only-red)
 
-**A day-trading command deck for 0DTE SPY/QQQ options.** Deterministic code does the math, the monitoring and the paper trading. An AI coach ("Chart", a Grok agent) explains the numbers in plain words. Real-money trades are placed by hand. The system never places them.
+**A day-trading command deck for 0DTE SPY/QQQ options.** Deterministic code does the math, the monitoring and the paper trading on live Schwab market data. An AI coach ("Chart", a Grok agent) explains the numbers in plain words. Real-money trades are placed by hand. The system never places an order anywhere.
 
 ![The deck](docs/screenshots/deck.png)
-*The deck with demo data: plan, options chain, watchlist, positions and coach chat. In the live app the TradingView chart fills the middle.*
+*The deck on a synthetic test market: the desk's own chart (candles, VWAP, EMAs, 2-minute MACD, levels, stops and fills), the plan with its structure stop, T1 level and reward/risk, the options chain and open positions.*
 
 ## What it does
-- **Plans in code.** Each trade idea gets a full plan: trigger, invalidation, contract pick (target delta 0.45), max buy, size, stop, breakeven, T1, trail and exit times. The plan is computed from live market data before the AI says a word.
-- **Live alerts.** A/B setup alerts (opening range break and retest, failed breaks, PDH/PDL retests, VWAP reclaims), alerts for two heavy 5-minute candles, and market-moving news from a 20-minute AI news scan. Each setup alert carries the full plan and only fires when the trader's own rules allow the trade. Delivered as browser pop-ups, sound and phone push (ntfy).
-- **Risk rules as code.** Time-of-day stops (20% hard cap in the morning, 12% midday, 10% afternoon), a losing-streak brake (2 losses = A setups only plus a cooldown; 3 = stop for the day), no-chase and cooldown filters, event blocks around CPI/Fed releases, and all out at 3:25.
-- **Paper engine.** Trades the same setups by itself in an Alpaca paper account, with breakeven, T1 and trailing-stop management, plus a kill switch.
+- **Plans in code.** Each trade idea gets a full plan: a stop at the chart level that proves it wrong (inside a 20% premium-loss ceiling), T1 at the next opposing level, reward/risk checked at 2:1 on both the stock move and the option dollars after spread, fees and time decay, contract pick (delta 0.45), size and exit rules. The plan is computed before the AI says a word.
+- **Setups on finished candles.** Opening range break and retest (a retest must actually touch the level), failed breaks, PDH/PDL retests, VWAP reclaims and a VWAP + MACD strategy (cross arms it, VWAP retest enters, early entry only in a strong trend). All detectors read one snapshot; same-side ideas merge and call/put conflicts skip the bar. Regime from ADX, efficiency, VWAP crossings and overlap; time-matched RVOL; a developing volume profile.
+- **Live alerts.** Each A/B alert carries the full plan and only fires when the trader's own rules allow the trade. Browser pop-ups, sound and phone push (ntfy).
+- **Exits as a state machine.** A fixed order: session, premium stop, structure, then momentum fade / 10-minute green stall / T1 rejection, then the T1 partial (a runner only on a clean break), then breakeven, profit lock and trail. Stops only tighten, and every change is versioned. Losing-streak brake, 4 ideas a day, event blocks, all out at 3:25.
+- **Paper engine and research ledgers.** Simulated fills on Schwab quotes (buy at the ask, sell at the bid, with costs; no fill without a fresh executable quote). Four ledgers kept apart: the trader, main paper, a research ledger that keeps observing after the limits, and the frozen previous rules for comparison. A reproducible day replay and a forward-test scorecard fixed before results exist.
 - **Journal and learning loop.** After every trade the chat asks a short review (plan followed, mistake tags, why in and out). An end-of-day wrap fills the daily journal. The analytics break results down by setup, time of day, ticker, grade and mistake, with a P/L calendar and CSV export. A 4:20 PM review proposes lessons, which only take effect after the trader approves them.
 - **Options chain view.** A Robinhood-style chain with bid, ask, mark, delta and breakeven. The desk's pick is marked, and contracts that fit the rules get a green dot. Read-only.
-- **Forecast research.** Runs the Kronos time-series model in shadow mode only, scored against no-change and momentum baselines.
+- **Forecast research.** Runs the Kronos time-series model in shadow mode only, scored against no-change and momentum baselines, with every forecast tagged by its data source.
 
 | Journal | Phone |
 |---|---|
@@ -23,32 +24,38 @@
 
 ## Architecture
 ```
-Browser (single-page deck, TradingView chart)
-   |  polls /api/state every 2 s, sends commands
+Browser (single-page deck, Lightweight Charts fed by the server)
+   |  polls /api/state every 2 s and /api/chart every 5 s
 server.py  (Python HTTP API, token-protected, exposed via Tailscale Funnel)
-   |-- engine.py     plans, setup detection (ADX/RVOL/VWAP/levels), paper engine, position management
-   |-- core.py       rules: market calendar, stops, sizing, exit plan, Black-Scholes delta fallback
-   |-- commands.py   chat text -> actions (IN/OUT/confirm/check) handled in code, AI only for judgment
-   |-- alerts.py     setup / move / news alerts with de-duplication, cooldowns and phone push
-   |-- store.py      SQLite journal (WAL): positions, events, opportunities, notes, analytics
-   |-- broker.py     Alpaca client, refuses anything but a paper account
-   |-- schwab.py     Schwab market-data client, refuses trading and account endpoints
-   `-- kronos_shadow.py  separate forecast process (shadow only)
-Chart (Grok agent) <- webhook with compact context (rules, plan, 3 relevant knowledge cards)
+   |-- marketdata.py    one data pipeline: Schwab stream or REST, freshness labels, gaps, fallback marked not executable
+   |   |-- schwab.py / schwab_stream.py   market data only; trading and account endpoints refused in code
+   |-- indicators.py    VWAP, MACD, Wilder ATR/ADX (TA-Lib parity), time-matched RVOL, chop measures, volume profile
+   |-- strategy.py      levels with sources, regime, setups, conflict skip / merge, qualification, grade
+   |-- optionmath.py    structure stop, 20% ceiling, T1, 2:1 in both units, sizing
+   |-- paper.py / exits.py   simulated fills and the exit state machine
+   |-- engine.py        snapshots per finished bar, ledgers, alerts, candidates journal
+   |-- commands.py      chat text -> actions in code; AI only for judgment
+   |-- replay.py / evaluation.py   day replay (sandboxed) and the forward-test scorecard
+   `-- kronos_shadow.py separate forecast process (shadow only)
+Chart (Grok agent) <- webhook with compact context (rules, plan, levels, regime, 3 knowledge cards)
 ```
 
 ## Design choices
 - **Code computes, AI explains.** Standard commands never call the model, which keeps AI cost to about 20 scheduled runs a day plus questions. The model may not change any number.
-- **Safety by construction.** No code path places a real-money order. The paper client checks for a paper key and account, and the Schwab client allows only market-data paths.
-- **Tested.** 31 offline tests (no network, no AI, fake broker) cover stops, sizing, the streak brake, the paper engine, alerts, the journal, the chain and safety refusals.
+- **Safety by construction.** No code path sends an order. Paper trading is simulated internally, and the Schwab client allows only market-data paths (plus the one preferences call that returns the streaming address).
+- **Honest numbers.** Indicators run on finished bars only, option P&L in replays is labeled modeled, and results from different ledgers or data sources are never mixed.
+- **Tested.** 54 offline tests (no network, no AI, a fake Schwab provider) cover indicator parity, levels, conflict handling, atomic idea reservation under threads, option math units, every exit rule and their order, outages, stream message merging, the replay sandbox and safety refusals.
 
 ## Stack
-Python 3.12, SQLite, pandas/numpy, yfinance; vanilla HTML/CSS/JS with canvas animations and the TradingView widget; Alpaca and Schwab REST APIs; Grok agent routines; pytest.
+Python 3.12, SQLite, pandas/numpy, websockets; vanilla HTML/CSS/JS with TradingView Lightweight Charts 5.2.1 (Apache-2.0) and canvas animations; Schwab market-data REST and streaming APIs; Grok agent routines; pytest.
+
+## v3 (Oct 29, 2026)
+v3 rebuilt the data pipeline, the setup rules and the exits after a one-day audit. `docs/V3_REPORT.md` covers what changed, the root causes, the tests, and what still needs a live session to verify.
 
 ## Running it
-`python3 server.py` with `DESK_TOKEN`, `ALPACA_KEY`/`ALPACA_SECRET` (paper), and optionally `CHAT_WEBHOOK`, `SCHWAB_*`, `NTFY_TOPIC`, `KRONOS=1` set in the environment. Never commit keys. Tests: `pip install -r requirements.txt && python3 -m pytest -q tests/` (they also run on every push via GitHub Actions).
+`python3 server.py` with `DESK_TOKEN`, `SCHWAB_APP_KEY`/`SCHWAB_APP_SECRET` (market data, see `docs/SCHWAB_SETUP.md`), and optionally `CHAT_WEBHOOK`, `NTFY_TOPIC`, `KRONOS=1` set in the environment. Never commit keys. Tests: `pip install -r requirements.txt && python3 -m pytest -q tests/` (they also run on every push via GitHub Actions).
 
 ## Disclaimer
-This is a personal project, shared for portfolio purposes. It is not financial advice and not a trading service. It never places real-money orders: the broker client only works with paper accounts, and every real trade is placed by hand. Options trading carries a high risk of loss.
+This is a personal project, shared for portfolio purposes. It is not financial advice and not a trading service. It never places orders: paper trading is simulated inside the app, and every real trade is placed by hand. Options trading carries a high risk of loss.
 
 Built with help from Claude (Anthropic). Credits for ideas and tools are in `docs/CREDITS.md`. Copyright © 2026 nick-devvv. All rights reserved.

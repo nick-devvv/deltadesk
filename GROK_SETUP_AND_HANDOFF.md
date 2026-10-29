@@ -1,67 +1,60 @@
-# Desk v2: setup on Chart's computer
+# DeltaDesk v3: setup on Chart's computer
 
-You do every step yourself, in Grok. Nothing here needs Claude to take over your computer.
+You do every step yourself, in Grok. Nothing here needs Claude to take over your computer. The Schwab login and the Schwab keys are yours to enter; nobody else types them.
 
-## What changes
-- **New page.** TradingView in the middle, with the Plan and Positions cards and the conversation on the right, and an activity feed under the chart. Separate Paper, Journal, Review and Rules pages. The old page is still at `/legacy`.
-- **The paper engine trades SPY/QQQ by itself** in the Alpaca paper account, in code, with no AI credits. Chart no longer runs `bot.py take`.
-- **Rules:**
-  - Time-of-day stops: 20% morning (the hard all-in cap), 12% midday, 10% afternoon.
-  - No dollar limits.
-  - 2 losses in a row: A setups only, plus a 10-minute cooldown.
-  - 3 losses in a row: STOP FOR TODAY.
-  - Breakeven, then T1, then trail.
-  - If flat, get out at the time on the plan.
-  - All out at 3:25.
-- **Typing IN / OUT / confirm / check once / stop watching is handled in code**, so it's instant and free. Only "why?" and free questions use Chart.
-- **Voice mode** (Voice button or press J): talk to the desk and Chart, and hear the answers. Fills you say out loud are read back for a yes before they're logged.
-- **Options chain in the left column (v2.9.1)**, above a shorter watchlist. Setup alerts now carry the full plan. Trade reviews and the end-of-day journal happen in the chat.
-- **Options chain (v2.9):** Robinhood-style list of strikes with bid/ask/mark, change, delta, breakeven and the desk's pick. View only: Nick buys in Robinhood. Click a row to ask Chart about it or to log the fill.
-- **v2.9 look:** cleaner, with fewer boxes and words. Voice is a small mic icon. The ticker tape at the bottom shows prices and news.
-- **Watchlist (bottom left)** for other tickers and earnings plays. Click one to chart it and ask Chart about it.
-- **Journal** is written at 4:05 PM every day. The **4:20 review** proposes lessons, and you approve them.
+## What changes in v3
+- **Schwab is the only live data.** Candles, quotes and option prices come from Schwab (stream, or REST polling if the stream isn't available). Without Schwab the desk says **FALLBACK - not executable**: plans are marked delayed and the paper engine doesn't trade.
+- **The desk chart** in the middle is drawn from the same Schwab data the engine decides on, with 1m/2m/5m candles, VWAP, EMA 9/21, MACD, levels and entry/exit marks. One click switches to TradingView.
+- **New stops and targets.** The stop is the chart level that proves the idea wrong, inside a 20% premium ceiling. T1 is the next opposing level. A trade needs 2:1 on the stock move and on the option dollars. The old 20/12/10% stops are retired.
+- **New exits.** Green and stalled for 10 minutes: out. Green and momentum fades or MACD crosses against: out. At T1, 2 contracts sell 1 and keep a runner only on a clean break; 1 contract sells. Breakeven and a profit lock protect winners. All out at 3:25.
+- **VWAP + MACD**, one strategy. The cross arms it, the entry comes on the VWAP retest, and an early entry is allowed only in a strong trend.
+- **Paper is simulated inside the desk** on Schwab quotes, with no broker and no orders. There are four ledgers kept apart: You, Main paper (4 ideas a day), Research (keeps watching after the limits) and Old rules (frozen, for comparison).
+- **Everything else stays:** the chain, watchlist, journal in the chat, alerts, voice and the Kronos test (still forecast-only).
 
-## Step 1: attach the files to Chart
-Attach `nicks-desk-v2.9.1.zip` (in Downloads/nicks-desk) to a new Chart chat with the message below.
+## Step 1: attach the file to Chart
+Attach `deltadesk-v3.zip` (in Downloads/nicks-desk) to a new Chart chat with the message below.
 
 ## Step 2: the message to send Chart (copy all of it)
 
 ```
-DESK V2 INSTALL. Do these steps on your computer, in order, and show me the output of each.
+DESK V3 INSTALL. Do these steps on your computer, in order, and show me the output of each.
 You never place real trades, never click buy/sell/order buttons, and never enter passwords or keys.
 
-1. Back up: cp -r ~/desk ~/desk_backup_$(date +%Y%m%d)
-2. Unzip the attached nicks-desk-v2.9.1.zip over ~/desk (overwrite files with the same names; keep everything else, including bot.py, shadow.py, review.py, desk-state.json and my Secrets).
-3. pip install yfinance pandas numpy pytest quiverquant
-4. cd ~/desk && python3 -m pytest -q tests/   -> must say "31 passed". If not, stop and show me the error.
-5. Restart the desk server the same way watchdog.sh starts it (same env: DESK_TOKEN, CHAT_WEBHOOK, CHAT_WEBHOOK_KEY, ALPACA_KEY, ALPACA_SECRET, PORT). Then run:
-   curl -s "http://127.0.0.1:8765/api/state?k=$DESK_TOKEN" | head -c 400
-   and show me the output. "paper" should say RUNNING or IDLE and the broker line should say paper account verified.
-6. Replace your routine instructions with the files in ~/desk/grok/:
+1. Back up code, settings and the journal: cp -r ~/desk ~/desk_backup_v2_$(date +%Y%m%d)
+2. Unzip the attached deltadesk-v3.zip over ~/desk. Overwrite files with the same names and keep everything else, including journal/desk.db, bot.py, shadow.py, review.py, desk-state.json, config/watchlist.json, config/events.json and my Secrets. The zip has no journal folder, so my trade history is untouched.
+3. pip install websockets==17.3
+4. cd ~/desk && python3 -m pytest -q tests/   -> must end with "53 passed, 1 skipped". If not, stop and show me the error.
+5. Restart the desk server the same way watchdog.sh starts it (same env as before). Then run:
+   curl -s "http://127.0.0.1:8765/api/data/status?k=$DESK_TOKEN" | head -c 400
+   and show me the output. Until I connect Schwab it says "FALLBACK - not executable". That's expected.
+6. Replace your routine instructions with the files in ~/desk/grok/ (put my real DESK_TOKEN from Secrets where a file says DESK_TOKEN; never paste it in chat):
    - Desk chat webhook routine  -> PRIMARY_COACH_SYSTEM_PROMPT.md
-   - 9:00 AM ET morning routine -> MORNING_ROUTINE_PROMPT.md (put my real DESK_TOKEN from Secrets where it says DESK_TOKEN; never paste it in chat)
-   - 4:20 PM ET review routine  -> REVIEW_PROMPT.md (same)
-7. From now on: do NOT run "bot.py take" or "bot.py close" after a verdict, and don't run shadow.py in/out. The desk's paper engine does paper trades by itself, and I log my trades on the desk.
-8. Save ~/desk/docs/LEGACY_RULE_MIGRATION.md in your Library as "Desk v2 rules map".
-9. Reply with: tests result, the /api/state line, and "routines updated".
+   - 9:00 AM ET morning routine -> MORNING_ROUTINE_PROMPT.md
+   - 4:20 PM ET review routine  -> REVIEW_PROMPT.md
+   Keep the 20-minute news scan as it is.
+7. In your Library: save ~/desk/grok/RULES_MAP_V3.md as "Desk v3 rules map" (it replaces "Desk v2 rules map"), and replace "Desk commands" with ~/desk/grok/USER_QUICK_COMMANDS.md.
+8. Paper trades are now simulated inside the desk. Never run bot.py, shadow.py or anything that places an order, paper or real.
+9. Later, after I've connected Schwab myself, run: cd ~/desk && python3 replay.py 2026-10-28 and send me reports/replay_2026-10-28.md.
+10. Reply with: the tests result, the data status line, and "routines updated".
 ```
 
-## Step 3: check it
+## Step 3: connect Schwab (you, about 2 minutes)
+Follow `docs/SCHWAB_SETUP.md`. In short: put `SCHWAB_APP_KEY` and `SCHWAB_APP_SECRET` into Chart's Secrets yourself (reset the secret first if it was ever pasted anywhere), have Chart restart the server, then go to **Rules → Data sources → Open Schwab login** and paste the `?code=` address back within 30 seconds.
+
+## Step 4: check it
 Open your desk link (same link as before). You should see:
-- the new dark page, with SPY/QQQ at the top left and the session pill showing OPEN, PREMARKET or similar;
-- the TradingView chart in the middle;
-- the Plan card on the right.
+- the chart chip next to 1m/2m/5m saying **Schwab live** or **Schwab polling** (after Step 3);
+- the Plan card showing the stop as a SPY/QQQ price, T1 as a level, and reward/risk;
+- the Paper page with four ledger cards and today's decisions.
 
-Type `check once SPY calls` and a plan should appear right away.
-
-If the page says "Disconnected", Chart's computer or the server is down. Ask Chart: "restart the desk server with watchdog.sh and show /api/state".
+Type `check once SPY calls`. A plan, or a clear reason it isn't a trade, should appear right away.
 
 ## Rollback (if something breaks during market hours)
-Send Chart: `cp ~/desk_backup_YYYYMMDD/server.py ~/desk/server.py && cp ~/desk_backup_YYYYMMDD/index.html ~/desk/index.html`, then restart the server. `server_legacy.py` in the zip is also the old server.
+Send Chart: "stop the desk server, restore ~/desk from ~/desk_backup_v2_YYYYMMDD (replace the whole folder), and restart it with watchdog.sh". v3 only added tables and one column, so the v2 code still reads the database.
 
 ## Known limits
-- Option quotes from Alpaca are **delayed/indicative**. The plan says so. Always check the live bid/ask in Legend before you buy.
-- The desk's price comes from Alpaca IEX (one exchange) or Yahoo 1-minute bars. TradingView uses its own feed. Small differences are normal.
+- Nothing was tested against the real Schwab servers yet: streaming login, entitlements and the real delay get confirmed on the first live session.
+- The Oct 28 replay uses modeled option prices (Schwab has no option-quote history). It's a regression check, not proof.
 - If Chart's computer sleeps or goes offline, the page, paper engine and watches stop until it's back.
 - Chart answers through a webhook, so its replies take a few seconds to a minute. The plan never waits on Chart.
 
@@ -69,23 +62,20 @@ Send Chart: `cp ~/desk_backup_YYYYMMDD/server.py ~/desk/server.py && cp ~/desk_b
 | File | What it is |
 | --- | --- |
 | `server.py` | Page + API + engine loop |
-| `engine.py` | Plans, setups, paper engine, watches, position management, journal |
-| `core.py` | Rules, market calendar, stop/size/exit math |
-| `commands.py` | What you type → actions (IN/OUT/confirm/…) |
-| `store.py` | SQLite journal database (`journal/desk.db`, created on first run) |
-| `broker.py` | Alpaca **paper-only** client (refuses live keys and non-paper accounts) |
-| `kronos_shadow.py` | Kronos forecast test (shadow only, own process, no keys). Off until KRONOS=1 |
-| `knowledge/cards.json` | 35 knowledge cards; the desk sends the 3 most relevant to Chart with each question |
-| `alerts.py` | Live alerts: setups + move alerts (code) and news from Chart's 20-minute scan; phone pings via ntfy (NTFY_TOPIC) |
-| `schwab.py` | Optional live Schwab market data (read-only; trading endpoints refused in code). Setup: docs/SCHWAB_SETUP.md |
-| `altdata.py` | Optional Quiver data (congress trades, short volume, WSB) when QUIVER_KEY is in Secrets |
-| `watchlist.py` | Other tickers: quotes, earnings dates, add/remove (`config/watchlist.json`) |
-| `desk.py`, `chartdata.py` | Market data read (Yahoo bars, indicators, levels) |
-| `index.html`, `index_legacy.html` | New page and the old page (`/legacy`) |
-| `server_legacy.py` | Old server, for rollback |
-| `config/policy.json` | The active rules (version 2026-10-28.2) |
-| `config/agent_policy.json` | Who does what (you trade real money, code does paper, Chart explains) |
-| `grok/*` | Chart's three routine prompts, quick commands, context schema, endpoint list |
-| `docs/LEGACY_RULE_MIGRATION.md` | Every Playbook rule and where it went, plus 3 open questions |
-| `tests/test_desk.py` | 31 tests: no network, no AI, fake paper broker |
-| `DESIGN.md` | Page design notes |
+| `marketdata.py`, `schwab.py`, `schwab_stream.py` | The one data pipeline: Schwab REST and stream, freshness labels, fallback marked not executable |
+| `indicators.py` | VWAP, MACD, ATR/ADX, RVOL, chop measures, volume profile (checked against TA-Lib) |
+| `strategy.py` | Levels, regime, setups (incl. VWAP + MACD), conflict handling, qualification, grade |
+| `optionmath.py` | Contract pick, structure stop, 20% ceiling, T1, 2:1 check, size |
+| `paper.py`, `exits.py` | Simulated fills on Schwab quotes and the exit rules |
+| `policy_old.py`, `config/policy_old_2026-10-28.3.json` | The frozen old rules, for comparison |
+| `engine.py`, `commands.py`, `core.py`, `store.py` | Plans, paper scan, ledgers, what you type, rules, the database |
+| `chartfeed.py`, `vendor/` | The desk chart's data and Lightweight Charts 5.2.1 |
+| `replay.py`, `evaluation.py` | The Oct 28 replay and the forward paper test scorecard |
+| `kronos_shadow.py` | Kronos forecast test (shadow only), now tagged by data source |
+| `alerts.py`, `watchlist.py`, `altdata.py`, `broker.py`, `desk.py`, `chartdata.py` | Alerts, watchlist, optional Quiver data, Alpaca (watchlist quotes only), legacy reads |
+| `index.html`, `index_legacy.html`, `server_legacy.py` | The page, the old page (`/legacy`), the old server |
+| `config/policy.json` | The active rules (version 2026-10-29.v3) and the forward test settings |
+| `grok/*` | Chart's routine prompts, rules map, quick commands, endpoint list |
+| `docs/V3_REPORT.md` | What changed, what was verified, what still needs a live session |
+| `docs/SCHWAB_SETUP.md` | Your Schwab steps |
+| `tests/` | 54 offline tests (no network, no AI, fake Schwab) |

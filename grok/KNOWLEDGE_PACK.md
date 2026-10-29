@@ -115,7 +115,7 @@ Line through the last two swing highs (or lows), projected to now. Entry when a 
 _Source: celo-trader README playbook (manujbh/mmoore723), rules summarized_
 
 ## [K29] Celo trade management (for comparison)  (reference)
-Their stop starts at 20% and tightens with TIME IN TRADE (15% after 15 min, 10% after 30); sell half at +50%; runner exits at entry x1.15; out if down 12% in the first 30 min; time limit 30 min (90 if first target hit). The desk uses time-of-day stops (20/12/10%), BE then T1 then trail, and flat exits instead. Different design, same goal: don't let a 0DTE trade sit and decay.
+Their stop starts at 20% and tightens with TIME IN TRADE (15% after 15 min, 10% after 30); sell half at +50%; runner exits at entry x1.15; out if down 12% in the first 30 min; time limit 30 min (90 if first target hit). Since v3 the desk uses a chart stop inside a 20% premium ceiling, a T1 at the next opposing level with 2:1 required, a 10-minute green stall exit and a momentum exit instead. Different design, same goal: don't let a 0DTE trade sit and decay.
 _Source: celo-trader README playbook (manujbh/mmoore723), rules summarized_
 
 ## [K30] Don't chase + setup cooldown  (reference)
