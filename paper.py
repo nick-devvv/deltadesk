@@ -1,0 +1,168 @@
+"""paper.py - INTERNAL simulated execution for the paper portfolios (no broker, no real money, no Schwab orders).
+
+Fill model (all labeled 'sim'):
+  buy  = the first executable option quote AFTER the signal (+ configured latency): ask + slippage, + fees
+  sell = executable bid - slippage, - fees
+  slippage = max(slippage_min, spread x slippage_spread_frac); fees per contract per side from policy.
+  If the quote is missing, stale, crossed or the provider isn't executable: NO FILL. Entries are dropped with a
+  reason; exits stay PENDING and retry, and the outage is recorded. A fill is never invented during a gap.
+  Displayed size (when the provider sends it) caps the fill quantity.
+
+Portfolios: 'paper' (main), 'research' (shadow), 'old' (frozen old-policy shadow). Ideas are reserved atomically
+(PRIMARY KEY portfolio+idea), so retries, restarts, reconnects or two detectors can't open the same idea twice,
+and the main 4-ideas/day cap can't be exceeded by simultaneous entries.
+"""
+import json
+import sqlite3
+
+import core
+import marketdata
+import store
+
+PORTFOLIOS = ("paper", "research", "old")
+
+
+def costs(spread):
+    k = core.policy()["v3"]["contract"]
+    return max(k["slippage_min"], (spread or 0) * k["slippage_spread_frac"]), k["fees_per_contract_side"]
+
+
+def reserve_idea(portfolio, idea, ticker, side, cap=None):
+    """Atomic reservation. Returns (ok, reason). With cap, counts today's reservations inside the same transaction."""
+    day = core.now_et().strftime("%Y-%m-%d")
+    with store._lock:
+        c = store.conn()
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            if cap is not None:
+                n = c.execute("SELECT COUNT(*) FROM ideas WHERE portfolio=? AND date=? AND status!='RELEASED'", (portfolio, day)).fetchone()[0]
+                if n >= cap:
+                    c.execute("ROLLBACK")
+                    return False, f"daily cap reached ({n}/{cap} ideas)"
+            c.execute("INSERT INTO ideas(portfolio,idea,date,ticker,side,created,status) VALUES(?,?,?,?,?,?,?)",
+                      (portfolio, idea, day, ticker, side, store.ts(), "RESERVED"))
+            c.execute("COMMIT")
+            return True, None
+        except sqlite3.IntegrityError:
+            c.execute("ROLLBACK")
+            return False, "idea already taken (duplicate detector, retry or restart)"
+        except Exception:
+            try:
+                c.execute("ROLLBACK")
+            except Exception:
+                pass
+            raise
+
+
+def release_idea(portfolio, idea, why):
+    """An idea that never filled does not count toward the cap."""
+    store.x("UPDATE ideas SET status='RELEASED' WHERE portfolio=? AND idea=?", (portfolio, idea))
+
+
+def ideas_today(portfolio):
+    day = core.now_et().strftime("%Y-%m-%d")
+    return store.q("SELECT COUNT(*) n FROM ideas WHERE portfolio=? AND date=? AND status!='RELEASED'", (portfolio, day))[0]["n"]
+
+
+def sim_quote(symbol):
+    q, err = marketdata.option_quote(symbol)
+    if not q:
+        return None, err or "no quote"
+    if not q.get("executable"):
+        return None, "not executable: " + (", ".join(q.get("problems") or []) or q.get("provider", "?"))
+    return q, None
+
+
+def buy(portfolio, idea, ticker, side, plan, qty, signal_t):
+    """Simulated entry. Returns (position_id or None, reason)."""
+    sym = plan["symbol"]
+    q, err = sim_quote(sym)
+    if not q:
+        return None, f"no simulated fill: {err}"
+    if qty <= 0:
+        return None, "size 0"
+    size = q.get("ask_size")
+    if size not in (None, 0) and isinstance(size, (int, float)):
+        qty = min(qty, int(size))
+    slip, fee = costs(q["ask"] - q["bid"])
+    fill = round(q["ask"] + slip, 4)
+    if plan.get("premium_limit") and q["ask"] > plan["premium_limit"]:
+        return None, f"ask {q['ask']:.2f} above the limit {plan['premium_limit']:.2f}: no chase"
+    pid = f"{portfolio[:2].upper()}-{idea}"
+    st = {"v": 3, "symbol": sym, "entry_premium": fill, "fees_side": fee, "slip_at_entry": slip,
+          "premium_stop": plan["premium_stop"], "stop_px": plan["stop_px"], "t1": plan["t1"], "t1_level": plan["t1_level"],
+          "t1_px": plan["t1_px"], "be_trigger": plan["be_trigger"], "breakeven_net": plan["breakeven_net"],
+          "high_water": q["bid"], "high_water_t": store.ts(), "last_progress_t": store.ts(), "be_hit": False,
+          "lock_hit": False, "t1_done": False, "runner": False, "trail": None, "last_bid": q["bid"], "last_ask": q["ask"],
+          "quote_age_s": q.get("age_s"), "provider": q.get("provider"), "signal_t": signal_t, "family": plan.get("family"),
+          "entry_mode": plan.get("entry_mode"), "stops": [{"t": store.ts(), "stop": plan["premium_stop"], "by": "desk",
+                                                            "why": "initial 20% ceiling (costs reserved)"}],
+          "actions_done": [], "flat_by": plan.get("flat_by"), "rr_option": plan.get("rr_option"),
+          "rr_underlying": plan.get("rr_underlying"), "model": plan.get("model")}
+    store.pos_save({"id": pid, "ledger": portfolio, "date": core.now_et().strftime("%Y-%m-%d"), "ticker": ticker,
+                    "contract": plan["label"], "symbol": sym, "side": side, "qty_init": qty, "qty_open": qty, "fill": fill,
+                    "opened": store.ts(), "closed": None, "status": "OPEN", "setup_id": idea, "grade": plan.get("grade"),
+                    "setup": plan.get("family"), "plan": st, "realized": round(-fee * qty, 2), "mfe": 0, "mae": 0,
+                    "policy_version": core.policy()["version"], "verified": f"sim fill on {q.get('provider')}", "notes": ""})
+    store.x("INSERT OR IGNORE INTO orders(client_id,position_id,ts,side,qty,status,broker_id,filled_qty,filled_price,reason) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?)", (f"{pid}-B", pid, store.ts(), "buy", qty, "FILLED", "sim", qty, fill, plan.get("family")))
+    store.x("UPDATE ideas SET status='FILLED', position_id=? WHERE portfolio=? AND idea=?", (pid, portfolio, idea))
+    store.event("paper_open" if portfolio == "paper" else portfolio,
+                f"{_name(portfolio)} BUY {qty} {ticker} {plan['label']} sim fill ${fill:.2f} (ask {q['ask']:.2f} + {slip:.2f} slip) | "
+                f"stop {_px(plan.get('stop_px'))} underlying / ${plan['premium_stop']:.2f} premium | T1 {plan.get('t1') or 'none'} {_px(plan.get('t1_level'))}",
+                portfolio, pid, {"quote_age_s": q.get("age_s"), "provider": q.get("provider")})
+    return pid, None
+
+
+def _px(v):
+    return f"{v:.2f}" if isinstance(v, (int, float)) else "n/a"
+
+
+def sell(p, qty, reason):
+    """Simulated exit at the executable bid. Returns (filled_qty, price) or (0, why) - never invents a fill."""
+    qty = min(qty, p["qty_open"])
+    if qty <= 0:
+        return 0, "nothing open"
+    q, err = sim_quote(p["symbol"])
+    if not q:
+        key = f"pending_exit:{p['id']}"
+        if not store.kv_get(key):
+            store.kv_set(key, {"since": store.ts(), "reason": reason})
+            store.event("error", f"{_name(p['ledger'])} EXIT PENDING {p['contract']} ({reason}): {err}. No fill until a valid quote.",
+                        p["ledger"], p["id"])
+        return 0, err
+    store.kv_set(f"pending_exit:{p['id']}", None)
+    slip, fee = costs(q["ask"] - q["bid"])
+    px = round(max(0.0, q["bid"] - slip), 4)
+    pnl = round((px - p["fill"]) * 100 * qty - fee * qty, 2)
+    p["realized"] = round((p["realized"] or 0) + pnl, 2)
+    p["qty_open"] -= qty
+    if p["qty_open"] == 0:
+        p.update(status="CLOSED", closed=store.ts())
+    store.pos_save(p)
+    n = len(store.q("SELECT client_id FROM orders WHERE position_id=?", (p["id"],)))
+    store.x("INSERT INTO orders(client_id,position_id,ts,side,qty,status,broker_id,filled_qty,filled_price,reason) VALUES(?,?,?,?,?,?,?,?,?,?)",
+            (f"{p['id']}-S{n}", p["id"], store.ts(), "sell", qty, "FILLED", "sim", qty, px, reason))
+    store.event("paper_exit" if p["ledger"] == "paper" else p["ledger"],
+                f"{_name(p['ledger'])} SELL {qty} {p['contract']} sim ${px:.2f} (bid {q['bid']:.2f} - {slip:.2f}): {reason} | "
+                f"trade P/L ${p['realized']:+.2f} net", p["ledger"], p["id"])
+    return qty, px
+
+
+def streak(portfolio, day=None):
+    """Consecutive LOSING completed trades today (net of costs). Breakeven (|net| < $1) and wins reset it.
+    A trade counts once (one idea = one position), however many partial sells it had."""
+    day = day or core.now_et().strftime("%Y-%m-%d")
+    closed = [p for p in store.positions(ledger=portfolio, day=day) if p["status"] == "CLOSED"]
+    closed.sort(key=lambda p: p["closed"] or "")
+    n = 0
+    for p in reversed(closed):
+        if (p["realized"] or 0) <= -1.0:
+            n += 1
+        else:
+            break
+    return n
+
+
+def _name(portfolio):
+    return {"paper": "PAPER", "research": "RESEARCH", "old": "OLD-POLICY"}.get(portfolio, portfolio.upper())

@@ -61,6 +61,18 @@ def handle(text, selected="SPY"):
         return {"reply": store.q("SELECT text FROM events WHERE ref=? ORDER BY seq DESC LIMIT 1", (pid,))[0]["text"],
                 "handled": True, "position": p}
 
+    # ---------- STOP change on a real trade (recorded; widening refused unless forced) ----------
+    m = re.match(rf"^(?:my\s+)?stop(?:\s+(?:is|at|to|moved to))?\s+\$?{NUM}(\s+force)?\s*$", low)
+    if m:
+        import exits
+        opens = store.positions(ledger="real", status="OPEN")
+        if not opens:
+            return {"reply": "No open real trade to set a stop on.", "handled": True}
+        if len(opens) > 1:
+            return {"reply": "More than one open trade: say which by closing one first, or tell Chart.", "handled": True}
+        ok, why = exits.user_stop(opens[0], float(m.group(1)), force=bool(m.group(2)))
+        return {"reply": store.q("SELECT text FROM events WHERE ref=? ORDER BY seq DESC LIMIT 1", (opens[0]["id"],))[0]["text"], "handled": True}
+
     # ---------- OUT / SOLD ----------
     m = re.match(rf"^(?:out|sold|sell|exit(?:ed)?)\s+(?:([a-z]{{1,5}})\s+)?(?:(\d+(?:\.\d+)?[cp])\s+)?(?:(\d+)\s*(?:x|@|at)\s*)?\$?{NUM}\s*$", low)
     if m:
@@ -127,16 +139,23 @@ def plan_text(p):
     side = "CALLS" if p["side"] == "C" else "PUTS"
     if p["state"] == "DATA UNAVAILABLE":
         return f"{p['ticker']} {side}: DATA UNAVAILABLE ({p.get('reason')}). No plan until data is fresh."
-    lines = [f"{p['state']} | {p['ticker']} {side} | {p.get('setup')} ({p.get('setup_note')}) | grade {p.get('grade')} | {p.get('day')}"]
-    lines.append(f"TRIGGER: {p.get('trigger_rule')} | INVALID: {p.get('invalidation')}")
+    d = p.get("data") or {}
+    mode = f" [{p['entry_mode']}]" if p.get("entry_mode") else ""
+    lines = [f"{p['state']} | {p['ticker']} {side} | {p.get('setup')}{mode} ({p.get('setup_note')}) | grade {p.get('grade')} | regime {p.get('regime')}"]
+    lines.append(f"TRIGGER: {p.get('trigger_rule')} | STRUCTURE STOP: {p['ticker']} 1m close {'below' if p['side'] == 'C' else 'above'} {p.get('invalidation')}")
     c = p.get("contract")
     if c:
         ex = p["exit"]
-        lines.append(f"BUY: {c['label']} at or under ${p['premium_limit']:.2f} (ask {c['ask']:.2f}, delta {c['delta'] if c['delta'] is not None else 'unknown'}, delayed quote)")
-        lines.append(f"SIZE: {p['qty']} ({'$%.2f' % p['risk_per_contract']} planned loss per contract){' | ' + p['size_note'] if p.get('size_note') else ''}")
-        lines.append(f"STOP ${ex['stop']:.2f} ({round(ex.get('stop_pct', 0.2) * 100)}% {ex.get('window', '').lower()} stop) | BE at ${ex['be_trigger']:.2f} -> stop to fill | T1 ${ex['t1']:.2f} | flat exit {ex['flat_by']} | all out {ex['all_out']}")
+        lines.append(f"BUY: {c['label']} at or under ${p['premium_limit']:.2f} (bid {c['bid']:.2f} / ask {c['ask']:.2f}, delta {c['delta'] if c['delta'] is not None else 'unknown'}, "
+                     f"{'LIVE Schwab' if d.get('executable') else 'NOT executable data, check Legend'})")
+        lines.append(f"SIZE: {p['qty']} (stressed loss ${p['risk_per_contract']:.2f}/contract, ceiling ${ex['ceiling_per_contract']:.2f}){' | ' + p['size_note'] if p.get('size_note') else ''}")
+        lines.append(f"T1: {ex['t1_name']} {ex['t1_level']:.2f} (option ~${ex['t1']:.2f}, {ex['model']}) | R/R {ex['rr_underlying']} on the stock, {ex['rr_option']} on the option")
+        lines.append(f"STOPS: structure above, or premium ${ex['stop']:.2f} (20% ceiling) | BE at ${ex['be_trigger']:.2f} -> stop ${ex['be_stop']:.2f} | "
+                     f"green + no new high {ex['stall_min']} min or MACD turns -> out | if not green by {ex['flat_by']} -> out | all out {ex['all_out']}")
     else:
         lines.append(f"CONTRACT: {p.get('contract_note')}")
+    if p.get("support"):
+        lines.append("FOR: " + "; ".join(p["support"][:4]))
     if p.get("objections"):
         lines.append("AGAINST: " + "; ".join(p["objections"]))
     if p.get("reason"):
@@ -182,20 +201,28 @@ def _schwab_ready():
 def rules_summary():
     """Nick's current trading rules in one compact block, sent with every Chart question (always up to date)."""
     p = core.policy()
-    d, c, se = p["discipline"], p["contract"], p["session"]
+    d, c, se, v = p["discipline"], p["contract"], p["session"], p["v3"]
     return {
         "version": p["version"],
-        "stops": {w["name"].lower(): f"-{round(w.get('stop_pct', 0.2) * 100)}%" for w in p["windows"]},
-        "stop_ceiling": "20% all-in (spread + fees); if a contract can't fit, skip it",
-        "management": {w["name"].lower(): {"breakeven_at": f"x{w['be']}", "t1": f"x{w['t1_lo']}", "flat_exit_min": w["flat_min"]} for w in p["windows"]},
-        "after_t1": "2 contracts: sell 1, lock the stop at the breakeven level, trail the rest under each 1m higher low (lower high for puts); 1 contract: lock + trail",
-        "size": "A = 2 contracts, B = 1, chop day max 1; paper C = watch only",
+        "stops": "STRUCTURE first: just beyond the level/swing that disproves the setup (+ buffer), on a finalized 1m close; "
+                 "plus a hard 20% planned premium-loss CEILING (costs included). If the structure can't fit inside 20%, skip or pick another contract.",
+        "old_stops": "the old 20/12/10% time-of-day stops are retired (kept only as the frozen 'old policy' comparison)",
+        "reward_risk": f">= {v['min_reward_risk']}:1 on the stock move (to T1 vs to the stop) AND on the modeled option dollars after spread/fees/decay",
+        "t1": "the next meaningful opposing level (resistance for calls, support for puts), minus an approach buffer",
+        "exits": f"green + no new premium high {v['exits']['stall_min']} min -> out; green + 3 adverse 2m MACD histogram changes or MACD cross against -> out; "
+                 "T1 with 2 contracts: sell 1, keep the rest only on a clean break with momentum; 1 contract: out at T1; "
+                 f"breakeven at +{int(v['exits']['be_trigger_pct'] * 100)}%, lock +{int(v['exits']['lock_keep_pct'] * 100)}% after +{int(v['exits']['lock_trigger_pct'] * 100)}%; "
+                 "losers still follow the structure stop and the if-flat timer",
+        "entries": "confirmed candle closes only; calls and puts on the same bar = skip; one idea = one trade",
+        "vwap_macd": "ONE strategy: a 2m MACD cross with the close beyond VWAP arms it; enter on a VWAP retest + confirming close; "
+                     "enter early on the cross close only when the trend is clearly strong; cancel on a close back through VWAP or a MACD cross back",
+        "size": "A = 2 contracts, B = 1, C = no paper trade; whole contracts that fit the stressed loss",
         "delta": f"{c['abs_delta_min']}-{c['abs_delta_max']} (aim {c.get('abs_delta_target', 0.45)}), premium ${c['premium_min']}-${c['premium_max']}, spread <= {round(c['max_spread_pct'] * 100)}%",
         "streak": f"{d['a_only_after_consecutive_losses']} losses in a row = A setups only + {d['cooldown_min_after_loss']} min cooldown; {d['stop_day_after_consecutive_losses']} in a row = STOP FOR TODAY",
-        "limits": f"max {d['max_trades_day']} trades/day; chop day max {d['chop_day_max_trades']}; no dollar limits",
+        "limits": f"main paper: max {v['limits']['main_ideas_per_day']} ideas/day; research keeps observing after limits",
+        "afternoon": f"after {v['afternoon']['start']}: cleaner structure required (efficiency, few VWAP crossings, little overlap, participation)",
         "session": f"no trades {se['orb_start']}-{se['orb_end']} (ORB), entries {se['first_entry']}-{se['last_entry']}, all out {se['all_out']} ET",
-        "no_chase": "skip if price is > 1.5x the average 5m candle past the level; same setup can't refire for 20 min",
-        "never": "Chart never places or clicks orders; real money is Nick's, in Robinhood",
+        "never": "Chart never places or clicks orders; real money is Nick's, in Robinhood; Schwab quotes are not his fills",
     }
 
 
@@ -203,18 +230,22 @@ def coach_context(selected="SPY", text=""):
     """Compact state for Chart. No raw bars, no secrets."""
     s = engine.snapshot(selected)
     rd = s.get("read", {})
+    v3 = s.get("v3") or {}
     lessons = store.q("SELECT id, text, status FROM lessons WHERE status IN ('ACTIVE','PROPOSED') ORDER BY created DESC LIMIT 5")
+    import marketdata
+    md = marketdata.status()
     return {
-        "policy": {"version": core.policy()["version"], "stop_cap": "morning 20% (all-in ceiling), midday 12%, afternoon 10% of premium",
-                   "per_trade_cap": core.policy()["risk"]["per_trade_cap"], "daily_loss": core.policy()["risk"]["daily_loss_usd"],
-                   "weekly_loss": core.policy()["risk"]["weekly_loss_usd"], "exit_profile": core.policy()["exit_profile"]["name"]},
+        "policy": {"version": core.policy()["version"], "stops": "structure + 20% ceiling", "per_trade_cap": core.policy()["risk"]["per_trade_cap"]},
         "session": core.session_info(),
         "ticker": selected, "price": s.get("price"), "price_src": s.get("price_src"), "bar_age_s": s.get("bar_age_s"),
-        "read": {k: rd.get(k) for k in ("day_type", "daily", "vs_vwap", "vs_200s", "chop", "trend", "rsi", "macd", "rvol", "adx_5m", "setups", "above", "below")},
+        "data": {"label": md.get("live_label"), "provider": md.get("provider"), "executable": md.get("executable")},
+        "read": {k: rd.get(k) for k in ("day_type", "daily", "vs_vwap", "vs_200s", "chop", "trend", "rsi", "macd", "rvol", "setups", "above", "below")},
+        "regime": v3.get("regime"),
+        "levels": {k: {"value": v["value"], "source": v["source"]} for k, v in (v3.get("levels") or {}).items()},
         "active_plan": active_plan(selected),
-        "open_real": [{k: p[k] for k in ("ticker", "contract", "qty_open", "fill")} | {"stop": p["plan"].get("stop"), "t1": p["plan"].get("t1")}
+        "open_real": [{k: p[k] for k in ("ticker", "contract", "qty_open", "fill")} | {k: p["plan"].get(k) for k in ("premium_stop", "stop_px", "t1", "t1_level", "be_hit", "green")}
                       for p in store.positions(ledger="real", status="OPEN")],
-        "open_paper": [{k: p[k] for k in ("ticker", "contract", "qty_open", "fill")} for p in store.positions(ledger="paper", status="OPEN")],
+        "open_paper": [{k: p[k] for k in ("ticker", "contract", "qty_open", "fill", "ledger")} for p in store.positions(status="OPEN") if p["ledger"] in ("paper", "research")],
         "budget_real": engine.ledger_budget("real"), "lessons": lessons,
         "recent_events": [e["text"] for e in store.q("SELECT text FROM events ORDER BY seq DESC LIMIT 6")],
         "desk_plans_for_ticker": selected in core.policy()["instruments"],
@@ -222,7 +253,7 @@ def coach_context(selected="SPY", text=""):
         "alt_data": None if selected in core.policy()["instruments"] else _alt(selected),
         "cards": cards_for(text),
         "rules": rules_summary(),
-        "training": {"library": ["Nick's Playbook", "Desk v2 rules map", "Desk knowledge pack", "Desk commands"],
-                     "precedence": "desk numbers in this context > rules (this field) > Desk v2 rules map > Playbook",
-                     "data": {"candles": engine.data_source(), "options_feed": "Schwab live" if _schwab_ready() else "Alpaca indicative (delayed)"}},
+        "training": {"library": ["Nick's Playbook", "Desk v3 rules map", "Desk knowledge pack", "Desk commands"],
+                     "precedence": "desk numbers in this context > rules (this field) > Desk v3 rules map > Playbook",
+                     "data": {"candles": md.get("live_label"), "options_feed": md.get("provider"), "executable": md.get("executable")}},
     }

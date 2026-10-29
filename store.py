@@ -1,7 +1,11 @@
 """store.py - the desk's single record (SQLite). Events are append-only; positions/watches/plans are current state.
 
-Ledgers are kept apart: 'real' = what Nick reports from Robinhood (never verified by us),
-'paper' = Alpaca paper orders the engine actually placed.
+Ledgers are kept apart:
+  'real'     = what Nick reports from Robinhood (never verified by us; Schwab quotes are not his fills)
+  'paper'    = v3 MAIN paper portfolio (internal simulated fills on Schwab quotes; 4 ideas/day; streak stop)
+  'research' = v3 shadow research portfolio (same per-trade rules, keeps going after the main limits)
+  'old'      = frozen old-policy shadow (2026-10-28.3 rules) for comparison
+Older rows from v2 (Alpaca paper fills, Yahoo/Alpaca data) keep their original policy_version and verified tags.
 """
 import json
 import sqlite3
@@ -33,6 +37,15 @@ CREATE TABLE IF NOT EXISTS journal(date TEXT PRIMARY KEY, notes TEXT, summary TE
 CREATE TABLE IF NOT EXISTS lessons(id TEXT PRIMARY KEY, created TEXT, status TEXT, text TEXT, evidence TEXT,
   setup TEXT, sample INTEGER);
 CREATE TABLE IF NOT EXISTS kv(k TEXT PRIMARY KEY, v TEXT);
+CREATE TABLE IF NOT EXISTS ideas(portfolio TEXT, idea TEXT, date TEXT, ticker TEXT, side TEXT, created TEXT, status TEXT,
+  position_id TEXT, PRIMARY KEY(portfolio, idea));
+CREATE TABLE IF NOT EXISTS candidates(id TEXT PRIMARY KEY, date TEXT, ts TEXT, decision_t TEXT, ticker TEXT, side TEXT,
+  family TEXT, tags TEXT, portfolio TEXT, decision TEXT, reasons TEXT, limit_blocked TEXT, evidence TEXT, plan TEXT,
+  policy_version TEXT, provider TEXT, outcome TEXT);
+CREATE TABLE IF NOT EXISTS bars_archive(ticker TEXT, open TEXT, o REAL, h REAL, l REAL, c REAL, v REAL, src TEXT,
+  PRIMARY KEY(ticker, open, src));
+CREATE TABLE IF NOT EXISTS quotes_archive(symbol TEXT, ts TEXT, bid REAL, ask REAL, last REAL, delta REAL, gamma REAL,
+  iv REAL, quote_time TEXT, src TEXT, PRIMARY KEY(symbol, ts));
 """
 
 
@@ -58,6 +71,19 @@ def x(sql, args=()):
         return conn().execute(sql, args)
 
 
+def _jd(o):
+    """JSON for numpy/pandas scalars (bool_, int64, float64, Timestamp)."""
+    try:
+        import numpy as np
+        if isinstance(o, np.generic):
+            return o.item()
+    except Exception:
+        pass
+    if hasattr(o, "isoformat"):
+        return o.isoformat()
+    return str(o)
+
+
 def ts():
     return core.now_et().isoformat(timespec="seconds")
 
@@ -69,7 +95,7 @@ def new_id(prefix):
 # ---------------- events ----------------
 def event(kind, text, ledger="", ref="", data=None):
     x("INSERT INTO events(ts,kind,ledger,ref,text,data) VALUES(?,?,?,?,?,?)",
-      (ts(), kind, ledger, ref, text, json.dumps(data or {})))
+      (ts(), kind, ledger, ref, text, json.dumps(data or {}, default=_jd)))
     return text
 
 
@@ -89,7 +115,7 @@ def kv_get(k, default=None):
 
 
 def kv_set(k, v):
-    x("INSERT INTO kv(k,v) VALUES(?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (k, json.dumps(v)))
+    x("INSERT INTO kv(k,v) VALUES(?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (k, json.dumps(v, default=_jd)))
 
 
 # ---------------- positions ----------------
@@ -116,7 +142,7 @@ def positions(ledger=None, status=None, day=None):
 
 def pos_save(p):
     d = dict(p)
-    d["plan"] = json.dumps(d.get("plan") or {})
+    d["plan"] = json.dumps(d.get("plan") or {}, default=_jd)
     cols = list(d)
     x(f"INSERT INTO positions({','.join(cols)}) VALUES({','.join('?' * len(cols))}) "
       f"ON CONFLICT(id) DO UPDATE SET {','.join(f'{c}=excluded.{c}' for c in cols if c != 'id')}",

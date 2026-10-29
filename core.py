@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 
 ET = ZoneInfo("America/New_York")
 HERE = Path(__file__).resolve().parent
+EVENTS_FILE = HERE / "config" / "events.json"   # today's scheduled releases (9 AM routine); tests point this elsewhere
 POLICY_FILE = HERE / "config" / "policy.json"
 
 # NYSE calendar (source: NYSE Group 2026-2028 holiday and early closings announcement, checked Oct 27 2026)

@@ -1,284 +1,152 @@
-"""engine.py - deterministic desk engine: snapshot, setups, plans, watches, paper engine, position management.
+"""engine.py - v3 orchestrator: snapshot -> setups -> plans -> paper portfolios -> exits. No AI calls here.
 
-No AI calls here. Chart (Grok) only explains what this produces.
+Every number comes from marketdata.py (Schwab). Decisions happen once per finalized 1m bar, against ONE snapshot.
+Portfolios: 'paper' = v3 main (4 ideas/day, streak stop, flat by 15:25), 'research' = v3 shadow that keeps
+observing after the main limits (own ledger, own daily loss limit), 'old' = frozen old policy. 'real' = Nick's
+reported trades: the desk only advises; it never places or infers a real fill.
+Chart (Grok) only explains what this produces.
 """
 import json
 import re
 import threading
 from datetime import datetime, timedelta
 
-import pandas as pd
-
 import alerts
-import broker
-import schwab
 import core
 import desk
+import exits
+import indicators as I
+import marketdata
+import optionmath
+import paper
+import policy_old
 import store
+import strategy
 
 _cache = {}
 _mx = threading.RLock()
-BUF = 0.0003  # 0.03% of price: invalidation buffer beyond a level
 
 
-# ======================= market snapshot =======================
+# ======================= snapshot (shared by plans, paper, chart, Chart's context) =======================
 def data_source():
-    return "Schwab live" if schwab.ready() else "Yahoo"
+    return marketdata.status()["live_label"]
 
 
-def _bars(ticker):
-    """Candles: Schwab (live, when connected) first, Yahoo as the fallback."""
-    if schwab.ready():
-        try:
-            m1, daily = schwab.bars_1m(ticker), schwab.bars_daily(ticker)
-            if m1 is not None and len(m1) and daily is not None and len(daily):
-                return m1, daily
-        except Exception:
-            pass
-    import chartdata
-    m1 = chartdata._dl(ticker, "5d", "1m", True)
-    daily = chartdata._dl(ticker, "2y", "1d", False)
-    if m1 is None or m1.empty:
-        return None, None
-    m1 = m1.tz_convert(core.ET) if m1.index.tz is not None else m1.tz_localize(core.ET)
-    return m1, daily
+def daily_from(m1):
+    """Daily RTH bars built from the same 1m history (keeps one source for prior-day levels)."""
+    if m1 is None or not len(m1):
+        return None
+    rows, idx = [], []
+    for d in I.sessions(m1):
+        r = I.rth(m1, d)
+        if r is not None and len(r):
+            rows.append({"Open": float(r["Open"].iloc[0]), "High": float(r["High"].max()), "Low": float(r["Low"].min()),
+                         "Close": float(r["Close"].iloc[-1]), "Volume": float(r["Volume"].sum())})
+            idx.append(datetime.combine(d, datetime.min.time()))
+    import pandas as pd
+    return pd.DataFrame(rows, index=pd.DatetimeIndex(idx)) if rows else None
 
 
-def snapshot(ticker, max_age=8):
-    """One timestamped view of a ticker. Cached a few seconds so every consumer sees the same numbers."""
+class LazyRead(dict):
+    """desk.read (trend / day type / EMAs for Chart's context and the old policy) computed only when first used."""
+
+    def __init__(self, ticker, m1):
+        super().__init__()
+        self._t, self._m1, self._done, self.extra = ticker, m1, False, {}
+
+    def _load(self):
+        if not self._done:
+            self._done = True
+            d = daily_from(self._m1)
+            try:
+                rd = desk.read(self._t, self._m1.copy(), d.copy()) if d is not None and len(d) >= 2 else {}
+            except Exception as e:
+                rd = {"error": f"read failed: {type(e).__name__}"}
+            super().update({k: v for k, v in rd.items() if not k.startswith("_")})
+            super().update(self.extra)
+
+    def __getitem__(self, k):
+        self._load()
+        return super().__getitem__(k)
+
+    def get(self, k, d=None):
+        self._load()
+        return super().get(k, d)
+
+    def items(self):
+        self._load()
+        return super().items()
+
+    def keys(self):
+        self._load()
+        return super().keys()
+
+    def __iter__(self):
+        self._load()
+        return super().__iter__()
+
+    def __len__(self):
+        self._load()
+        return super().__len__()
+
+
+def snapshot(ticker, max_age=3):
     with _mx:
         hit = _cache.get(ticker)
         if hit and (core.now_et() - hit["_at"]).total_seconds() < max_age:
             return hit
-    m1, daily = _bars(ticker)
-    if m1 is None:
-        return {"ticker": ticker, "ok": False, "error": "NO DATA (Yahoo)", "_at": core.now_et()}
-    r = desk.read(ticker, m1.copy(), daily.copy())
-    last, err = broker.stock_last(ticker) if broker.configured() else (None, "no keys")
-    bar_t = m1.index[-1]
-    age = (core.now_et() - bar_t.to_pydatetime()).total_seconds() - 60  # bar stamp = start of minute
-    s = {
-        "ticker": ticker, "ok": "error" not in r, "_at": core.now_et(), "snap_id": store.new_id(f"S-{ticker}"),
-        "read": {k: v for k, v in r.items() if not k.startswith("_")}, "levels": r.get("_draw", {}),
-        "price": float(last["price"]) if last else float(m1["Close"].iloc[-1]),
-        "price_src": (last or {}).get("feed", "Yahoo 1m close"), "price_ts": (last or {}).get("ts"),
-        "bar_ts": bar_t.isoformat(), "bar_age_s": round(max(age, 0)), "m1": m1,
-    }
-    try:
-        s["adx"] = adx(bars5(m1))
-    except Exception:
-        s["adx"] = None
-    s["read"]["adx_5m"] = s["adx"]
-    s["stale"] = s["bar_age_s"] > core.policy()["data"]["max_bar_age_s"] and core.session_info()["state"] in (
-        "OPEN", "ORB FORMING", "NO NEW ENTRIES", "ALL OUT")
+    m1, forming, meta = marketdata.bars(ticker)
+    last_open = m1.index[-1] if m1 is not None and len(m1) else None
+    with _mx:
+        prev = _cache.get(ticker)
+    if prev and prev.get("_bar") == last_open and last_open is not None:
+        s = dict(prev, _at=core.now_et(), meta=meta, forming=forming)
+        q = marketdata.quote(ticker)
+        s.update(quote=q, price=(q or {}).get("last") or s.get("price"), bar_age_s=meta.get("bar_age_s"))
+        with _mx:
+            _cache[ticker] = s
+        return s
+    v3 = strategy.build_snapshot(ticker, m1, meta) if m1 is not None else {"ok": False, "reason": meta.get("error"), "meta": meta}
+    s = {"ticker": ticker, "_at": core.now_et(), "_bar": last_open, "ok": bool(v3.get("ok")), "v3": v3, "meta": meta, "m1": m1,
+         "forming": forming, "snap_id": store.new_id(f"S-{ticker}")}
+    if m1 is None or not len(m1):
+        s.update(ok=False, error=meta.get("error", "no data"), stale=True, bar_age_s=None, price=None, read={}, levels={})
+    else:
+        q = marketdata.quote(ticker)
+        s.update(read=LazyRead(ticker, m1),
+                 levels={k: v["value"] for k, v in (v3.get("levels") or {}).items()},
+                 levels_full=v3.get("levels") or {},
+                 price=(q or {}).get("last") or float(m1["Close"].iloc[-1]), price_src=(q or {}).get("src", meta.get("provider")),
+                 quote=q, bar_age_s=meta.get("bar_age_s"), ok=bool(v3.get("ok") or len(m1)),
+                 regime=(v3.get("regime") or {}).get("label"))
+        st = core.session_info()["state"]
+        s["stale"] = (meta.get("bar_age_s") or 0) > core.policy()["data"]["max_bar_age_s"] and st in (
+            "OPEN", "ORB FORMING", "NO NEW ENTRIES", "ALL OUT")
+        s["read"].extra = {"regime": s["regime"], "data": {"provider": meta.get("provider"), "executable": meta.get("executable"),
+                                                           "bar_age_s": meta.get("bar_age_s")}}
     with _mx:
         _cache[ticker] = s
     return s
 
 
-def rth_today(m1):
-    d = m1.index[-1].date()
-    t = m1[m1.index.date == d]
-    return t.between_time("09:30", "15:59")
+def occ_to_label(sym):
+    return f"{int(sym[-8:]) / 1000:g}{sym[-9]}"
 
 
-def completed(df, minutes, now_bar):
-    """Bars whose whole period has printed (start + minutes <= last 1m bar start + 1 minute)."""
-    cutoff = now_bar + pd.Timedelta(minutes=1)
-    return df[[i + pd.Timedelta(minutes=minutes) <= cutoff for i in df.index]]
-
-
-def bars5(m1):
-    r = rth_today(m1)
-    if r.empty:
-        return r
-    b = desk.resample(r, "5min")
-    return completed(b, 5, r.index[-1])
-
-
-def bars1_done(m1):
-    r = rth_today(m1)
-    return r.iloc[:-1] if len(r) > 1 else r.iloc[0:0]  # the last 1m bar may still be forming
-
-
-def vwap_series(m1):
-    r = rth_today(m1)
-    tp = (r["High"] + r["Low"] + r["Close"]) / 3
-    return (tp * r["Volume"]).cumsum() / r["Volume"].cumsum().replace(0, 1e-9)
-
-
-# ======================= setups (completed bars only) =======================
-def adx(b5, n=14):
-    """Wilder's ADX on completed 5m bars (trend strength, direction-free). None until enough bars."""
-    if len(b5) < 2 * n + 1:
-        return None
-    h, l, c = b5["High"], b5["Low"], b5["Close"]
-    up, dn = h.diff(), -l.diff()
-    pdm = up.where((up > dn) & (up > 0), 0.0)
-    mdm = dn.where((dn > up) & (dn > 0), 0.0)
-    tr = pd.concat([h - l, (h - c.shift()).abs(), (l - c.shift()).abs()], axis=1).max(axis=1)
-    a = 1.0 / n
-    atr = tr.ewm(alpha=a, adjust=False).mean()
-    pdi = 100 * pdm.ewm(alpha=a, adjust=False).mean() / atr
-    mdi = 100 * mdm.ewm(alpha=a, adjust=False).mean() / atr
-    dx = (100 * (pdi - mdi).abs() / (pdi + mdi)).fillna(0)
-    v = float(dx.ewm(alpha=a, adjust=False).mean().iloc[-1])
-    return round(v, 1) if v == v else None
-
-
-def avg_range(b5, n=14):
-    r = (b5["High"] - b5["Low"]).iloc[-n - 1:-1]
-    return float(r.mean()) if len(r) else 0.0
-
-
-def detect(s):
-    """New setups on the newest completed 5m bar. Families: ORB break/retest, failed break reclaim, PDH/PDL retest, VWAP reclaim."""
-    m1, lv, rd = s["m1"], s["levels"], s["read"]
-    b5 = bars5(m1)
-    if len(b5) < 2 or "ORB_H" not in lv:
-        return []
-    oh, ol = lv["ORB_H"], lv["ORB_L"]
-    last, prev = b5.iloc[-1], b5.iloc[-2]
-    t = b5.index[-1]
-    after = b5[b5.index >= b5.index[0] + pd.Timedelta(minutes=15)]  # bars after the ORB
-    out = []
-    px = float(last["Close"])
-    ar = avg_range(b5)
-    ext = 1.5 * ar if ar > 0 else 0.0015 * px      # don't chase: > 1.5x the average 5m candle past the level
-
-    def add(fam, side, inv, level, note):
-        out.append({"family": fam, "side": side, "bar": t.isoformat(), "trigger": round(px, 2),
-                    "invalidation": round(inv, 2), "level": round(level, 2), "note": note})
-
-    broke_up = (after["Close"].iloc[:-1] > oh).any() if len(after) > 1 else False
-    broke_dn = (after["Close"].iloc[:-1] < ol).any() if len(after) > 1 else False
-    if t >= b5.index[0] + pd.Timedelta(minutes=15):
-        if prev["Close"] <= oh < last["Close"]:
-            add("ORB_BREAK", "C", oh * (1 - BUF), oh, "5m close above ORB high" + (" (extended: wait for retest)" if px - oh > ext else ""))
-        elif prev["Close"] >= ol > last["Close"]:
-            add("ORB_BREAK", "P", ol * (1 + BUF), ol, "5m close below ORB low" + (" (extended: wait for retest)" if ol - px > ext else ""))
-        elif broke_up and last["Low"] <= oh * (1 + 0.0005) and last["Close"] > oh and last["Close"] > last["Open"]:
-            add("ORB_RETEST", "C", oh * (1 - BUF), oh, "retest of ORB high held, green 5m close")
-        elif broke_dn and last["High"] >= ol * (1 - 0.0005) and last["Close"] < ol and last["Close"] < last["Open"]:
-            add("ORB_RETEST", "P", ol * (1 + BUF), ol, "retest of ORB low rejected, red 5m close")
-        if broke_up and prev["Close"] > oh and ol < last["Close"] <= oh:
-            ext_hi = float(after["High"].max())
-            add("FAILED_BREAK", "P", ext_hi * (1 + BUF), oh, "failed breakout: 5m close back inside ORB")
-        if broke_dn and prev["Close"] < ol and ol <= last["Close"] < oh:
-            ext_lo = float(after["Low"].min())
-            add("FAILED_BREAK", "C", ext_lo * (1 - BUF), ol, "failed breakdown: 5m close back inside ORB")
-    # PDH/PDL retest + 9 EMA pullback ("levels first, then EMAs"; from Nick's Oct 26 trend-day rules / LE-model video):
-    # price broke out past the prior-day level on an earlier completed 5m close (and is past the premarket extreme),
-    # then pulled back into that level or the 5m 9 EMA and the newest 5m candle closed back in the trend direction.
-    pdh, pdl, pmh, pml = lv.get("PDH"), lv.get("PDL"), lv.get("PMH"), lv.get("PML")
-    if len(after) > 2:
-        e9 = float(b5["Close"].ewm(span=9, adjust=False).mean().iloc[-1])
-        tol = 0.0006 * px
-        if pdh and (after["Close"].iloc[:-1] > pdh).any() and px > pdh and (pmh is None or px > pmh):
-            touched = float(last["Low"]) <= max(pdh, e9) + tol
-            if touched and last["Close"] > last["Open"] and px > e9:
-                add("PDH_RETEST", "C", min(float(last["Low"]), pdh) * (1 - BUF), pdh, "pullback to PDH/9 EMA held, green 5m close")
-        if pdl and (after["Close"].iloc[:-1] < pdl).any() and px < pdl and (pml is None or px < pml):
-            touched = float(last["High"]) >= min(pdl, e9) - tol
-            if touched and last["Close"] < last["Open"] and px < e9:
-                add("PDL_RETEST", "P", max(float(last["High"]), pdl) * (1 + BUF), pdl, "pop to PDL/9 EMA rejected, red 5m close")
-    vw = vwap_series(m1)
-    if len(vw) > 10:
-        v_now = float(vw.iloc[-2]) if len(vw) > 1 else float(vw.iloc[-1])
-        crosses = int(rd.get("vwap_crosses_1h") or 0)
-        if prev["Close"] < v_now < last["Close"] and crosses <= 2:
-            add("VWAP_RECLAIM", "C", v_now * (1 - BUF), v_now, "5m close back above VWAP" + (" (extended: wait for retest)" if px - v_now > ext else ""))
-        if prev["Close"] > v_now > last["Close"] and crosses <= 2:
-            add("VWAP_RECLAIM", "P", v_now * (1 + BUF), v_now, "5m close back below VWAP" + (" (extended: wait for retest)" if v_now - px > ext else ""))
-    return out
-
-
-def grade(s, side):
-    """Rule-compliance grade (not a win probability). Counts context that agrees with the side."""
-    rd = s["read"]
-    want_up = side == "C"
-    agree, against = [], []
-    t15 = (rd.get("trend") or {}).get("15m")
-    (agree if t15 == ("UP" if want_up else "DOWN") else against).append(f"15m trend {t15}")
-    v2 = rd.get("vs_200s", "n/a")
-    (agree if v2 == ("ABOVE both" if want_up else "BELOW both") else against).append(f"200s: {v2}")
-    day = rd.get("day_type", "")
-    (agree if ("TREND UP" in day if want_up else "TREND DOWN" in day) else against).append(f"day: {day}")
-    g = "A" if len(agree) == 3 else "B" if len(agree) == 2 else "C"
-    chop = "CHOP" in day or (bool(rd.get("chop")) and "TREND" not in day)  # holding outside the ORB = trend day
-    ax = s.get("adx")
-    if ax is not None:
-        if ax < 18 and "TREND" not in day:
-            chop = True
-            against.append(f"ADX {ax}: no trend (chop)")
-        elif ax >= 25:
-            agree.append(f"ADX {ax}: trending")
-    rv = rd.get("rvol")
-    if rv is not None and rv < 1.2:
-        against.append(f"volume light (RVOL {rv})")   # context only; doesn't change the grade
-    return g, agree, against, chop
-
-
-# ======================= contracts =======================
-def pick_contract(ticker, side, price, budget, grade_, chop, structural=None):
-    p = core.policy()["contract"]
+def chain_rows(ticker, side):
     exp = core.now_et().strftime("%Y-%m-%d")
-    rows, err = schwab.chain(ticker, side, exp) if schwab.ready() else (None, None)
-    if not rows:
-        rows, err2 = broker.chain(ticker, side, exp)
-        err = err2 or err
-    if not rows:
-        return None, f"no option chain ({err})"
-    cands, rejected = [], 0
-    for c in rows:
-        if c["bid"] <= 0 or not (p["premium_min"] <= c["ask"] <= p["premium_max"]):
-            rejected += 1
-            continue
-        if (c["ask"] - c["bid"]) / c["ask"] > p["max_spread_pct"]:
-            rejected += 1
-            continue
-        d = c["delta"]
-        if d is None and c.get("iv"):
-            d = core.bs_delta(price, c["strike"], c["iv"], side)
-            if d is not None:
-                c["delta"], c["delta_src"] = d, "estimated"
-        if d is not None and not (p["abs_delta_min"] <= abs(d) <= p["abs_delta_max"]):
-            rejected += 1
-            continue
-        rank = abs(abs(d) - p.get("abs_delta_target", 0.45)) if d is not None else abs(c["strike"] - price) / price * 10
-        cands.append((rank, (c["ask"] - c["bid"]) / c["ask"], c))
-    if not cands:
-        return None, f"no contract passes price ${p['premium_min']}-{p['premium_max']}, spread <= {int(p['max_spread_pct']*100)}% and delta {p['abs_delta_min']}-{p['abs_delta_max']}"
-    cands.sort(key=lambda z: (z[0], z[1]))
-    t = core.hm(core.now_et())
-    for _, _, c in cands:
-        ex = core.exit_plan(c["ask"], t, c["ask"] - c["bid"])
-        qn, rpc, cap, why = core.size(c["ask"], ex["stop"], ex["slippage_reserve"], grade_, budget, chop)
-        if qn >= 1 or grade_ == "C":
-            c.update(qty=qn, risk_per_contract=rpc, exit=ex, size_note=why, delta_known=c["delta"] is not None)
-            return c, None
-    c = cands[0][2]
-    return None, f"too expensive for the risk cap: cheapest fit {c['symbol']} ask {c['ask']}"
+    try:
+        rows, err = marketdata.provider().chain(ticker, side, exp)
+    except Exception as e:
+        rows, err = None, type(e).__name__
+    return rows or [], err
 
 
-def option_quote(symbol):
-    """Live Schwab quote when connected, else Alpaca's delayed indicative quote."""
-    if schwab.ready():
-        q, err = schwab.option_quote(symbol)
-        if q:
-            return q, None
-    if broker.configured():
-        return broker.option_quote(symbol)
-    return None, "no option data source"
-
-
-# ======================= options chain (view only: Nick buys in Robinhood himself) =======================
+# ======================= options chain view (read-only; Nick buys in Robinhood) =======================
 _chain_cache, _chain_mx = {}, threading.Lock()
 
 
 def option_chain(ticker, side, exp=None, n=10, max_age=12):
-    """The chain around the money, like Robinhood's list: n strikes each side of the price, one expiry.
-    Read-only market data. Nothing here can place an order."""
     ticker, side = ticker.upper(), ("C" if side.upper().startswith("C") else "P")
     key = (ticker, side, exp, n)
     with _chain_mx:
@@ -288,32 +156,23 @@ def option_chain(ticker, side, exp=None, n=10, max_age=12):
     today = core.now_et().date()
     first = exp or today.isoformat()
     through = None if exp else (today + timedelta(days=21)).isoformat()
-    rows, err, feed = None, None, None
-    if schwab.ready():
-        rows, err = schwab.chain(ticker, side, first, through)
-        feed = "Schwab live" if rows else None
-    if not rows and broker.configured():
-        rows, err2 = broker.chain(ticker, side, first, through)
-        err, feed = err2 or err, ("Alpaca delayed" if rows else None)
+    p = marketdata.provider()
+    try:
+        rows, err = p.chain(ticker, side, first, through)
+    except Exception as e:
+        rows, err = None, type(e).__name__
     if not rows:
-        return {"ticker": ticker, "side": side, "rows": [], "expiries": [], "error": err or "no option data source (Alpaca or Schwab keys)", "_at": core.now_et()}
+        return {"ticker": ticker, "side": side, "rows": [], "expiries": [], "error": err or "no option data", "_at": core.now_et(),
+                "feed": p.name}
     expiries = sorted({r.get("exp") or first for r in rows})
     use = exp if exp in expiries else expiries[0]
     rows = [r for r in rows if (r.get("exp") or first) == use]
-    spot = None
-    if broker.configured():
-        last, _ = broker.stock_last(ticker)
-        spot = float(last["price"]) if last and last.get("price") else None
-    if spot is None:
-        with _mx:
-            snap = _cache.get(ticker)
-        spot = snap.get("price") if snap else None
+    q = marketdata.quote(ticker)
+    spot = (q or {}).get("last")
     rows.sort(key=lambda r: r["strike"])
     if spot:
-        below = [r for r in rows if r["strike"] <= spot][-n:]
-        above = [r for r in rows if r["strike"] > spot][:n]
-        rows = below + above
-    p = core.policy()["contract"]
+        rows = [r for r in rows if r["strike"] <= spot][-n:] + [r for r in rows if r["strike"] > spot][:n]
+    cp = core.policy()["contract"]
     dte = (datetime.strptime(use, "%Y-%m-%d").date() - today).days
     out = []
     for r in rows:
@@ -321,14 +180,13 @@ def option_chain(ticker, side, exp=None, n=10, max_age=12):
         mark = round((bid + ask) / 2, 2) if ask else None
         d, dsrc = r.get("delta"), None
         if d is None and r.get("iv") and spot:
-            d = core.bs_delta(spot, r["strike"], r["iv"], side)
-            dsrc = "est" if d is not None else None
+            d, dsrc = core.bs_delta(spot, r["strike"], r["iv"], side), "est"
         be = (r["strike"] + mark if side == "C" else r["strike"] - mark) if mark is not None else None
         spread = (ask - bid) / ask if ask else None
         ref = r.get("last") or mark
         chg = round((ref - r["prev"]) / r["prev"] * 100, 1) if ref and r.get("prev") else None
-        fits = bool(ask and bid > 0 and p["premium_min"] <= ask <= p["premium_max"] and spread is not None
-                    and spread <= p["max_spread_pct"] and d is not None and p["abs_delta_min"] <= abs(d) <= p["abs_delta_max"])
+        fits = bool(ask and bid > 0 and cp["premium_min"] <= ask <= cp["premium_max"] and spread is not None
+                    and spread <= cp["max_spread_pct"] and d is not None and cp["abs_delta_min"] <= abs(d) <= cp["abs_delta_max"])
         out.append({"symbol": r["symbol"], "label": occ_to_label(r["symbol"]), "strike": r["strike"], "bid": bid, "ask": ask,
                     "mark": mark, "delta": round(d, 2) if d is not None else None, "delta_src": dsrc,
                     "iv": round(r["iv"] * 100, 1) if r.get("iv") else None, "breakeven": round(be, 2) if be is not None else None,
@@ -336,16 +194,11 @@ def option_chain(ticker, side, exp=None, n=10, max_age=12):
                     "chg_pct": chg, "volume": r.get("volume"), "oi": r.get("oi"),
                     "spread_pct": round(spread * 100, 1) if spread is not None else None,
                     "itm": bool(spot and (r["strike"] < spot if side == "C" else r["strike"] > spot)), "fits": fits})
-    res = {"ticker": ticker, "side": side, "exp": use, "dte": dte, "expiries": expiries, "spot": spot, "feed": feed,
-           "rows": out, "fetched": core.now_et().isoformat(timespec="seconds"), "_at": core.now_et()}
+    res = {"ticker": ticker, "side": side, "exp": use, "dte": dte, "expiries": expiries, "spot": spot, "feed": p.name,
+           "executable": p.executable, "rows": out, "fetched": core.now_et().isoformat(timespec="seconds"), "_at": core.now_et()}
     with _chain_mx:
         _chain_cache[key] = res
     return res
-
-
-def occ_to_label(sym):
-    side = sym[-9]
-    return f"{int(sym[-8:]) / 1000:g}{side}"
 
 
 # ======================= budgets / discipline =======================
@@ -358,30 +211,32 @@ def ledger_budget(ledger):
         pl = p["plan"]
         mark = pl.get("last_bid") or p["fill"]
         unreal += (mark - p["fill"]) * 100 * p["qty_open"]
-        open_risk += max(0.0, (mark - pl.get("stop", p["fill"]) + pl.get("slippage_reserve", 0.01)) * 100 * p["qty_open"])
+        stop = pl.get("premium_stop", pl.get("stop", p["fill"]))
+        open_risk += max(0.0, (mark - stop) * 100 * p["qty_open"])
     left, day_left, week_left = core.budget_left(r_day, unreal, open_risk, r_week)
+    if ledger == "research":
+        lim = core.policy()["v3"]["research"]["daily_loss_usd"]
+        rl = lim + r_day + unreal - open_risk
+        left = max(0.0, rl) if left is None else min(left, max(0.0, rl))
     return {"realized_day": r_day, "realized_week": r_week, "unrealized": round(unreal, 2),
             "open_risk": round(open_risk, 2), "left": left, "day_left": day_left, "week_left": week_left,
             "trades_today": n_day}
 
 
 def discipline_gate(ledger, grade_):
+    """Streak rules read from configuration: A setups only after N losses in a row (+ cooldown), stop for the
+    day after M. Main paper adds the 4-ideas/day cap (enforced atomically at reservation)."""
     d = core.policy()["discipline"]
     day = core.now_et().strftime("%Y-%m-%d")
-    done = [p for p in store.positions(ledger=ledger, day=day)]
-    closed = [p for p in done if p["status"] == "CLOSED"]
-    streak = 0
-    for p in reversed(closed):
-        if (p["realized"] or 0) < 0:
-            streak += 1
-        else:
-            break
-    if streak >= d.get("stop_day_after_consecutive_losses", 99):
-        return f"STOP FOR TODAY: {streak} losses in a row"
-    if len(done) >= d["max_trades_day"]:
+    led = ledger if ledger in ("paper", "research", "old", "real") else "real"
+    s = paper.streak(led, day)
+    closed = sorted([p for p in store.positions(ledger=led, day=day) if p["status"] == "CLOSED"], key=lambda p: p["closed"] or "")
+    if s >= d.get("stop_day_after_consecutive_losses", 99):
+        return f"STOP FOR TODAY: {s} losses in a row"
+    if ledger == "real" and len(store.positions(ledger="real", day=day)) >= d["max_trades_day"]:
         return f"max {d['max_trades_day']} trades today reached"
-    if (len(done) >= d["a_only_after_trades"] or streak >= d["a_only_after_consecutive_losses"]) and grade_ != "A":
-        return f"A setups only now ({len(done)} trades, {streak} losses in a row)"
+    if s >= d["a_only_after_consecutive_losses"] and grade_ != "A":
+        return f"A setups only now ({s} losses in a row)"
     if closed and (closed[-1]["realized"] or 0) < 0 and closed[-1]["closed"]:
         last = datetime.fromisoformat(closed[-1]["closed"])
         if core.now_et() - last < timedelta(minutes=d["cooldown_min_after_loss"]):
@@ -390,361 +245,262 @@ def discipline_gate(ledger, grade_):
 
 
 def event_block():
-    """Scheduled events (config/events.json written by the 9 AM routine): [{"time":"08:30","name":"CPI"}]."""
-    f = core.HERE / "config" / "events.json"
-    try:
-        evs = json.loads(f.read_text())
-    except Exception:
-        return None
-    if evs.get("date") != core.now_et().strftime("%Y-%m-%d"):
-        return None
-    m = core.policy()["discipline"]["event_block_min"]
-    now = core.now_et()
-    for e in evs.get("events", []):
-        t = datetime.combine(now.date(), datetime.strptime(e["time"], "%H:%M").time(), core.ET)
-        if abs((t - now).total_seconds()) <= m * 60:
-            return f"EVENT: {e['name']} at {e['time']} ET (no new entries {m} min around it)"
+    e = strategy.event_state()
+    if e["state"] in ("pre-event", "shock"):
+        return f"EVENT: {e['event']['name']} at {e['event']['time']} ET ({e['state']}, no new entries {core.policy()['discipline']['event_block_min']} min around it)"
     return None
 
 
-# ======================= plans (shared by paper engine, watches and chat) =======================
+# ======================= plans (chat, watches, alerts) =======================
 def build_plan(ticker, side, level=None, mode="check", ledger="real"):
-    """Complete conditional plan. state: WAIT / READY / PASS / MANAGE / DATA UNAVAILABLE."""
+    """Complete conditional plan with evidence. state: WAIT / READY / PASS / DATA UNAVAILABLE."""
     ticker, side = ticker.upper(), side.upper()[:1]
+    up = side == "C"
     s = snapshot(ticker)
+    v3 = s.get("v3") or {}
     sess = core.session_info()
-    plan = {"id": store.new_id(f"P-{ticker}"), "ticker": ticker, "side": side, "mode": mode,
-            "created": store.ts(), "policy_version": core.policy()["version"], "session": sess,
-            "snap": {"id": s.get("snap_id"), "price": s.get("price"), "price_src": s.get("price_src"),
-                     "bar_age_s": s.get("bar_age_s")}, "objections": [], "support": []}
-    if not s.get("ok"):
-        plan.update(state="DATA UNAVAILABLE", reason=s.get("error"))
+    plan = {"id": store.new_id(f"P-{ticker}"), "ticker": ticker, "side": side, "mode": mode, "created": store.ts(),
+            "policy_version": core.policy()["version"], "session": sess,
+            "snap": {"id": s.get("snap_id"), "price": s.get("price"), "price_src": s.get("price_src"), "bar_age_s": s.get("bar_age_s")},
+            "data": {k: (s.get("meta") or {}).get(k) for k in ("provider", "executable", "bar_age_s", "gaps_rth_today")},
+            "objections": [], "support": [], "regime": (v3.get("regime") or {}).get("label"),
+            "regime_evidence": (v3.get("regime") or {}).get("evidence")}
+    if not v3.get("ok"):
+        plan.update(state="DATA UNAVAILABLE", reason=v3.get("reason") or s.get("error") or "no data")
         return plan
-    if s["stale"]:
-        plan.update(state="DATA UNAVAILABLE", reason=f"bars {s['bar_age_s']}s old")
+    if s.get("stale"):
+        plan.update(state="DATA UNAVAILABLE", reason=f"bars {s.get('bar_age_s')}s old")
         return plan
-    g, agree, against, chop = grade(s, side)
-    plan.update(grade=g, support=agree, objections=against, chop_day=chop, day=s["read"].get("day_type"))
-    # setup: newest engine setup in this direction, else a level-based trigger
-    setups = [x for x in detect(s) if x["side"] == side]
-    px = s["price"]
-    if setups:
-        st = setups[-1]
-        plan.update(setup=st["family"], setup_note=st["note"], trigger_level=st["level"],
-                    invalidation=st["invalidation"], trigger_rule="completed 5m close (already met)",
-                    state="READY" if "extended" not in st["note"] else "WAIT")
-        if "extended" in st["note"]:
-            plan["trigger_rule"] = f"pullback that holds {st['level']} on a 1m close"
+    cands = [c for c in strategy.detect_all(v3) if c["side"] == side]
+    ideas, _ = strategy.arbitrate(cands)
+    z, buf, px = v3["zone"], v3["buf"], v3["close1"]
+    if ideas:
+        idea = ideas[0]
+        plan.update(setup=idea["family"], tags=idea.get("tags"), entry_mode=idea.get("entry_mode"),
+                    setup_note=idea["confirm_rule"], trigger_level=idea["level"], invalidation=idea["invalidation"],
+                    trigger_rule="confirmed candle close (already met)", state="READY", evidence=idea["evidence"])
     else:
-        lv = s["levels"]
+        lvls = v3["levels"]
         if level is None:
-            above = sorted(v for v in lv.values() if v > px)
-            below = sorted((v for v in lv.values() if v < px), reverse=True)
-            level = (above[0] if side == "C" else below[0]) if (above if side == "C" else below) else px
-        lvl = float(level)
-        if side == "C":
-            met = px > lvl
-            plan.update(trigger_rule=f"1m close above {lvl:.2f}", invalidation=round(lvl * (1 - 2 * BUF), 2))
+            vals = sorted((v["value"], k) for k, v in lvls.items() if k != "PDC")
+            pick = [x for x in vals if x[0] > px] if up else [x for x in reversed(vals) if x[0] < px]
+            level, lname = (pick[0] if pick else (px, "price"))
         else:
-            met = px < lvl
-            plan.update(trigger_rule=f"1m close below {lvl:.2f}", invalidation=round(lvl * (1 + 2 * BUF), 2))
-        plan.update(setup="LEVEL", setup_note=f"level {lvl:.2f}", trigger_level=round(lvl, 2),
-                    state="READY" if met else "WAIT")
+            lname = "your level"
+        lvl = float(level)
+        inv = lvl - z - buf if up else lvl + z + buf
+        met = (px > lvl + z) if up else (px < lvl - z)
+        idea = {"family": "LEVEL", "side": side, "level": lvl, "level_name": lname, "invalidation": round(inv, 2),
+                "confirm_rule": f"1m close {'above' if up else 'below'} {lvl:.2f} (+zone {z:.2f})", "evidence": {"level": lname},
+                "kind": "continuation", "bar": v3["t"].isoformat()}
+        plan.update(setup="LEVEL", setup_note=f"{lname} {lvl:.2f}", trigger_level=round(lvl, 2), invalidation=round(inv, 2),
+                    trigger_rule=idea["confirm_rule"], state="READY" if met else "WAIT", evidence=idea["evidence"])
+    passed, obj, sup = strategy.qualify(idea, v3)
+    plan["objections"] += obj
+    plan["support"] += sup
     if not sess["entries_allowed"]:
         plan["objections"].append(f"session: {sess['state']}")
         if plan["state"] == "READY":
             plan["state"] = "PASS" if sess["state"] in ("NO NEW ENTRIES", "ALL OUT", "AFTER HOURS") else "WAIT"
-    block = event_block()
-    if block:
-        plan["objections"].append(block)
+    rows, err = chain_rows(ticker, side)
     bud = ledger_budget(ledger)
     plan["budget"] = bud
-    if not broker.configured() and not schwab.ready():
-        plan.update(contract=None, contract_note="option quotes unavailable (no Alpaca keys, Schwab not connected)")
-        return plan
-    sz_grade = g if ledger == "paper" or g != "C" else "B"  # for Nick a C never blocks: small size (chop cap applies)
-    c, why = pick_contract(ticker, side, px, bud["left"], sz_grade, chop or g == "C")
-    if g == "C" and ledger != "paper":
-        plan["objections"].append("grade C: small size / scalp only")
-    if not c:
-        plan.update(contract=None, contract_note=why)
+    tp, why, diag = optionmath.plan_trade(idea, v3, rows, "A", bud["left"], ledger)
+    g, gp, gf = strategy.grade(idea, v3, tp["rr_option"] if tp else None)
+    plan.update(grade=g, grade_passed=gp, grade_failed=gf, day=plan["regime"], chop_day=plan["regime"] == "range/chop",
+                diagnostics=diag)
+    if not tp:
+        plan.update(contract=None, contract_note=why or err)
         if plan["state"] == "READY":
-            plan["state"] = "PASS"
-            plan["reason"] = why
+            plan["state"], plan["reason"] = "PASS", why
         return plan
-    plan.update(contract={"symbol": c["symbol"], "label": occ_to_label(c["symbol"]), "bid": c["bid"],
-                          "ask": c["ask"], "delta": c["delta"], "delta_src": c.get("delta_src", "broker" if c["delta"] is not None else None),
-                          "quote_ts": c["ts"], "feed": c.get("feed", "indicative")},
-                premium_limit=core.cents_up(c["ask"] + 0.02), exit=c["exit"], qty=c["qty"],
-                risk_per_contract=c["risk_per_contract"], size_note=c["size_note"])
-    if c["qty"] == 0 and plan["state"] == "READY":
-        plan["state"] = "PASS"
-        plan["reason"] = c["size_note"]
+    caps = min(core.policy()["sizing_by_grade"].get(g, 0), core.policy()["risk"]["max_contracts"])
+    tp["qty"] = min(tp["qty"], caps) if g != "C" else (1 if ledger == "real" else 0)
+    win = core.window_for(core.hm(core.now_et())) or core.policy()["windows"][-1]
+    flat_by = (core.now_et() + timedelta(minutes=win["flat_min"])).strftime("%H:%M")
+    t1_prem = round(tp["entry_premium_est"] + tp["gain_per_contract"] / 100, 2)
+    plan.update(contract={"symbol": tp["symbol"], "label": tp["label"], "bid": tp["bid"], "ask": tp["ask"], "delta": tp["delta"],
+                          "delta_src": tp["delta_src"], "quote_ts": tp.get("quote_ts"), "feed": tp.get("feed") or marketdata.provider().name,
+                          "spread": tp["spread"]},
+                premium_limit=tp["premium_limit"], qty=tp["qty"], risk_per_contract=tp["loss_per_contract"],
+                size_note=tp.get("qty_note"),
+                exit={"stop": tp["premium_stop"], "stop_px": tp["stop_px"], "stop_pct": core.policy()["risk"]["stop_cap_pct"],
+                      "window": "v3 structural", "be_trigger": tp["be_trigger"], "be_stop": tp["breakeven_net"],
+                      "t1": t1_prem, "t1_name": tp["t1"], "t1_level": tp["t1_level"], "t1_px": tp["t1_px"],
+                      "lock_after_t1": tp["breakeven_net"], "flat_by": flat_by, "all_out": sess["all_out"],
+                      "rr_option": tp["rr_option"], "rr_underlying": tp["rr_underlying"], "loss_per_contract": tp["loss_per_contract"],
+                      "gain_per_contract": tp["gain_per_contract"], "ceiling_per_contract": tp["ceiling_per_contract"],
+                      "structural_premium_est": tp["structural_premium_est"], "model": tp["model"],
+                      "stall_min": core.policy()["v3"]["exits"]["stall_min"]})
+    if g == "C" and ledger != "paper":
+        plan["objections"].append("grade C (failed: " + ", ".join(gf) + ")")
+    if plan["state"] == "READY" and plan["objections"] and not passed:
+        plan["state"], plan["reason"] = "PASS", "; ".join(obj[:2])
     return plan
 
 
-# ======================= paper engine =======================
-def paper_enabled():
-    return store.kv_get("paper_enabled", True)
-
-
-QUIET = re.compile(r"extended|cooldown|session|EVENT|STOP FOR TODAY|A setups only|max \d+ trades|chop day", re.I)
-
-
 def plan_brief(p):
-    """One alert line with everything Nick needs: contract, max buy, size, stop, BE, T1/trail, exits, trigger."""
+    """One alert line with everything Nick needs."""
     c, ex = p["contract"], p["exit"]
-    feed = "live quote" if "live" in str(c.get("feed", "")).lower() else "delayed quote, check Legend"
-    return (f"{p['ticker']} {c['label']} 0DTE | buy at or under ${p['premium_limit']:.2f} ({feed}) | size {p['qty']} | "
-            f"STOP ${ex['stop']:.2f} ({round(ex.get('stop_pct', 0.2) * 100)}% {ex.get('window', '').lower()}) | "
-            f"BE at ${ex['be_trigger']:.2f} -> stop to ${ex['be_stop']:.2f} | {core.trail_text(ex, p['qty'])} | "
-            f"out by {ex['flat_by']} if flat | all out {ex['all_out']} | trigger: {p.get('trigger_rule')} | invalid {p.get('invalidation')}")
+    feed = "LIVE Schwab quote" if p.get("data", {}).get("executable") else "NOT executable data - check Legend"
+    mode = f" ({p['entry_mode']})" if p.get("entry_mode") else ""
+    return (f"{p['ticker']} {c['label']} 0DTE{mode} | buy at or under ${p['premium_limit']:.2f} ({feed}, bid {c['bid']:.2f}/ask {c['ask']:.2f}) | "
+            f"size {p['qty']} | STOP: {p['ticker']} {'below' if p['side'] == 'C' else 'above'} {ex['stop_px']:.2f} (structure) "
+            f"or ${ex['stop']:.2f} premium (20% ceiling) | T1 {ex['t1_name']} {ex['t1_level']:.2f} (~${ex['t1']:.2f}, model) | "
+            f"R/R {ex['rr_underlying']} stock, {ex['rr_option']} option | BE at ${ex['be_trigger']:.2f} -> ${ex['be_stop']:.2f} | "
+            f"stall exit {ex['stall_min']} min if green | all out {ex['all_out']} | {p.get('setup')}: {p.get('setup_note')}")
 
 
-def setup_alert(ticker, st, g, decision, reason):
-    """Alert only when Nick could actually take it: A/B grade, not blocked by his own rules, and the desk
-    can build a full real-money plan with a contract. The alert carries the whole plan, the plan card
-    shows it, and a 15-minute watch tracks the trigger."""
-    if g not in ("A", "B") or (reason and QUIET.search(reason)):
+QUIET = re.compile(r"extended|cooldown|session|EVENT|STOP FOR TODAY|A setups only|max \d+ trades|daily cap|chop", re.I)
+
+
+def setup_alert(ticker, idea, plan):
+    """Alert Nick only when he could actually take it: A/B, his rules allow it, full plan with a contract."""
+    if plan.get("grade") not in ("A", "B") or plan.get("state") not in ("READY",) or not plan.get("contract") or not plan.get("qty"):
         return False
-    if store.kv_get(f"alert:setup:{ticker}:{st['family']}:{st['side']}:{st['bar']}"):
+    gate = discipline_gate("real", plan["grade"])
+    if gate:
         return False
-    last = store.kv_get(f"setup_last:{ticker}:{st['side']}")   # one alert per ticker+side per 10 min (an A can still upgrade a B)
-    if last and (core.now_et() - datetime.fromisoformat(last["at"])).total_seconds() < 600 and not (g == "A" and last.get("g") != "A"):
-        return False
-    try:
-        plan = build_plan(ticker, st["side"], st.get("level"), "watch")
-    except Exception:
-        return False
-    if plan.get("state") not in ("READY", "WAIT") or not plan.get("contract") or not plan.get("qty"):
+    k = f"setup_last:{ticker}:{idea['side']}"
+    last = store.kv_get(k)
+    if last and (core.now_et() - datetime.fromisoformat(last["at"])).total_seconds() < 600 and not (plan["grade"] == "A" and last.get("g") != "A"):
         return False
     store.kv_set("last_plan", plan)
-    if not store.q("SELECT id FROM watches WHERE status='ACTIVE' AND ticker=?", (ticker,)):  # never replace Nick's own watch
+    if not store.q("SELECT id FROM watches WHERE status='ACTIVE' AND ticker=?", (ticker,)):
         try:
             wid, exp = start_watch(plan, None)
             plan["watch"] = {"id": wid, "until": exp[11:16]}
         except Exception:
             pass
-    ok = alerts.setup(ticker, st, g, decision, None, brief=plan_brief(plan))
+    st = {"family": idea["family"], "side": idea["side"], "note": idea["confirm_rule"], "level": idea["level"] or 0,
+          "invalidation": idea["invalidation"], "bar": idea["bar"]}
+    ok = alerts.setup(ticker, st, plan["grade"], "ALERT", None, brief=plan_brief(plan))
     if ok:
-        store.kv_set(f"setup_last:{ticker}:{st['side']}", {"at": core.now_et().isoformat(), "g": g})
-        store.event("desk", f"ALERT PLAN ({g}) {plan_brief(plan).replace(' | ', chr(10))}", "real", plan.get("id"))
+        store.kv_set(k, {"at": core.now_et().isoformat(), "g": plan["grade"]})
+        store.event("desk", f"ALERT PLAN ({plan['grade']}) " + plan_brief(plan).replace(" | ", "\n"), "real", plan.get("id"))
     return ok
+
+
+# ======================= v3 paper portfolios =======================
+def paper_enabled():
+    return store.kv_get("paper_enabled", True)
+
+
+def _record(cid, sess, idea, portfolio, decision, reasons, limit, plan, provider_name):
+    store.x("INSERT OR REPLACE INTO candidates(id,date,ts,decision_t,ticker,side,family,tags,portfolio,decision,reasons,limit_blocked,evidence,plan,policy_version,provider,outcome) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (cid, sess["date"], store.ts(), idea.get("decision_t") or idea.get("bar"), idea.get("ticker") or "", idea["side"], idea["family"],
+             ",".join(idea.get("tags") or [idea["family"]]), portfolio, decision, json.dumps(reasons), limit,
+             json.dumps(idea.get("evidence"), default=str), json.dumps(plan, default=str) if plan else None,
+             core.policy()["version"], provider_name, None))
 
 
 def paper_scan(ticker):
     s = snapshot(ticker)
-    if not s.get("ok") or s["stale"]:
+    v3 = s.get("v3") or {}
+    if not v3.get("ok"):
         return
+    t = v3["t"].isoformat()
+    if store.kv_get(f"decided:{ticker}") == t:
+        return                                # this finalized bar was already decided (restart/retry safe)
+    store.kv_set(f"decided:{ticker}", t)
     sess = core.session_info()
-    for st in detect(s):
-        oid = f"{sess['date']}-{ticker}-{st['family']}-{st['side']}-{st['bar'][11:16]}"
-        if store.q("SELECT id FROM opportunities WHERE id=?", (oid,)):
-            continue  # idempotent: each setup bar is considered once
-        g, agree, against, chop = grade(s, st["side"])
-        decision, reason, pid = "SKIP", None, None
-        if not paper_enabled():
-            reason = "paper entries paused"
-        elif not sess["entries_allowed"]:
-            reason = f"session {sess['state']}"
-        elif "extended" in st["note"]:
-            reason = "extended: waiting for retest (no chase)"
-        elif len(store.positions(ledger="paper", status="OPEN")) >= core.policy()["risk"]["max_open_positions"]:
-            reason = "max open paper positions"
-        elif _setup_cooldown(ticker, st):
-            reason = _setup_cooldown(ticker, st)
-        else:
-            reason = discipline_gate("paper", g) or event_block()
-            if chop and not reason:
-                day = sess["date"]
-                n = len(store.positions(ledger="paper", day=day))
-                if n >= core.policy()["discipline"]["chop_day_max_trades"]:
-                    reason = "chop day: max trades reached"
-        if not reason:
-            bud = ledger_budget("paper")
-            c, why = pick_contract(ticker, st["side"], s["price"], bud["left"], g, chop)
-            if not c:
-                reason = why
-            elif g == "C" or c["qty"] == 0:
-                decision, reason = "WATCH", c.get("size_note") or "grade C: watch only"
-            else:
-                pid = open_paper(ticker, st, g, c, oid, s)
-                decision = "ORDER" if pid else "ERROR"
-                reason = None if pid else "order failed"
-        store.x("INSERT INTO opportunities(id,date,ts,ticker,side,setup,grade,decision,reason,data) VALUES(?,?,?,?,?,?,?,?,?,?)",
-                (oid, sess["date"], store.ts(), ticker, st["side"], st["family"], g, decision, reason,
-                 json.dumps({"setup": st, "agree": agree, "against": against, "chop": chop, "position": pid})))
-        store.event("opportunity", f"PAPER {decision}: {ticker} {st['family']} {'calls' if st['side']=='C' else 'puts'} ({g})"
-                    + (f" | {reason}" if reason else ""), "paper", oid)
+    t_data = marketdata.now()
+    cands = strategy.detect_all(v3)
+    for c in cands:
+        c["ticker"] = ticker
+    ideas, skipped = strategy.arbitrate(cands)
+    pname = (s.get("meta") or {}).get("provider")
+    if skipped:
+        for c in cands:
+            _record(f"conflict-{ticker}-{t}-{c['family']}-{c['side']}", sess, c, "research", "SKIP-CONFLICT",
+                    [skipped["reason"]], None, None, pname)
+        store.event("opportunity", f"SKIPPED BAR {ticker} {t[11:16]}: {skipped['reason']} ({', '.join(skipped['candidates'])})", "paper", t)
+        return
+    for idea in ideas:
+        idea["ticker"] = ticker
+        passed, obj, sup = strategy.qualify(idea, v3)
+        rows, err = chain_rows(ticker, idea["side"])
+        tp, why, diag = optionmath.plan_trade(idea, v3, rows, "A", None)
+        g, gp, gf = strategy.grade(idea, v3, tp["rr_option"] if tp else None)
+        base = list(obj) + ([why] if not tp else [])
+        if g == "C":
+            base.append("grade C (failed: " + ", ".join(gf) + ")")
+        idea_id = idea.get("idea_hint") or f"{sess['date']}-{ticker}-{idea['side']}-{idea['family']}-{idea['bar'][11:16]}"
+        plan = dict(tp or {}, family=idea["family"], entry_mode=idea.get("entry_mode"), grade=g, evidence_rule=idea["confirm_rule"])
+        if tp:
+            win = core.window_for(core.hm(core.now_et())) or core.policy()["windows"][-1]
+            plan["flat_by"] = (core.now_et() + timedelta(minutes=win["flat_min"])).strftime("%H:%M")
+        marketdata.record_latency("signal", (marketdata.now() - (v3["t"])).total_seconds())
+        for pf in ("paper", "research"):
+            if pf == "research" and not core.policy()["v3"]["research"]["enabled"]:
+                continue
+            reasons, limit = list(base), None
+            if not sess["entries_allowed"]:
+                reasons.append(f"session {sess['state']}")
+            if pf == "paper" and not paper_enabled():
+                limit = "paper entries paused"
+            gate = discipline_gate(pf, g)
+            if gate and pf == "paper":
+                limit = gate
+            elif gate and pf == "research" and not gate.startswith(("STOP FOR TODAY", "A setups only", "cooldown")):
+                limit = gate
+            if pf == "research" and gate:
+                plan.setdefault("research_note", f"main would be blocked: {gate}")
+            opens = store.positions(ledger=pf, status="OPEN")
+            if len(opens) >= core.policy()["risk"]["max_open_positions"]:
+                limit = limit or "max open positions"
+            same_dir = [p for p in opens if p["side"] == idea["side"]]
+            if len(same_dir) >= core.policy()["v3"]["limits"]["max_same_direction_open"]:
+                limit = limit or f"already {'long calls' if idea['side'] == 'C' else 'long puts'} on {same_dir[0]['ticker']} (correlated SPY/QQQ exposure)"
+            cd = _setup_cooldown(pf, ticker, idea)
+            if cd:
+                limit = limit or cd
+            decision, pid = "SKIP", None
+            if not reasons and not limit:
+                bud = ledger_budget(pf)
+                qty_plan, _, _ = optionmath.plan_trade(idea, v3, rows, g, bud["left"], pf)
+                qty = (qty_plan or {}).get("qty", 0)
+                if qty <= 0:
+                    reasons.append((qty_plan or {}).get("qty_note") or "size 0")
+                else:
+                    cap = core.policy()["v3"]["limits"]["main_ideas_per_day"] if pf == "paper" else None
+                    ok, rwhy = paper.reserve_idea(pf, idea_id, ticker, idea["side"], cap)
+                    if not ok:
+                        limit = rwhy
+                    else:
+                        pid, bwhy = paper.buy(pf, idea_id, ticker, idea["side"], dict(plan, **{k: qty_plan[k] for k in ("premium_limit",)}),
+                                              qty, t)
+                        if pid:
+                            decision = "ORDER"
+                        else:
+                            paper.release_idea(pf, idea_id, bwhy)
+                            reasons.append(bwhy)
+            elif not reasons and limit:
+                decision = "BLOCKED-LIMIT"
+            _record(f"{pf}-{idea_id}", sess, idea, pf, decision, reasons, limit, plan if tp else {"diagnostics": diag}, pname)
+            if pf == "paper":
+                txt = (f"PAPER {decision}: {ticker} {idea['family']}{' (' + idea['entry_mode'] + ')' if idea.get('entry_mode') else ''} "
+                       f"{'calls' if idea['side'] == 'C' else 'puts'} ({g})")
+                if decision != "ORDER":
+                    txt += " | " + "; ".join((reasons + ([limit] if limit else []))[:3])
+                store.event("opportunity", txt, "paper", idea_id)
+        # Nick's alert (same plan, his own discipline)
         try:
-            setup_alert(ticker, st, g, decision, reason)
+            p_real = build_plan(ticker, idea["side"], idea["level"], "watch")
+            if p_real.get("setup") == idea["family"]:
+                setup_alert(ticker, idea, p_real)
         except Exception:
             pass
 
 
-def _setup_cooldown(ticker, st):
-    """20-minute cooldown after the same setup fired an order (stops re-buying a setup that just failed)."""
+def _setup_cooldown(pf, ticker, idea):
+    """A new entry on the same ticker+side needs a fresh setup after the cooldown (requalification)."""
     m = core.policy()["discipline"].get("setup_cooldown_min", 20)
     since = (core.now_et() - timedelta(minutes=m)).isoformat(timespec="seconds")
-    hit = store.q("SELECT ts FROM opportunities WHERE ticker=? AND setup=? AND side=? AND decision='ORDER' AND ts>=? ORDER BY ts DESC LIMIT 1",
-                  (ticker, st["family"], st["side"], since))
-    return f"cooldown: {st['family']} already traded at {hit[0]['ts'][11:16]} ({m} min)" if hit else None
-
-
-def open_paper(ticker, st, g, c, oid, s):
-    o, err = broker.submit(c["symbol"], c["qty"], "buy", oid)
-    if not o:
-        store.event("error", f"PAPER ORDER FAILED {c['symbol']}: {err}", "paper", oid)
-        return None
-    pid = "PP-" + oid
-    t = core.hm(core.now_et())
-    plan = dict(c["exit"], stop=c["exit"]["stop"], invalidation=st["invalidation"], be_hit=False, t1_done=False,
-                trail=None, last_bid=None, order_in=o.get("id"), entry_quote={"bid": c["bid"], "ask": c["ask"]})
-    store.x("INSERT INTO orders(client_id,position_id,ts,side,qty,status,broker_id,reason) VALUES(?,?,?,?,?,?,?,?)",
-            (oid, pid, store.ts(), "buy", c["qty"], "ACKNOWLEDGED", o.get("id"), st["family"]))
-    store.pos_save({"id": pid, "ledger": "paper", "date": core.now_et().strftime("%Y-%m-%d"), "ticker": ticker,
-                    "contract": occ_to_label(c["symbol"]), "symbol": c["symbol"], "side": st["side"],
-                    "qty_init": c["qty"], "qty_open": c["qty"], "fill": c["ask"], "opened": store.ts(),
-                    "closed": None, "status": "PENDING", "setup_id": oid, "grade": g, "setup": st["family"],
-                    "plan": plan, "realized": 0, "mfe": 0, "mae": 0, "policy_version": core.policy()["version"],
-                    "verified": "paper-broker", "notes": st["note"]})
-    store.event("paper_open", f"PAPER BUY {c['qty']} {ticker} {occ_to_label(c['symbol'])} ~${c['ask']:.2f} ({g}, {st['family']})",
-                "paper", pid)
-    return pid
-
-
-def reconcile_paper():
-    """Confirm fills / unknown orders with the broker before doing anything else."""
-    for o in store.q("SELECT * FROM orders WHERE status IN ('ACKNOWLEDGED','SUBMITTING','UNKNOWN','PARTIAL')"):
-        b, err = broker.order_by_client(o["client_id"])
-        if not b:
-            continue
-        st = b.get("status")
-        fq = int(float(b.get("filled_qty") or 0))
-        fp = float(b["filled_avg_price"]) if b.get("filled_avg_price") else None
-        new = {"filled": "FILLED", "partially_filled": "PARTIAL", "canceled": "CANCELED", "rejected": "REJECTED",
-               "expired": "CANCELED"}.get(st, "ACKNOWLEDGED")
-        store.x("UPDATE orders SET status=?, filled_qty=?, filled_price=? WHERE client_id=?", (new, fq, fp, o["client_id"]))
-        p = store.pos_get(o["position_id"])
-        if not p:
-            continue
-        if o["side"] == "buy" and new in ("FILLED", "PARTIAL") and fp:
-            if p["status"] == "PENDING" or abs(p["fill"] - fp) > 1e-6:
-                ex = core.exit_plan(fp, p["opened"][11:16], None)
-                p["plan"].update({k: ex[k] for k in ("stop", "be_trigger", "be_stop", "t1", "t1_range", "lock_after_t1",
-                                                      "gross_20pct_boundary", "slippage_reserve", "reward_risk_at_t1")})
-                p.update(fill=fp, qty_init=fq, qty_open=fq, status="OPEN")
-                store.pos_save(p)
-                store.event("paper_fill", f"PAPER FILLED {fq} {p['ticker']} {p['contract']} @ ${fp:.2f} | stop ${ex['stop']:.2f} | BE at ${ex['be_trigger']:.2f} | T1 ${ex['t1']:.2f}", "paper", p["id"])
-        elif o["side"] == "buy" and new in ("CANCELED", "REJECTED") and p["status"] == "PENDING":
-            p["status"] = "CANCELED"
-            store.pos_save(p)
-            store.event("paper", f"PAPER ORDER {new}: {p['contract']}", "paper", p["id"])
-        elif o["side"] == "sell" and new == "FILLED" and fp:
-            done = store.q("SELECT data FROM events WHERE ref=? AND kind='sell_booked'", (o["client_id"],))
-            if done:
-                continue
-            p["realized"] = round((p["realized"] or 0) + (fp - p["fill"]) * 100 * fq, 2)
-            p["qty_open"] = max(0, p["qty_open"] - fq)
-            if p["qty_open"] == 0:
-                p.update(status="CLOSED", closed=store.ts())
-            store.pos_save(p)
-            store.event("sell_booked", f"PAPER SOLD {fq} {p['contract']} @ ${fp:.2f} ({o['reason']}) | P/L ${p['realized']:+.2f}", "paper", o["client_id"])
-
-
-def _swing(b1, side):
-    """Last confirmed 1m swing: higher low for calls / lower high for puts (needs the next bar closed)."""
-    if len(b1) < 3:
-        return None
-    lows, highs = b1["Low"].values, b1["High"].values
-    for i in range(len(b1) - 2, 0, -1):
-        if side == "C" and lows[i] < lows[i - 1] and lows[i] < lows[i + 1]:
-            return float(lows[i])
-        if side == "P" and highs[i] > highs[i - 1] and highs[i] > highs[i + 1]:
-            return float(highs[i])
-    return None
-
-
-def manage(p):
-    """Exit precedence: session all-out > premium stop > underlying invalidation > flat timer > BE > T1 > trail."""
-    pl = p["plan"]
-    if pl.get("manual"):
-        return  # watchlist ticker (earnings/swing): journal only, Nick manages it with Chart
-    qd, err = option_quote(p["symbol"])
-    now = core.hm(core.now_et())
-    sess = core.session_info()
-    s = snapshot(p["ticker"])
-    b1 = bars1_done(s["m1"]) if s.get("ok") else None
-    last_close = float(b1["Close"].iloc[-1]) if b1 is not None and len(b1) else None
-    acts = []  # (kind, qty, reason)
-    if not qd or qd["bid"] <= 0:
-        if now >= sess["all_out"]:
-            acts.append(("exit", p["qty_open"], "ALL OUT time (no quote)"))
-        _note_once(p, "noquote", f"NO OPTION QUOTE for {p['contract']} ({err}); protection uses the underlying only")
-    else:
-        bid = qd["bid"]
-        pl["last_bid"] = bid
-        move = (bid - p["fill"]) / p["fill"] * 100
-        p["mfe"], p["mae"] = round(max(p["mfe"] or 0, move), 1), round(min(p["mae"] or 0, move), 1)
-        up = p["side"] == "C"
-        inv_hit = last_close is not None and (last_close < pl["invalidation"] if up else last_close > pl["invalidation"])
-        if now >= sess["all_out"]:
-            acts.append(("exit", p["qty_open"], f"ALL OUT {sess['all_out']}"))
-        elif bid <= pl["stop"]:
-            acts.append(("exit", p["qty_open"], "BREAKEVEN STOP" if pl["be_hit"] else "STOP (20% cap)" if not pl["t1_done"] else "LOCKED-PROFIT STOP"))
-        elif not pl["t1_done"] and inv_hit:
-            acts.append(("exit", p["qty_open"], f"SETUP INVALIDATED (1m close {last_close:.2f} beyond {pl['invalidation']:.2f})"))
-        elif not pl["be_hit"] and now >= pl["flat_by"] and bid < pl["be_trigger"]:
-            acts.append(("exit", p["qty_open"], f"IF FLAT: not at breakeven by {pl['flat_by']}"))
-        else:
-            if not pl["be_hit"] and bid >= pl["be_trigger"]:
-                pl["be_hit"] = True
-                pl["stop"] = core.tighten_only(pl["stop"], pl["be_stop"])
-                acts.append(("note", 0, f"BREAKEVEN: move stop to ${pl['stop']:.2f} (your fill)"))
-            if not pl["t1_done"] and bid >= pl["t1"]:
-                pl["t1_done"] = True
-                pl["stop"] = core.tighten_only(pl["stop"], pl["lock_after_t1"])
-                pl["trail"] = _swing(b1, p["side"]) if b1 is not None else None
-                if p["qty_open"] >= 2:
-                    acts.append(("exit", 1, f"T1 ${pl['t1']:.2f}: sell 1, stop on the rest to ${pl['stop']:.2f}"))
-                else:
-                    acts.append(("note", 0, f"T1 ${pl['t1']:.2f} hit: hold, stop up to ${pl['stop']:.2f}, trailing the 1m swing"))
-            elif pl["t1_done"] and b1 is not None:
-                sw = _swing(b1, p["side"])
-                if sw is not None and (pl["trail"] is None or (sw > pl["trail"] if up else sw < pl["trail"])):
-                    pl["trail"] = sw
-                    acts.append(("note", 0, f"TRAIL: underlying stop now {sw:.2f} (1m {'higher low' if up else 'lower high'})"))
-                if pl["trail"] is not None and last_close is not None and (last_close < pl["trail"] if up else last_close > pl["trail"]):
-                    acts.append(("exit", p["qty_open"], f"TRAIL HIT: 1m close {last_close:.2f} through {pl['trail']:.2f}"))
-    store.pos_save(p)
-    for kind, qn, why in acts:
-        if p["ledger"] == "paper":
-            if kind == "exit" and qn > 0:
-                pend = sum(o["qty"] for o in store.q(
-                    "SELECT qty FROM orders WHERE position_id=? AND side='sell' AND status IN ('ACKNOWLEDGED','UNKNOWN','PARTIAL','SUBMITTING')", (p["id"],)))
-                qn = min(qn, p["qty_open"] - pend)
-                if qn <= 0:
-                    continue  # never oversell: an exit is already working
-                cid =f"{p['id']}-S-{why.split(':')[0][:12].replace(' ', '_')}-{qn}"
-                if store.q("SELECT client_id FROM orders WHERE client_id=?", (cid,)):
-                    continue
-                o, e = broker.submit(p["symbol"], qn, "sell", cid)
-                store.x("INSERT INTO orders(client_id,position_id,ts,side,qty,status,broker_id,reason) VALUES(?,?,?,?,?,?,?,?)",
-                        (cid, p["id"], store.ts(), "sell", qn, "ACKNOWLEDGED" if o else "UNKNOWN", (o or {}).get("id"), why))
-                store.event("paper_exit", f"PAPER SELL {qn} {p['contract']}: {why}" + ("" if o else f" | order error {e}"), "paper", p["id"])
-            else:
-                _note_once(p, why[:24], f"PAPER {p['contract']}: {why}")
-        else:  # real: advisory only, Nick acts in Robinhood
-            _note_once(p, why[:24], f"YOUR {p['ticker']} {p['contract']}: {why}" + (" -> do it in Robinhood, then log OUT" if kind == "exit" else " -> update your stop in Robinhood"), kind="real_alert")
-    return acts
-
-
-def _note_once(p, key, text, kind="note"):
-    k = f"once:{p['id']}:{key}"
-    if store.kv_get(k):
-        return
-    store.kv_set(k, True)
-    store.event(kind, text, p["ledger"], p["id"])
+    hit = store.q("SELECT created FROM ideas WHERE portfolio=? AND ticker=? AND side=? AND status='FILLED' AND created>=? ORDER BY created DESC LIMIT 1",
+                  (pf, ticker, idea["side"], since))
+    return f"cooldown: {ticker} {'calls' if idea['side'] == 'C' else 'puts'} already entered at {hit[0]['created'][11:16]} ({m} min)" if hit else None
 
 
 # ======================= real trades (Nick reports) =======================
@@ -752,39 +508,50 @@ def log_real_in(ticker, contract, qty, fill, t=None, plan=None, setup=""):
     t = t or core.hm(core.now_et())
     side = contract[-1].upper()
     sym = f"{ticker.upper()}{core.now_et().strftime('%y%m%d')}{side}{int(round(float(contract[:-1]) * 1000)):08d}"
-    inv = (plan or {}).get("invalidation")
-    ex = core.exit_plan(fill, t, None)
     pid = store.new_id("R")
-    pl = dict(ex, invalidation=inv if inv else (-1 if side == "C" else 1e9), be_hit=False, t1_done=False,
-              trail=None, last_bid=None, plan_id=(plan or {}).get("id"))
     manual = ticker.upper() not in core.policy()["instruments"]
+    p = core.policy()
+    fee = p["v3"]["contract"]["fees_per_contract_side"]
+    ex = (plan or {}).get("exit") or {}
+    same = plan and (plan.get("contract") or {}).get("label", "").upper() == contract.upper()
+    prem_stop = core.cents_up(fill * (1 - p["risk"]["stop_cap_pct"]) + 0.01 + 2 * fee / 100)
+    st = {"v": 3, "symbol": sym, "entry_premium": fill, "fees_side": fee, "premium_stop": prem_stop,
+          "stop_px": ex.get("stop_px") if same else None, "t1": ex.get("t1_name") if same else None,
+          "t1_level": ex.get("t1_level") if same else None, "t1_px": ex.get("t1_px") if same else None,
+          "be_trigger": core.cents_up(fill * (1 + p["v3"]["exits"]["be_trigger_pct"]) + 2 * fee / 100),
+          "breakeven_net": core.cents_up(fill + 2 * fee / 100), "high_water": fill, "high_water_t": store.ts(),
+          "last_progress_t": store.ts(), "be_hit": False, "lock_hit": False, "t1_done": False, "runner": False, "trail": None,
+          "last_bid": None, "plan_id": (plan or {}).get("id"), "family": (plan or {}).get("setup") if same else None,
+          "qualified": bool(same and (plan or {}).get("state") == "READY" and (plan or {}).get("grade") in ("A", "B")),
+          "stops": [{"t": store.ts(), "stop": prem_stop, "by": "desk", "why": "20% ceiling on your reported fill"}],
+          "actions_done": [], "flat_by": (datetime.strptime(t, "%H:%M") + timedelta(minutes=(core.window_for(t) or p["windows"][-1])["flat_min"])).strftime("%H:%M")}
     if manual:
-        pl["manual"] = True
-    rpc = core.risk_per_contract(fill, ex["stop"], ex["slippage_reserve"])
+        st["manual"] = True
     store.pos_save({"id": pid, "ledger": "real", "date": core.now_et().strftime("%Y-%m-%d"), "ticker": ticker.upper(),
-                    "contract": contract.upper(), "symbol": sym, "side": side, "qty_init": qty, "qty_open": qty,
-                    "fill": fill, "opened": store.ts(), "closed": None, "status": "OPEN",
-                    "setup_id": (plan or {}).get("id"), "grade": (plan or {}).get("grade"), "setup": setup or (plan or {}).get("setup"),
-                    "plan": pl, "realized": 0, "mfe": 0, "mae": 0, "policy_version": core.policy()["version"],
+                    "contract": contract.upper(), "symbol": sym, "side": side, "qty_init": qty, "qty_open": qty, "fill": fill,
+                    "opened": store.ts(), "closed": None, "status": "OPEN", "setup_id": (plan or {}).get("id"),
+                    "grade": (plan or {}).get("grade") if same else None, "setup": st["family"] or setup or "no qualified setup",
+                    "plan": st, "realized": 0, "mfe": 0, "mae": 0, "policy_version": p["version"],
                     "verified": "reported by Nick", "notes": ""})
-    risk = rpc * qty
-    cap = core.per_trade_cap((plan or {}).get("grade", "B"), (plan or {}).get("chop_day", False))
+    risk = round((fill - prem_stop) * 100 * qty + 2 * fee * qty, 2)
     warn = ""
-    if cap is not None and cap != float("inf") and risk > cap:
-        warn = f" | OVER the ${cap:.0f} you can risk on this trade"
-    streak_msg = discipline_gate("real", (plan or {}).get("grade", "B"))
-    if streak_msg:
-        warn += f" | {streak_msg}"
+    gate = discipline_gate("real", (plan or {}).get("grade", "B"))
+    if gate:
+        warn += f" | {gate}"
+    if not st["qualified"]:
+        warn += " | NOT a qualified desk setup (no complete plan for this contract): treat it as a chase"
     if manual:
         store.event("real_in", f"LOGGED YOUR BUY {qty} {ticker.upper()} {contract.upper()} @ ${fill:.2f} | cost ${fill*100*qty:.0f} | "
-                    f"STOP ${ex['stop']:.2f} (strict {round(ex['stop_pct'] * 100)}%, max planned loss ${risk:.2f}){warn} | BE at ${ex['be_trigger']:.2f} | "
-                    f"journal only: the desk auto-manages SPY/QQQ 0DTE; ask Chart for the {ticker.upper()} exit plan | set your stop in Robinhood now", "real", pid)
+                    f"STOP ${prem_stop:.2f} (20% ceiling, max planned loss ${risk:.2f}){warn} | journal only: ask Chart for the "
+                    f"{ticker.upper()} exit plan | set your stop in Robinhood now", "real", pid)
         return pid
+    struct = (f"STOP: {ticker.upper()} 1m close {'below' if side == 'C' else 'above'} {st['stop_px']:.2f} (structure) or ${prem_stop:.2f} premium"
+              if st["stop_px"] else f"STOP ${prem_stop:.2f} premium (20% ceiling; no structural level from a plan)")
+    t1 = f"T1 {st['t1']} {st['t1_level']:.2f}: {'sell 1, keep the rest only on a clean break' if qty >= 2 else 'full exit'}" if st["t1"] else "no level T1 (no plan)"
     store.event("real_in", f"LOGGED YOUR BUY {qty} {ticker.upper()} {contract.upper()} @ ${fill:.2f} | cost ${fill*100*qty:.0f} | "
-                f"STOP ${ex['stop']:.2f} ({round(ex['stop_pct'] * 100)}% {ex['window'].lower()} stop, max planned loss ${risk:.2f}){warn} | "
-                f"BE at ${ex['be_trigger']:.2f} -> stop to ${ex['be_stop']:.2f} | {core.trail_text(ex, qty)} | "
-                f"if flat exit by {ex['flat_by']} | all out {ex['all_out']} | set your stop in Robinhood now. "
-                f"The desk watches it and tells you each step.", "real", pid)
+                f"{struct}, max planned loss ${risk:.2f}{warn} | BE at ${st['be_trigger']:.2f} -> stop to ${st['breakeven_net']:.2f} | {t1} | "
+                f"green but stalled {p['v3']['exits']['stall_min']} min or MACD turns -> out | all out {core.session_info()['all_out']} | "
+                f"set your stop in Robinhood now. The desk watches it and tells you each step.", "real", pid)
     return pid
 
 
@@ -800,9 +567,9 @@ def log_real_out(pid, qty, price):
         p.update(status="CLOSED", closed=store.ts())
     store.pos_save(p)
     b = ledger_budget("real")
+    gate = discipline_gate("real", "B")
     return store.event("real_out", f"LOGGED YOUR SELL {qty} {p['contract']} @ ${price:.2f} | P/L ${pnl:+.2f} | "
-                       f"{p['qty_open']} left | today ${b['realized_day']:+.2f}"
-                       + (f" | {discipline_gate('real', 'B')}" if discipline_gate('real', 'B') and pnl < 0 else ""), "real", pid)
+                       f"{p['qty_open']} left | today ${b['realized_day']:+.2f}" + (f" | {gate}" if gate and pnl < 0 else ""), "real", pid)
 
 
 # ======================= watches =======================
@@ -818,36 +585,8 @@ def start_watch(plan, minutes=None):
     return wid, exp
 
 
-def kill_paper(reason="Nick pressed KILL"):
-    """Kill switch (paper only): stop new paper entries, close every open paper position now, stop all watches.
-    Real trades are Nick's: the desk only reminds him; it never touches Robinhood."""
-    store.kv_set("paper_enabled", False)
-    closed = 0
-    for p in store.positions(ledger="paper", status="OPEN"):
-        pend = sum(o["qty"] for o in store.q(
-            "SELECT qty FROM orders WHERE position_id=? AND side='sell' AND status IN ('ACKNOWLEDGED','UNKNOWN','PARTIAL','SUBMITTING')", (p["id"],)))
-        qn = p["qty_open"] - pend
-        if qn <= 0 or not broker.configured():
-            continue  # never oversell: an exit is already working
-        cid = f"{p['id']}-S-KILL-{qn}"
-        if store.q("SELECT client_id FROM orders WHERE client_id=?", (cid,)):
-            continue
-        o, e = broker.submit(p["symbol"], qn, "sell", cid)
-        store.x("INSERT INTO orders(client_id,position_id,ts,side,qty,status,broker_id,reason) VALUES(?,?,?,?,?,?,?,?)",
-                (cid, p["id"], store.ts(), "sell", qn, "ACKNOWLEDGED" if o else "UNKNOWN", (o or {}).get("id"), "KILL SWITCH"))
-        closed += 1
-    n = stop_watch()
-    real = len(store.positions(ledger="real", status="OPEN"))
-    msg = f"KILL SWITCH: paper entries OFF, {closed} paper position(s) sent to close, {n} watch(es) stopped"
-    if real:
-        msg += f" | you have {real} real trade(s) open: close them yourself in Robinhood"
-    store.event("paper", msg + f" ({reason})", "paper")
-    return msg
-
-
 def stop_watch(ticker=None):
-    rows = store.q("SELECT id,ticker FROM watches WHERE status='ACTIVE'" + (" AND ticker=?" if ticker else ""),
-                   (ticker,) if ticker else ())
+    rows = store.q("SELECT id,ticker FROM watches WHERE status='ACTIVE'" + (" AND ticker=?" if ticker else ""), (ticker,) if ticker else ())
     for w in rows:
         store.x("UPDATE watches SET status='STOPPED' WHERE id=?", (w["id"],))
         store.event("watch", f"STOPPED WATCHING {w['ticker']} (paper engine keeps running)", "real", w["id"])
@@ -862,30 +601,29 @@ def check_watches():
             store.event("watch", f"WATCH EXPIRED {w['ticker']} at {w['expires'][11:16]}: no entry. Don't chase the old signal.", "real", w["id"])
             continue
         s = snapshot(w["ticker"])
-        if not s.get("ok") or s["stale"]:
+        v3 = s.get("v3") or {}
+        if not v3.get("ok") or s.get("stale"):
             if w["last_state"] != "DATA":
                 store.x("UPDATE watches SET last_state='DATA' WHERE id=?", (w["id"],))
                 store.event("watch", f"{w['ticker']} DATA STALE: watch paused until fresh bars", "real", w["id"])
             continue
-        b1 = bars1_done(s["m1"])
-        if not len(b1):
-            continue
-        c = float(b1["Close"].iloc[-1])
+        c = v3["close1"]
         up = pl["side"] == "C"
         lvl, inv = pl.get("trigger_level"), pl.get("invalidation")
+        z = v3["zone"]
         state = w["last_state"]
         if inv is not None and (c < inv if up else c > inv):
             new, text = "INVALIDATED", f"{w['ticker']} INVALIDATED: 1m close {c:.2f} beyond {inv:.2f}. No trade."
-        elif lvl is not None and (c > lvl if up else c < lvl):
-            new, text = "TRIGGER MET", f"{w['ticker']} TRIGGER MET at {b1.index[-1].strftime('%H:%M')} ET: 1m close {c:.2f} {'above' if up else 'below'} {lvl:.2f}"
+        elif lvl is not None and (c > lvl + z if up else c < lvl - z):
+            new, text = "TRIGGER MET", f"{w['ticker']} TRIGGER MET {v3['last_open'].strftime('%H:%M')} ET: 1m close {c:.2f} {'above' if up else 'below'} {lvl:.2f}"
             cq = pl.get("contract")
             if cq:
-                qd, _ = option_quote(cq["symbol"])
-                if qd and pl.get("premium_limit") and qd["ask"] > pl["premium_limit"]:
+                qd, _ = marketdata.option_quote(cq["symbol"])
+                if qd and pl.get("premium_limit") and qd.get("ask") and qd["ask"] > pl["premium_limit"]:
                     new, text = "EXPIRED", f"{w['ticker']} ENTRY EXPIRED: {cq['label']} ask {qd['ask']:.2f} above your limit {pl['premium_limit']:.2f}. Don't chase."
-                elif qd:
-                    text += f" | {cq['label']} ask {qd['ask']:.2f} (limit {pl.get('premium_limit')}) (delayed quote) | real execution is yours"
-        elif lvl is not None and abs(c - lvl) / lvl < 0.0005:
+                elif qd and qd.get("ask"):
+                    text += f" | {cq['label']} bid {qd['bid']:.2f} / ask {qd['ask']:.2f} ({'live' if qd.get('executable') else 'not executable'}) | real execution is yours"
+        elif lvl is not None and abs(c - lvl) <= z:
             new, text = "NEAR", f"{w['ticker']} at the level {lvl:.2f} (1m close {c:.2f}). Waiting for the close."
         else:
             new, text = state, None
@@ -896,27 +634,66 @@ def check_watches():
                 store.x("UPDATE watches SET status=? WHERE id=?", (new, w["id"]))
 
 
-# ======================= daily journal =======================
+def kill_paper(reason="Nick pressed KILL"):
+    """Kill switch (paper portfolios only): stop new paper entries and close every open paper/research position
+    at the simulated bid (pending if no valid quote). Real trades are Nick's: the desk only reminds him."""
+    store.kv_set("paper_enabled", False)
+    closed = 0
+    for led in ("paper", "research"):
+        for p in store.positions(ledger=led, status="OPEN"):
+            n, _ = paper.sell(p, p["qty_open"], "KILL SWITCH")
+            closed += 1 if n else 0
+    n = stop_watch()
+    real = len(store.positions(ledger="real", status="OPEN"))
+    msg = f"KILL SWITCH: paper entries OFF, {closed} paper position(s) closed (simulated), {n} watch(es) stopped"
+    if real:
+        msg += f" | you have {real} real trade(s) open: close them yourself in Robinhood"
+    store.event("paper", msg + f" ({reason})", "paper")
+    return msg
+
+
+# ======================= journal =======================
 def day_summary(day=None):
     day = day or core.now_et().strftime("%Y-%m-%d")
-    out = {"date": day}
-    for led in ("real", "paper"):
+    out = {"date": day, "policy_version": core.policy()["version"], "data": marketdata.status().get("live_label")}
+    for led in ("real", "paper", "research", "old"):
         ps = [p for p in store.positions(ledger=led, day=day) if p["status"] in ("CLOSED", "OPEN")]
         closed = [p for p in ps if p["status"] == "CLOSED"]
-        wins = [p["realized"] for p in closed if p["realized"] > 0]
-        losses = [p["realized"] for p in closed if p["realized"] <= 0]
+        wins = [p["realized"] for p in closed if p["realized"] > 1]
+        losses = [p["realized"] for p in closed if p["realized"] <= -1]
         out[led] = {"trades": len(ps), "closed": len(closed), "open": len(ps) - len(closed),
                     "realized": round(sum(p["realized"] or 0 for p in ps), 2),
+                    "wins": len(wins), "losses": len(losses), "breakeven": len(closed) - len(wins) - len(losses),
                     "win_rate": round(100 * len(wins) / len(closed), 1) if closed else None,
                     "avg_win": round(sum(wins) / len(wins), 2) if wins else None,
                     "avg_loss": round(sum(losses) / len(losses), 2) if losses else None,
                     "list": [{k: p[k] for k in ("id", "ticker", "contract", "qty_init", "fill", "realized", "status",
                                                 "setup", "grade", "mfe", "mae", "opened", "closed")} for p in ps]}
-    opp = store.q("SELECT decision, reason, setup, ticker, side, grade, ts FROM opportunities WHERE date=?", (day,))
-    out["opportunities"] = opp
-    out["no_trade_reason"] = None if out["paper"]["trades"] else (
-        "no qualified setup" if not opp else "setups found but skipped: " + "; ".join(sorted({o['reason'] or o['decision'] for o in opp}))[:300])
+    cand = store.q("SELECT portfolio, decision, reasons, limit_blocked, family, ticker, side, ts FROM candidates WHERE date=?", (day,))
+    out["candidates"] = cand
+    out["opportunities"] = [{"decision": c["decision"], "reason": "; ".join(json.loads(c["reasons"] or "[]")) or c["limit_blocked"],
+                             "setup": c["family"], "ticker": c["ticker"], "side": c["side"], "ts": c["ts"]} for c in cand if c["portfolio"] == "paper"]
+    out["no_trade_reason"] = None if out["paper"]["trades"] else ("no qualified setup" if not cand else "setups found but skipped (see candidates)")
     return out
+
+
+# ======================= archive (for replay; never rewrites fills) =======================
+def archive(ticker, m1):
+    if m1 is None or not len(m1):
+        return
+    tail = m1.iloc[-5:]
+    for ts, r in tail.iterrows():
+        store.x("INSERT OR REPLACE INTO bars_archive(ticker,open,o,h,l,c,v,src) VALUES(?,?,?,?,?,?,?,?)",
+                (ticker, ts.isoformat(), float(r["Open"]), float(r["High"]), float(r["Low"]), float(r["Close"]), float(r["Volume"]),
+                 marketdata.provider().name))
+
+
+def archive_quote(symbol, q):
+    if not q:
+        return
+    store.x("INSERT OR IGNORE INTO quotes_archive(symbol,ts,bid,ask,last,delta,gamma,iv,quote_time,src) VALUES(?,?,?,?,?,?,?,?,?,?)",
+            (symbol, store.ts(), q.get("bid"), q.get("ask"), q.get("last"), q.get("delta"), q.get("gamma"), q.get("iv"),
+             q["quote_time"].isoformat() if q.get("quote_time") is not None else None, q.get("src")))
 
 
 # ======================= main tick =======================
@@ -926,28 +703,46 @@ _state = {"last_tick": None, "errors": 0, "last_error": None}
 def tick():
     sess = core.session_info()
     try:
-        if broker.configured():
-            reconcile_paper()
         if sess["state"] in ("OPEN", "NO NEW ENTRIES", "ALL OUT", "ORB FORMING"):
             for t in core.policy()["instruments"]:
+                s = snapshot(t)
+                archive(t, s.get("m1"))
                 if sess["entries_allowed"]:
                     paper_scan(t)
+                    if core.policy()["v3"]["old_policy_shadow"]["enabled"]:
+                        try:
+                            policy_old.scan(t, s, {"C": chain_rows(t, "C")[0], "P": chain_rows(t, "P")[0]})
+                        except Exception as e:
+                            _state["last_error"] = f"old shadow: {type(e).__name__}: {e}"
                 try:
-                    sn = snapshot(t)
                     holding = any(p["ticker"] == t for p in store.positions(ledger="real", status="OPEN"))
-                    if sn.get("ok") and not sn.get("stale") and (sess["entries_allowed"] or holding):
-                        alerts.move_check(t, bars5(sn["m1"]))
+                    v3 = s.get("v3") or {}
+                    if v3.get("ok") and not s.get("stale") and (sess["entries_allowed"] or holding):
+                        alerts.move_check(t, v3["b5"])
                 except Exception:
                     pass
+            want = []
             for p in store.positions(status="OPEN"):
-                manage(p)
+                want.append(p["symbol"])
+                s = snapshot(p["ticker"])
+                if p["plan"].get("v") == 3:
+                    exits.evaluate(p, s.get("v3") or {})
+                else:
+                    policy_old.manage(p, s, lambda sym: marketdata.option_quote(sym))
+                q, _ = marketdata.option_quote(p["symbol"])
+                archive_quote(p["symbol"], q)
+            try:
+                import schwab_stream
+                schwab_stream.want_options(want)
+            except Exception:
+                pass
             check_watches()
         if sess["time"] >= "16:05" and not store.kv_get(f"summary:{sess['date']}") and not sess["holiday"]:
             store.journal_set(sess["date"], summary=day_summary(sess["date"]))
             store.kv_set(f"summary:{sess['date']}", True)
             todo = [p for p in store.positions(ledger="real", day=sess["date"]) if p["status"] == "CLOSED" and not (p.get("notes") or "").strip("{} ")]
-            store.event("journal", f"Journal for {sess['date']} written (paper + real)." +
-                        (f" {len(todo)} of your trades need a 10-second review: Journal tab." if todo else ""), "", sess["date"])
+            store.event("journal", f"Journal for {sess['date']} written (real, main paper, research, old policy)." +
+                        (f" {len(todo)} of your trades need a quick review." if todo else ""), "", sess["date"])
         _state.update(last_tick=store.ts(), errors=0)
     except Exception as e:
         _state.update(errors=_state["errors"] + 1, last_error=f"{type(e).__name__}: {e}")

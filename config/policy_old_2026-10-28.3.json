@@ -1,0 +1,123 @@
+{
+ "version": "2026-10-28.3",
+ "notes": "Single source of truth for the desk, paper engine, plans and Chart. Change = new version. Times are America/New_York.",
+ "approved": {
+  "stop_cap_20pct": "Nick, master prompt Oct 27 2026",
+  "autonomous_paper": "Nick, master prompt Oct 27 2026",
+  "all_out_1525": "Nick, Oct 27 2026",
+  "exit_profile_trail_v2": "Nick OK Oct 27 2026",
+  "no_dollar_limits": "Nick Oct 27 2026: remove $ caps; stop on losing streaks; stops strict at a %",
+  "streak_rule": "Nick OK Oct 27 2026: 2 losses in a row = A only + 10 min cooldown; 3 in a row = stop for the day",
+  "window_stops": "Nick Oct 27 2026: morning 20% (hard cap), midday 12%, afternoon 10%; 20% stays the all-in ceiling",
+  "delta_040_055": "Nick Oct 27 2026: Claude recommends |delta| 0.40-0.55, aim 0.45 (closer to ATM for tighter stops); Nick OK"
+ },
+ "instruments": [
+  "SPY",
+  "QQQ"
+ ],
+ "contract": {
+  "expiry": "0DTE",
+  "premium_min": 0.1,
+  "premium_max": 3.0,
+  "abs_delta_min": 0.4,
+  "abs_delta_max": 0.55,
+  "max_spread_pct": 0.1,
+  "missing_delta": "rank by distance to ATM, label delta unknown",
+  "abs_delta_target": 0.45
+ },
+ "risk": {
+  "stop_cap_pct": 0.2,
+  "daily_loss_usd": null,
+  "weekly_loss_usd": null,
+  "fees_per_contract_roundtrip": 0.04,
+  "slippage_min": 0.01,
+  "slippage_spread_frac": 0.5,
+  "max_open_positions": 2,
+  "max_contracts": 2,
+  "per_trade_cap": {
+   "trend_A": null,
+   "trend_B": null,
+   "chop": null,
+   "note": "Nick Oct 27: no dollar limits. Risk control = strict 20% stop + losing-streak stops."
+  }
+ },
+ "session": {
+  "orb_start": "09:30",
+  "orb_end": "09:45",
+  "first_entry": "09:45",
+  "last_entry": "15:15",
+  "all_out": "15:25",
+  "early_close_last_entry": "12:30",
+  "early_close_all_out": "12:50",
+  "broker_note": "Robinhood may start closing at-risk expiring positions at 3:30 PM ET; all-out 15:25 sits before it."
+ },
+ "windows": [
+  {
+   "name": "MORNING",
+   "start": "09:45",
+   "end": "11:30",
+   "be": 1.1,
+   "t1_lo": 1.2,
+   "t1_hi": 1.3,
+   "flat_min": 5,
+   "stop_pct": 0.2
+  },
+  {
+   "name": "MIDDAY",
+   "start": "11:30",
+   "end": "14:00",
+   "be": 1.08,
+   "t1_lo": 1.15,
+   "t1_hi": 1.2,
+   "flat_min": 3,
+   "stop_pct": 0.12
+  },
+  {
+   "name": "AFTERNOON",
+   "start": "14:00",
+   "end": "15:30",
+   "be": 1.06,
+   "t1_lo": 1.12,
+   "t1_hi": 1.15,
+   "flat_min": 3,
+   "stop_pct": 0.1
+  }
+ ],
+ "exit_profile": {
+  "name": "trail_v2",
+  "t1_pick": "low",
+  "at_breakeven": "stop to fill (gross breakeven; net can be a few cents negative)",
+  "at_t1_qty2": "sell 1, stop on rest to fill x be",
+  "at_t1_qty1": "hold, stop to fill x be",
+  "after_t1": "underlying trail: exit on 1m close beyond the last confirmed 1m swing (higher low for calls, lower high for puts)",
+  "legacy_profile": "sell_all_t1"
+ },
+ "discipline": {
+  "max_trades_day": 4,
+  "a_only_after_trades": 4,
+  "a_only_after_consecutive_losses": 2,
+  "cooldown_min_after_loss": 10,
+  "chop_day_max_trades": 2,
+  "chop_day_max_contracts": 1,
+  "event_block_min": 15,
+  "stop_day_after_consecutive_losses": 3,
+  "setup_cooldown_min": 20
+ },
+ "sizing_by_grade": {
+  "A": 2,
+  "B": 1,
+  "C": 0
+ },
+ "data": {
+  "max_bar_age_s": 180,
+  "max_quote_age_s": 90,
+  "option_feed": "indicative (Alpaca free, delayed/derived; not executable OPRA)",
+  "stock_feed": "Yahoo 1m bars + Alpaca IEX last trade"
+ },
+ "watch_default_min": 15,
+ "indicators": {
+  "ema_fast": 9,
+  "ema_slow": 21,
+  "ema_trend": 200
+ }
+}
