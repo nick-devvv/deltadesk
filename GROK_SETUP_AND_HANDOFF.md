@@ -1,66 +1,87 @@
-# DeltaDesk v3.2: setup on Chart's computer
+# DeltaDesk v3.3: setup on Chart's computer
 
-You do every step yourself, in Grok. Nothing here needs Claude to take over your computer. The Schwab login, the Schwab keys and any new keys are yours to enter; nobody else types them.
+You do every step yourself, in Grok. Nothing here needs Claude to take over your computer. The Schwab login and any keys are yours to enter; nobody else types them. Nothing new costs money.
 
-## What's new in v3.2 (main paper rules unchanged; full details in docs/V32_REPORT.md)
-- **Markets tab (new; your other pages keep their layout):**
-  - search any stock or ETF and its live chart (1/2/5/15m, extended hours, Back to live, Pacific time);
-  - the desk's read on that ticker and the setups board;
-  - news & catalysts with source labels;
-  - the earnings calendar in three phases;
-  - the paper autopilot, settings and spending, and the entry rules compared.
-- **Schwab you can manage yourself:** Connect, Reconnect, Restart stream and Disconnect on Rules → Data sources, with honest states (connected only when data is actually flowing).
-- **Anti-chasing gate in code:** a missed move becomes "WAIT FOR RETEST": the move already happened, wait for a new setup or skip it. No entry is moved, no stop widened. Chart can't override it.
-- **Catalysts:**
-  - SEC filings (free), plus optional X + web search through xAI (paid, off until you turn it on).
-  - Every story is labeled from the links actually retrieved. Rumors can never trigger an entry.
-- **Your trades on any ticker:** exact contract, the 20% line, the full premium at risk, and "not monitoring" when the desk has no fresh quote.
+## What's new in v3.3 (main paper rules unchanged; full details in docs/V33_REPORT.md)
+- **Honest evidence on every plan:**
+  - **No strategy is qualified.** Every setup family tested no better than random entries after costs, or only in-sample.
+  - Plans show a **Research only** badge (or **Your idea** for your own levels). Chart says RESEARCH ONLY instead of ENTER.
+  - Setup alerts for research-only families are quiet notes, not pings.
+  - Markets → **Strategy evidence** lists all 18 tested strategies with the numbers and why.
+- **The fixes from the outside audit (A–H):**
+  - the gate checks both sides of the entry zone and fails closed;
+  - the gated ledger judges every setup itself;
+  - no look-ahead in the 2m MACD diagnostics;
+  - theta in one unit;
+  - the stocks backtest fills after the signal;
+  - strict paper fills that respect the limit after slippage;
+  - a content-keyed indicator cache;
+  - session-clustered statistics.
 
-## Step 0: what costs money (decide before turning anything on)
-- **Nothing new by default.** SEC EDGAR is free. The xAI search stays OFF.
-- **If you want X search:** create an API key at console.x.ai and put it in Chart's Secrets as `XAI_API_KEY` yourself, the same way you added the Schwab keys, then have Chart restart the desk. Then turn on "X and web search" on Markets → Settings.
-  - Cost (docs.x.ai, checked Oct 29): grok-4.7 $2 per 1M input and $6 per 1M output tokens, X search $5 per 1,000 posts returned, web search $5 per 1,000 calls.
-  - The desk stops at your daily budget (default $2) and 12 searches an hour, and shows what it spent.
-- **SEC filings monitor:** put `SEC_USER_AGENT` in Chart's Secrets with your name and email, e.g. `Nick DeltaDesk nick@example.com` (the SEC requires one). It's free.
+  Each one is a new version; the old ones are kept for comparison.
+- **The chart's 530 error:**
+  - **What it is:** a Cloudflare tunnel error page, not a Schwab problem.
+  - **On the page:** it shows one plain line and keeps the last good candles. It retries with backoff and comes back by itself.
+  - **The real cause** is on Chart's computer (step 5).
+- **New free X routine** (`grok/X_SCAN_PROMPT.md`): Chart searches X with its own access for earnings names, movers, setups and your trades, finds the original sources, and sends them with sentiment kept separate. If it can't search X, it says X SEARCH UNAVAILABLE.
+- **Research tools:**
+  - a strategy register that can't be quietly edited;
+  - a router that logs every setup;
+  - walk-forward folds;
+  - matched random-entry controls;
+  - `research.py` for the ORB15 study.
+
+## Step 0: what costs money
+Nothing new. The paid xAI search stays OFF. SEC filings are free (you already added `SEC_USER_AGENT`). The X routine uses Chart's own Grok access.
 
 ## Step 1: attach the file to Chart
-Attach `deltadesk-v3.2.zip` (in Downloads/nicks-desk) to a new Chart chat with the message below. If the attachment doesn't arrive, tell Chart the file's path on your Mac and its sha256 (both in my message).
+Attach `deltadesk-v3.3.zip` (in Downloads/nicks-desk) to a new Chart chat with the message below. If the attachment doesn't arrive, tell Chart the file's path on your Mac and its sha256 (both in my message).
 
 ## Step 2: the message to send Chart (copy all of it)
 
 ```
-DESK V3.2 INSTALL. Do these steps on your computer, in order, and show me the output of each.
+DESK V3.3 INSTALL. Do these steps on your computer, in order, and show me the output of each.
 You never place real trades, never click buy/sell/order buttons, and never enter passwords or keys.
 
-1. Back up: cp -r ~/desk ~/desk_backup_v31_$(date +%Y%m%d)
-2. Check the zip: sha256sum deltadesk-v3.2.zip   (must match the sha256 Nick gives you; if not, stop)
-3. Unzip the attached deltadesk-v3.2.zip over ~/desk. Overwrite files with the same names and keep everything else (journal/desk.db, schwab.env, webhook.env, DESK_TOKEN.txt, watchdog.sh, bot.py, shadow.py, review.py, config/watchlist.json, config/events.json). The zip has no journal folder and no secrets.
-4. cd ~/desk && python3 -m pytest -q tests/   -> must end with "112 passed, 1 skipped". If not, stop and show me the error.
-5. Restart the desk with watchdog.sh. Then show me these two lines (no tokens in the output):
+1. Back up: cp -r ~/desk ~/desk_backup_v32_$(date +%Y%m%d)
+2. Check the zip: sha256sum deltadesk-v3.3.zip   (must match the sha256 Nick gives you; if not, stop)
+3. Unzip the attached deltadesk-v3.3.zip over ~/desk. Overwrite files with the same names and keep everything else (journal/desk.db, schwab.env, webhook.env, DESK_TOKEN.txt, watchdog.sh, bot.py, shadow.py, review.py, config/watchlist.json, config/events.json). The zip has no journal folder and no secrets.
+4. cd ~/desk && python3 -m pytest -q tests/   -> must end with "140 passed, 1 skipped". If not, stop and show me the error.
+5. Restart the desk with watchdog.sh. Then show me these lines (no tokens in the output):
    curl -s "http://127.0.0.1:8765/api/schwab/status?k=$(cat DESK_TOKEN.txt)" | head -c 300
-   curl -s "http://127.0.0.1:8765/api/setups?k=$(cat DESK_TOKEN.txt)" | head -c 300
-6. Update your instructions from ~/desk/grok/: Desk chat webhook -> PRIMARY_COACH_SYSTEM_PROMPT.md, 20-minute news scan -> NEWS_SCAN_PROMPT.md, 4:20 PM review -> REVIEW_PROMPT.md. In your Library replace "Desk commands" with USER_QUICK_COMMANDS.md and the endpoint list with TOOL_CONTRACTS.md.
-7. Main paper rules did not change. Do not change any rule or setting; I decide.
-8. Reply with: the tests result, the two status lines, and "routines updated".
+   curl -s -o /dev/null -w "%{http_code} %{content_type}\n" "http://127.0.0.1:8765/api/chart?t=NVDA&tf=1&k=$(cat DESK_TOKEN.txt)"
+   curl -s "http://127.0.0.1:8765/api/strategies?k=$(cat DESK_TOKEN.txt)" | head -c 300
+6. The chart 530 error. Check the tunnel, without changing anything:
+   pgrep -fl cloudflared || echo "cloudflared NOT running"
+   grep -n cloudflared watchdog.sh
+   tail -n 40 the cloudflared log watchdog.sh writes (if any), and tell me: did the trycloudflare link change today, and how many times did cloudflared restart?
+   If the desk page shows a Cloudflare error, tell me the "Error 1xxx" number on it.
+7. Update your instructions from ~/desk/grok/: Desk chat webhook -> PRIMARY_COACH_SYSTEM_PROMPT.md, 20-minute news scan -> NEWS_SCAN_PROMPT.md, 4:20 PM review -> REVIEW_PROMPT.md. In your Library replace "Desk commands" with USER_QUICK_COMMANDS.md and the endpoint list with TOOL_CONTRACTS.md.
+8. New routine "X and earnings scan": paste ~/desk/grok/X_SCAN_PROMPT.md as its instructions, every 30 minutes on weekdays 8:00 AM-6:00 PM ET. If you can't search X, say so now.
+9. After 4:00 PM ET today (or now if the market is closed), run the signal study and show me the last 25 lines:
+   cd ~/desk && python3 research.py --csv reports/backtest_inplay_bars_2026-09-22_2026-10-29.csv --paths 20 | tail -n 25
+   (If that file isn't there, tell me which backtest_inplay_bars_*.csv files are in ~/desk/reports.)
+10. Main paper rules did not change. Do not change any rule or setting; I decide.
+11. Reply with: the tests result, the three lines from step 5, the tunnel findings from step 6, "routines updated", whether you can search X, and the study output.
 ```
 
-## Step 3: log in to Schwab again (you, about 1 minute)
-Your stream was refused because the saved login was made before "Accounts and Trading Production" was added. On the desk: **Rules → Data sources → Reconnect (log in again)**. Log in on Schwab's site yourself, then paste the `https://127.0.0.1/?code=...` address back within 30 seconds. The page should show **Connected** and **Streaming live**.
+## Step 3: check it
+- My trades looks the same as before. A desk setup shows a **Research only** badge; your own level shows **Your idea**.
+- **Markets → Strategy evidence** shows "none qualified" and 18 strategies.
+- If the chart ever says the desk couldn't be reached through the tunnel (HTTP 530), Chart's computer, or its tunnel, is down. It retries by itself. If the link changed, ask Chart for the new one.
 
-## Step 4: check it
-- My trades looks the same as before.
-- **Markets:** the health line says Schwab login connected and market data live. Search a ticker (e.g. NVDA): the chart loads and the status says Live (or Market closed after hours).
-- **Setups board:** during market hours it shows rows, or "No qualifying setups right now".
-- Type `check once NVDA calls`: the plan shows a desk read, the entry gate state and the planned max loss.
+## Step 4: what the 530 answer means
+- **cloudflared not running, or Error 1033:** the tunnel is down. Chart restarts it with watchdog.sh. A quick tunnel gets a **new link** every time it restarts, so the old link shows 530 until you open the new one.
+- **Error 1016:** the link points at a tunnel that no longer exists: use the newest link.
+- **A link that keeps changing** is how free quick tunnels work. Cloudflare says they're for testing, with no uptime guarantee. Tell me what Chart finds and I'll give you the next step. A stable link without paying is possible, but it needs a different setup on Chart's computer.
 
 ## Rollback
-Send Chart: "stop the desk server, restore ~/desk from ~/desk_backup_v31_YYYYMMDD (replace the whole folder), and restart it with watchdog.sh". v3.2 only added tables and settings, so the v3.1 code still reads the database.
+Send Chart: "stop the desk server, restore ~/desk from ~/desk_backup_v32_YYYYMMDD (replace the whole folder), and restart it with watchdog.sh". v3.3 only added tables, files and settings, so the v3.2 code still reads the database.
 
 ## Known limits
-- Not verified against the real services yet: the Schwab stream login, instrument search, the SEC feed from Chart's computer and (if you turn it on) xAI search. Those get confirmed on the first live session.
-- The Oct 28 replay uses modeled option prices (Schwab has no option-quote history). It's a regression check, not proof.
+- Not verified against the real services from here: the Schwab stream, instrument search, the SEC feed from Chart's computer, X access in Chart's routine, and the tunnel. Those get confirmed in step 5-9 and on the first live session.
+- The backtests use modeled option prices (no option-quote history). The Sep-Oct data was used to design v3, so studies on it are diagnostic, not unseen evidence.
 - If Chart's computer sleeps or goes offline, the page, paper engine and watches stop until it's back.
-- Chart answers through a webhook, so its replies take a few seconds to a minute. The plan never waits on Chart.
 
 ## Files in the zip
 | File | What it is |
@@ -89,4 +110,9 @@ Send Chart: "stop the desk server, restore ~/desk from ~/desk_backup_v31_YYYYMMD
 | `catalysts.py`, `earnings.py` | v3.2: catalysts with source labels and timestamps (SEC EDGAR, optional xAI, Chart's routine); earnings in phases |
 | `autopilot.py`, `optionhours.py` | v3.2: scheduled paper strategies (earnings post-release, pre-event research); options market hours for fills |
 | `docs/V32_REPORT.md` | v3.2: root causes, changes, what was verified, what needs a live session, provider limits |
-| `tests/` | 113 offline tests (no network, no AI, fake Schwab server and stream) |
+| `strategy_registry.py`, `config/specialists.json` | v3.3: every tested strategy, its spec hash, evidence and status (none qualified); the attempt log |
+| `strategy_router.py` | v3.3: one route from a setup to SHADOW / REJECT / ADMIT, with shared limits across specialists |
+| `walk_forward.py`, `matched_benchmarks.py`, `research.py` | v3.3: walk-forward folds, matched random-entry controls with Holm adjustment, the ORB15 signal study |
+| `grok/X_SCAN_PROMPT.md` | v3.3: the free X and earnings scan routine for Chart |
+| `docs/V33_REPORT.md` | v3.3: root causes with file/function, fixes, tests, what's research only, the live checks left |
+| `tests/` | 141 offline tests (no network, no AI, fake Schwab server and stream) |

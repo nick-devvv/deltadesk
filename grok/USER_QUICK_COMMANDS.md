@@ -40,3 +40,9 @@ The plan is always computed first, so it's valid even if Chart is slow or offlin
 - If the gate says **TOO EXTENDED** or **WAIT FOR RETEST**, the move already happened: wait for a new setup or skip it.
 - `IN NVDA 140C 11/07 2 at 3.20` tracks that exact contract (add the expiry for anything that isn't same-day SPY/QQQ).
 - News labels: confirmed / attributed / unverified / opinion. Unverified never triggers an entry.
+
+**v3.3:**
+- Every plan shows an evidence badge. **Research only** means the setup's rules are met but testing found no edge over random entries: information, not an entry. **Your idea** means a level you picked: the desk checks it, but no tested edge stands behind it. Today no desk setup is qualified, so setup alerts are quiet notes instead of pings.
+- Markets tab → **Strategy evidence**: every strategy that was tested, its status, the numbers and why.
+- Markets tab → **Entry rules compared**: the old gate vs the new gate, side by side on paper.
+- If the chart shows **No data** with "couldn't be reached through the tunnel (HTTP 530)", Chart's computer or its tunnel is down. The last good candles stay on screen and it retries by itself (5 s, then up to 60 s). If it lasts, ask Chart for the new desk link.

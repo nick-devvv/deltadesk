@@ -24,6 +24,12 @@ Base: `http://127.0.0.1:8765` on Chart's computer. Add `?k=DESK_TOKEN` (or `&k=`
 | `POST /api/earnings` `{"ticker","date","timing","source_url","call_time"}` | news routine, 9 AM routine | Confirm an earnings date with its source | marks the date confirmed |
 | `GET /api/earnings` | questions | v3.2: the calendar with each name's phase | none |
 | `GET /api/autopilot` | review | v3.2: today's paper autopilot decisions, accepted and rejected | none |
+| `GET /api/strategies` | questions, review | v3.3: every tested strategy with its status (PAPER QUALIFIED / RESEARCH ONLY / DRAFT / PAUSED / RETIRED), its evidence and why, attempt counts, and today's router decisions. `qualified` is empty today | none |
+| `GET /api/x/targets` | X scan routine | v3.3: the up-to-12 tickers to research now, each with `why` and `focus` (earnings first) | none |
+| `POST /api/news` `{"via":"x_scan","items":[...sentiment, attention...]}` | X scan routine | v3.3: X research with trader / consumer / fundamentals sentiment and attention counts (see X_SCAN_PROMPT.md). Labeled by the desk; posts-only stays unverified | adds news + catalysts |
+| `POST /api/earnings/results` `{"ticker","date","metrics","source_url","consensus_source","consensus_captured_at"}` | X scan routine | v3.3: reported numbers vs a sourced consensus, same basis only | stores the results |
+| `POST /api/earnings/call` `{"ticker","date","statements":[...],"source_url"}` | X scan routine | v3.3: what management said on the call, with the transcript or webcast link | stores the statements |
+| `GET /api/schwab/status` | debugging | v3.3: connected / connecting / reconnecting / expired / error / disconnected, verified by a data call | none |
 | `GET /api/lessons` | 4:20 PM routine | Existing lessons | none |
 | `POST /api/lessons` `{"text","setup","sample","evidence":[]}` | 4:20 PM routine | Propose a lesson (status PROPOSED) | adds a row |
 | `GET /api/journal?date=` | any | Journal and notes | none |
@@ -33,6 +39,7 @@ Base: `http://127.0.0.1:8765` on Chart's computer. Add `?k=DESK_TOKEN` (or `&k=`
 - `POST /api/command` with IN/OUT. Only Nick logs his trades.
 - Never `bot.py take`, `bot.py close`, or anything that sends an order. Paper trades are simulated inside the desk; no endpoint sends an order anywhere.
 - `POST /api/command` with `STOP`. Only Nick moves his stops.
+- `POST /api/schwab/connect`, `/api/schwab/disconnect` or `/api/schwab/restart-stream`: Nick uses those buttons himself. Chart never logs in to Schwab.
 - Any Robinhood order screen.
 
 **Errors:** a non-200 or `{"error": ...}` means stop and tell Nick in one line. Don't retry more than once.

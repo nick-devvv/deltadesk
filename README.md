@@ -50,7 +50,7 @@ Chart (Grok agent) <- webhook with compact context (rules, plan, levels, regime,
 - **Code computes, AI explains.** Standard commands never call the model, which keeps AI cost to about 20 scheduled runs a day plus questions. The model may not change any number.
 - **Safety by construction.** No code path sends an order. Paper trading is simulated internally, and the Schwab client allows only market-data paths (plus the one preferences call that returns the streaming address).
 - **Honest numbers.** Indicators run on finished bars only, option P&L in replays is labeled modeled, and results from different ledgers or data sources are never mixed.
-- **Tested.** 71 offline tests (no network, no AI, a fake Schwab provider) cover indicator parity, levels, conflict handling, atomic idea reservation under threads, option math units, every exit rule and their order, outages, stream message merging, the replay sandbox and safety refusals.
+- **Tested.** 140 offline tests (no network, no AI, a fake Schwab provider) cover indicator parity, levels, conflict handling, atomic idea reservation under threads, option math units, every exit rule and their order, outages, stream message merging, the replay sandbox and safety refusals.
 
 ## Stack
 Python 3.12, SQLite, pandas/numpy, websockets; vanilla HTML/CSS/JS with TradingView Lightweight Charts 5.2.1 (Apache-2.0) and canvas animations; Schwab market-data REST and streaming APIs; Grok agent routines; pytest.
@@ -59,6 +59,17 @@ Python 3.12, SQLite, pandas/numpy, websockets; vanilla HTML/CSS/JS with TradingV
 - **v3 (Oct 29, 2026)** rebuilt the data pipeline, the setup rules and the exits after a one-day audit. See `docs/V3_REPORT.md`.
 - **v3.1 (Oct 30, 2026)** added the scanner, trade guidance for any ticker, live market alerts, three research experiments and the diagnostics. See `docs/V31_REPORT.md` and the research behind it in `docs/RESEARCH_NOTES.md`.
 - **v3.2 (Oct 30, 2026)** added a Schwab connection the trader manages from the page, live charts for any ticker, a setups board with written rules, an anti-chasing entry gate in code, source-labeled catalysts (SEC EDGAR, optional xAI X search), earnings in three phases and scheduled paper strategies. See `docs/V32_REPORT.md`.
+- **v3.3 (Oct 30, 2026)** fixed eight defects found in an outside audit, each as a new version next to the old one:
+  - an entry gate that checks both sides of the zone and fails closed;
+  - an independent gated ledger;
+  - no look-ahead in 2m features;
+  - one theta unit;
+  - a causal stocks backtest;
+  - paper fills checked against the limit after slippage;
+  - a content-keyed indicator cache;
+  - session-clustered statistics.
+
+  It also added a strategy register with spec hashes, a router that logs every setup, walk-forward folds, matched random-entry controls with Holm adjustment, and a signal study. No strategy has beaten its random control yet, so every desk setup is labeled research only. See `docs/V33_REPORT.md`.
 
 | Scanner | Research |
 |---|---|
