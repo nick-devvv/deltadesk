@@ -1,87 +1,57 @@
-# DeltaDesk v3.3: setup on Chart's computer
+# DeltaDesk v3.4: setup on Chart's computer
 
-You do every step yourself, in Grok. Nothing here needs Claude to take over your computer. The Schwab login and any keys are yours to enter; nobody else types them. Nothing new costs money.
+You do every step yourself, in Grok. Nothing here needs Claude to take over your computer. Nothing new costs money.
 
-## What's new in v3.3 (main paper rules unchanged; full details in docs/V33_REPORT.md)
-- **Honest evidence on every plan:**
-  - **No strategy is qualified.** Every setup family tested no better than random entries after costs, or only in-sample.
-  - Plans show a **Research only** badge (or **Your idea** for your own levels). Chart says RESEARCH ONLY instead of ENTER.
-  - Setup alerts for research-only families are quiet notes, not pings.
-  - Markets → **Strategy evidence** lists all 18 tested strategies with the numbers and why.
-- **The fixes from the outside audit (A–H):**
-  - the gate checks both sides of the entry zone and fails closed;
-  - the gated ledger judges every setup itself;
-  - no look-ahead in the 2m MACD diagnostics;
-  - theta in one unit;
-  - the stocks backtest fills after the signal;
-  - strict paper fills that respect the limit after slippage;
-  - a content-keyed indicator cache;
-  - session-clustered statistics.
-
-  Each one is a new version; the old ones are kept for comparison.
-- **The chart's 530 error:**
-  - **What it is:** a Cloudflare tunnel error page, not a Schwab problem.
-  - **On the page:** it shows one plain line and keeps the last good candles. It retries with backoff and comes back by itself.
-  - **The real cause** is on Chart's computer (step 5).
-- **New free X routine** (`grok/X_SCAN_PROMPT.md`): Chart searches X with its own access for earnings names, movers, setups and your trades, finds the original sources, and sends them with sentiment kept separate. If it can't search X, it says X SEARCH UNAVAILABLE.
-- **Research tools:**
-  - a strategy register that can't be quietly edited;
-  - a router that logs every setup;
-  - walk-forward folds;
-  - matched random-entry controls;
-  - `research.py` for the ORB15 study.
-
-## Step 0: what costs money
-Nothing new. The paid xAI search stays OFF. SEC filings are free (you already added `SEC_USER_AGENT`). The X routine uses Chart's own Grok access.
+## What's new in v3.4 (main paper rules unchanged; full details in docs/V34_REPORT.md)
+- **The strategy lab (Markets tab, new box at the bottom; your other pages keep their layout):**
+  - every strategy now runs on every stock on the desk's list, every day: 15 strategy families, each with its own paper ledger;
+  - every signal is recorded with its conditions (RVOL, trend, MACD, VWAP, SPY, gap, sector, earnings, and the X read known at that moment);
+  - every signal gets its stock result after the close, next to random entries on the same stock and day.
+- **What works where:** split by strategy, stock, stock group or any condition. Each row says how often it worked, the edge over random with a range, and whether it held in both halves of the dates. Under 30 signals = too few.
+- **Nothing was marked failed.** The four "retired" items (MACD video, RVOL 2+, ADX trend, morning only) run again. The ORB15 base and retest stay drafts. Nothing is "qualified": the lab collects data; you decide later which ones move into a fresh paper run.
+- **Daily bar archive** in `~/desk/journal/bars/`, so the data keeps growing past Schwab's ~30-day history.
+- **Your pause button and the kill switch** cover the lab too. Lab trades stay out of your trade feed.
 
 ## Step 1: attach the file to Chart
-Attach `deltadesk-v3.3.zip` (in Downloads/nicks-desk) to a new Chart chat with the message below. If the attachment doesn't arrive, tell Chart the file's path on your Mac and its sha256 (both in my message).
+Attach `deltadesk-v3.4.zip` (in Downloads/nicks-desk) to a new Chart chat with the message below.
 
 ## Step 2: the message to send Chart (copy all of it)
 
 ```
-DESK V3.3 INSTALL. Do these steps on your computer, in order, and show me the output of each.
+DESK V3.4 INSTALL. Do these steps on your computer, in order, and show me the output of each.
 You never place real trades, never click buy/sell/order buttons, and never enter passwords or keys.
 
-1. Back up: cp -r ~/desk ~/desk_backup_v32_$(date +%Y%m%d)
-2. Check the zip: sha256sum deltadesk-v3.3.zip   (must match the sha256 Nick gives you; if not, stop)
-3. Unzip the attached deltadesk-v3.3.zip over ~/desk. Overwrite files with the same names and keep everything else (journal/desk.db, schwab.env, webhook.env, DESK_TOKEN.txt, watchdog.sh, bot.py, shadow.py, review.py, config/watchlist.json, config/events.json). The zip has no journal folder and no secrets.
-4. cd ~/desk && python3 -m pytest -q tests/   -> must end with "140 passed, 1 skipped". If not, stop and show me the error.
-5. Restart the desk with watchdog.sh. Then show me these lines (no tokens in the output):
-   curl -s "http://127.0.0.1:8765/api/schwab/status?k=$(cat DESK_TOKEN.txt)" | head -c 300
-   curl -s -o /dev/null -w "%{http_code} %{content_type}\n" "http://127.0.0.1:8765/api/chart?t=NVDA&tf=1&k=$(cat DESK_TOKEN.txt)"
-   curl -s "http://127.0.0.1:8765/api/strategies?k=$(cat DESK_TOKEN.txt)" | head -c 300
-6. The chart 530 error. Check the tunnel, without changing anything:
-   pgrep -fl cloudflared || echo "cloudflared NOT running"
-   grep -n cloudflared watchdog.sh
-   tail -n 40 the cloudflared log watchdog.sh writes (if any), and tell me: did the trycloudflare link change today, and how many times did cloudflared restart?
-   If the desk page shows a Cloudflare error, tell me the "Error 1xxx" number on it.
-7. Update your instructions from ~/desk/grok/: Desk chat webhook -> PRIMARY_COACH_SYSTEM_PROMPT.md, 20-minute news scan -> NEWS_SCAN_PROMPT.md, 4:20 PM review -> REVIEW_PROMPT.md. In your Library replace "Desk commands" with USER_QUICK_COMMANDS.md and the endpoint list with TOOL_CONTRACTS.md.
-8. New routine "X and earnings scan": paste ~/desk/grok/X_SCAN_PROMPT.md as its instructions, every 30 minutes on weekdays 8:00 AM-6:00 PM ET. If you can't search X, say so now.
-9. After 4:00 PM ET today (or now if the market is closed), run the signal study and show me the last 25 lines:
-   cd ~/desk && python3 research.py --csv reports/backtest_inplay_bars_2026-09-22_2026-10-29.csv --paths 20 | tail -n 25
-   (If that file isn't there, tell me which backtest_inplay_bars_*.csv files are in ~/desk/reports.)
-10. Main paper rules did not change. Do not change any rule or setting; I decide.
-11. Reply with: the tests result, the three lines from step 5, the tunnel findings from step 6, "routines updated", whether you can search X, and the study output.
+1. Back up: cp -r ~/desk ~/desk_backup_v33_$(date +%Y%m%d)
+2. Check the zip: shasum -a 256 deltadesk-v3.4.zip 2>/dev/null || sha256sum deltadesk-v3.4.zip   (must match the sha256 Nick gives you; if not, stop)
+3. Unzip the attached deltadesk-v3.4.zip over ~/desk. Overwrite files with the same names and keep everything else (journal/ and everything in it, schwab.env, webhook.env, DESK_TOKEN.txt, watchdog.sh, bot.py, shadow.py, review.py, config/watchlist.json, config/events.json, config/variants.json, variants.py). The zip has no journal folder and no secrets.
+4. cd ~/desk && python3 -m pytest -q tests/   -> must end with "153 passed, 1 skipped". If not, stop and show me the error.
+5. Restart the desk with watchdog.sh. Then show me (no tokens in the output):
+   grep -i "strategy lab" /tmp/desk*.log 2>/dev/null | tail -1    (or wherever watchdog.sh writes the server log)
+   curl -s "http://127.0.0.1:8765/api/lab?k=$(cat DESK_TOKEN.txt)" | head -c 400
+6. Wait 10 minutes, then run the /api/lab line again and tell me "with_history" and "last_error".
+7. Your routines read their prompts live from ~/desk/grok, so the coach and the 4:20 PM review are on the v3.4 text now. In your Library, update "Desk commands" from USER_QUICK_COMMANDS.md and "Desk endpoints" from TOOL_CONTRACTS.md.
+8. After 3:31 PM ET, run:
+   curl -s "http://127.0.0.1:8765/api/lab/report?by=strategy&k=$(cat DESK_TOKEN.txt)" | head -c 600
+   After 4:06 PM ET: ls ~/desk/journal/bars/$(date +%Y-%m-%d) | wc -l
+9. Main paper rules did not change. Do not change any rule or setting; I decide.
+10. Reply with: the tests result, the lab lines from steps 5, 6 and 8, and "routines updated".
 ```
 
 ## Step 3: check it
-- My trades looks the same as before. A desk setup shows a **Research only** badge; your own level shows **Your idea**.
-- **Markets → Strategy evidence** shows "none qualified" and 18 strategies.
-- If the chart ever says the desk couldn't be reached through the tunnel (HTTP 530), Chart's computer, or its tunnel, is down. It retries by itself. If the link changed, ask Chart for the new one.
-
-## Step 4: what the 530 answer means
-- **cloudflared not running, or Error 1033:** the tunnel is down. Chart restarts it with watchdog.sh. A quick tunnel gets a **new link** every time it restarts, so the old link shows 530 until you open the new one.
-- **Error 1016:** the link points at a tunnel that no longer exists: use the newest link.
-- **A link that keeps changing** is how free quick tunnels work. Cloudflare says they're for testing, with no uptime guarantee. Tell me what Chart finds and I'll give you the next step. A stable link without paying is possible, but it needs a different setup on Chart's computer.
+- My trades looks the same as before. Nothing new pings you.
+- **Markets → Strategy lab:**
+  - the status says "recording" during market hours;
+  - the symbol count is about 127, with "with prior-day history" climbing after 7 AM ET;
+  - the 15 lab ledgers are listed.
+- **"What works where"** fills in after 3:31 PM ET. For the first weeks almost every row is grey ("too few"). That's expected: it needs about 30 signals per row.
 
 ## Rollback
-Send Chart: "stop the desk server, restore ~/desk from ~/desk_backup_v32_YYYYMMDD (replace the whole folder), and restart it with watchdog.sh". v3.3 only added tables, files and settings, so the v3.2 code still reads the database.
+Send Chart: "stop the desk server, restore ~/desk from ~/desk_backup_v33_YYYYMMDD (replace the whole folder), and restart it with watchdog.sh". v3.4 only added tables, files and settings, so the v3.3 code still reads the database.
 
 ## Known limits
-- Not verified against the real services from here: the Schwab stream, instrument search, the SEC feed from Chart's computer, X access in Chart's routine, and the tunnel. Those get confirmed in step 5-9 and on the first live session.
-- The backtests use modeled option prices (no option-quote history). The Sep-Oct data was used to design v3, so studies on it are diagnostic, not unseen evidence.
-- If Chart's computer sleeps or goes offline, the page, paper engine and watches stop until it's back.
+- Not verified against the real services from here: the morning history pull from Schwab, CPU use on Chart's computer (about 5 seconds a minute expected), and the archive written after the close. Steps 5, 6 and 8 check them.
+- Quiet stocks refresh about every 6 minutes on the board. Their signals still get a stock result but are too late to paper trade. That's honest, and it means fewer lab paper trades on quiet names.
+- If Chart's computer sleeps or goes offline, the page, paper engine, lab and watches stop until it's back. The lab catches up on missed bars, but those signals are tape-only.
 
 ## Files in the zip
 | File | What it is |
@@ -115,4 +85,6 @@ Send Chart: "stop the desk server, restore ~/desk from ~/desk_backup_v32_YYYYMMD
 | `walk_forward.py`, `matched_benchmarks.py`, `research.py` | v3.3: walk-forward folds, matched random-entry controls with Holm adjustment, the ORB15 signal study |
 | `grok/X_SCAN_PROMPT.md` | v3.3: the free X and earnings scan routine for Chart |
 | `docs/V33_REPORT.md` | v3.3: root causes with file/function, fixes, tests, what's research only, the live checks left |
-| `tests/` | 141 offline tests (no network, no AI, fake Schwab server and stream) |
+| `lab.py`, `config/sectors.json` | v3.4: the strategy lab (signal tape, 15 lab paper ledgers, what works where, daily bar archive) |
+| `docs/V34_REPORT.md` | v3.4: what the lab does, costs, limits, live checks |
+| `tests/` | 154 offline tests (no network, no AI, fake Schwab server and stream) |

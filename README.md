@@ -50,7 +50,7 @@ Chart (Grok agent) <- webhook with compact context (rules, plan, levels, regime,
 - **Code computes, AI explains.** Standard commands never call the model, which keeps AI cost to about 20 scheduled runs a day plus questions. The model may not change any number.
 - **Safety by construction.** No code path sends an order. Paper trading is simulated internally, and the Schwab client allows only market-data paths (plus the one preferences call that returns the streaming address).
 - **Honest numbers.** Indicators run on finished bars only, option P&L in replays is labeled modeled, and results from different ledgers or data sources are never mixed.
-- **Tested.** 140 offline tests (no network, no AI, a fake Schwab provider) cover indicator parity, levels, conflict handling, atomic idea reservation under threads, option math units, every exit rule and their order, outages, stream message merging, the replay sandbox and safety refusals.
+- **Tested.** 153 offline tests (no network, no AI, a fake Schwab provider) cover indicator parity, levels, conflict handling, atomic idea reservation under threads, option math units, every exit rule and their order, outages, stream message merging, the replay sandbox and safety refusals.
 
 ## Stack
 Python 3.12, SQLite, pandas/numpy, websockets; vanilla HTML/CSS/JS with TradingView Lightweight Charts 5.2.1 (Apache-2.0) and canvas animations; Schwab market-data REST and streaming APIs; Grok agent routines; pytest.
@@ -70,6 +70,12 @@ Python 3.12, SQLite, pandas/numpy, websockets; vanilla HTML/CSS/JS with TradingV
   - session-clustered statistics.
 
   It also added a strategy register with spec hashes, a router that logs every setup, walk-forward folds, matched random-entry controls with Holm adjustment, and a signal study. No strategy has beaten its random control yet, so every desk setup is labeled research only. See `docs/V33_REPORT.md`.
+- **v3.4 (Oct 30, 2026)** added the strategy lab. Every strategy (15 families) runs on every symbol on the desk's list, every day:
+  - each signal is recorded, causally, with its conditions, including the X read known at that moment;
+  - after the close it gets a stock outcome next to matched random entries;
+  - each family paper trades in its own strict ledger.
+
+  A "what works where" report splits results by stock, stock group and condition, with session-clustered intervals and an earlier/later-half check. A daily 1m bar archive keeps the data growing. See `docs/V34_REPORT.md`.
 
 | Scanner | Research |
 |---|---|

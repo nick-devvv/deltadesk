@@ -46,3 +46,9 @@ The plan is always computed first, so it's valid even if Chart is slow or offlin
 - Markets tab → **Strategy evidence**: every strategy that was tested, its status, the numbers and why.
 - Markets tab → **Entry rules compared**: the old gate vs the new gate, side by side on paper.
 - If the chart shows **No data** with "couldn't be reached through the tunnel (HTTP 530)", Chart's computer or its tunnel is down. The last good candles stay on screen and it retries by itself (5 s, then up to 60 s). If it lasts, ask Chart for the new desk link.
+
+**v3.4 (Markets → Strategy lab):**
+- Every strategy runs on every stock on the desk's list, every day, on paper. Nothing new pings you; the lab's paper trades stay out of your trade feed.
+- **What works where:** split by strategy, setup, stock, strategy and stock, strategy and stock group, or strategy and a condition (X lean, RVOL, trend, time of day, MACD, gap, earnings and more). Each row shows signals, days, how often it won, the average result in R, what random entries on the same stock and day did, the edge over random with its 95% range, and whether it held in both halves of the dates.
+- Grey rows have under 30 signals: too few to mean anything yet. Ask Chart "what's working?" and it reads the same report.
+- When you're ready to reset paper with only the strategies that held up, tell Claude which rows. The history stays, so the fresh run shows whether they were real.
