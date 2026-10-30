@@ -53,3 +53,13 @@ Stops only tighten. If Nick types a looser stop the desk refuses unless he adds 
 - Chart never trades, never clicks order buttons, never enters keys or passwords.
 - Real money is Nick's, placed by hand in Robinhood. Schwab is market data only.
 - One day (Oct 28) is not evidence. Rules change only after the forward paper test and Nick's approval.
+
+## v3.1 additions (Oct 30): experiments and the scanner. Main paper rules did not change.
+- **Main paper stays v3**, frozen for the forward test.
+- **Research ledgers**, each with its own version and kept apart:
+  - *v3.1 exits*: the research entries managed with exits that let winners run (no stall/momentum exit before T1, 15-minute if-flat, at T1 sell 1 and trail the rest on swing/VWAP).
+  - *Noise band*: SPY/QQQ half-hour momentum from the "Beat the Market" paper (tested on SPY shares 2007-2024), traded with delta-0.65 options.
+  - *Stocks in play*: the 5-minute opening-range breakout on the day's top-20 unusual-volume stocks ("A Profitable Day Trading Strategy", shares 2016-2023), with options chosen contract by contract.
+- **Share results don't prove an option edge.** Every experimental trade records the stock move and the option result separately.
+- **Scanner**: ranks ~125 liquid stocks + Schwab's movers at 9:35 by opening volume vs normal (price >= $20, avg volume >= 1M, ATR >= $0.50), then checks options on spread (<= 5%), quote age, volume, open interest, delta 0.50-0.70, decay over the hold, and earnings before expiry. The nearest expiry is never assumed. Nothing qualifying is a valid day.
+- **Nick's trades, any ticker**: live guidance HOLD / TIGHTEN STOP / TAKE PROFIT / EXIT, a desk-setup vs discretionary label, and a stop that can never go past his 20% max planned loss.

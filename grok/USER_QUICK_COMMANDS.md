@@ -9,13 +9,15 @@
 | `IN 2 at 0.95` / `I'm in SPY 765P 2 at 0.95` | Logs your real fill on the plan's contract and gives your chart stop, premium stop, T1, breakeven and exit rules. **Set your stop in Robinhood.** A trade that wasn't a desk setup is marked that way. |
 | `STOP 0.85` | Tightens your stop. A looser stop is refused unless you type `STOP 0.70 force`, and every change is recorded with who made it. |
 | `IN SPY 765C 2 at 0.95` | Same, naming the contract. |
+| `IN NVDA 140C 11/07 1 at 3.20` | Any other ticker: add the expiry. The desk tracks that exact contract live and tells you HOLD / TIGHTEN STOP / TAKE PROFIT / EXIT as it changes. |
+| `NVDA calls?` / `is AMD a buy here` | A full plan for any ticker, ending with ENTER, WAIT or PASS. It says whether it's a desk setup or your idea. |
 | `OUT 1.20` / `OUT SPY 765C 1 at 1.20` | Logs your exit and shows P/L, contracts left, today's total and your streak. |
 | `stop watching` / Unwatch button | Ends the watch. The paper engine keeps running. |
 | `pause paper` / `resume paper` | Stops or restarts new paper entries. Open paper positions are still managed. |
 
 **Sent to Chart (uses an AI credit)**: anything else, plus the Why? button and the short explanation under a new plan. Examples: "why?", "what changed?", "is there news?", "second opinion on this".
 
-**Other tickers (watchlist, bottom left):** click a ticker to chart it and ask Chart about it. The buttons are Earnings play?, Key levels?, News? and Expected move?. Add or remove tickers right in the list. Earnings within 14 days show an ER badge. `IN NVDA 140C 1 at 3.20` and `OUT NVDA 4.10` log those trades to your journal with the 20% premium ceiling as the starting stop (tighten it with `STOP`). You manage them with Chart, because the desk only auto-manages SPY/QQQ 0DTE.
+**Other tickers (watchlist, bottom left):** click a ticker to chart it and ask Chart about it. The buttons are Earnings play?, Key levels?, News? and Expected move?. Add or remove tickers right in the list. Earnings within 14 days show an ER badge. Log them with the expiry (`IN NVDA 140C 11/07 1 at 3.20`, `OUT NVDA 4.10`). The desk tracks them live with the same guidance as SPY/QQQ, starting from the 20% premium ceiling.
 
 **Options chain (left column, above the watchlist):** calls/puts, expiry, bid/ask/mark, change, delta, breakeven, with the desk's pick marked and a green dot on contracts that fit your rules. Click a row, then **Ask Chart** (sends "SPY 765P 0DTE at 0.86 …: is this a good entry right now?") or **Log my fill** (fills the log form; you still buy in Robinhood first). Fold it with the arrow to give the watchlist more room.
 
@@ -27,3 +29,7 @@
 The plan is always computed first, so it's valid even if Chart is slow or offline.
 
 **Journal (in the chat):** after each closed trade, a short card asks: followed the plan?, any mistakes, why you took it, why you got out, next time. Tap and type a few words, and it saves to the Journal tab. Press Later and it asks again in about 45 minutes. After 4:10 PM it asks 3 end-of-day questions (how it went, how you felt, one lesson). The 4:20 review uses all of it to suggest lessons. You never have to open the Journal tab.
+
+**Pages:** **My trades** (your positions, the chart, Chart's guidance) · **Scanner** (stocks in play, live movers, why names didn't qualify) · **Paper** (the main strategy) · **Research** (experiments side by side) · Journal · Review · Rules.
+
+**Live market alerts (Rules → Live alerts to switch each on/off):** stocks in play at 9:35, a top-movers digest every 30-60 minutes, quick moves on any scanned stock, scanner paper trades, and changes in the guidance on your own trades. Scanner and mover alerts are ideas, not validated setups.

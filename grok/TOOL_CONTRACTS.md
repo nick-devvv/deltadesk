@@ -12,6 +12,10 @@ Base: `http://127.0.0.1:8765` on Chart's computer. Add `?k=DESK_TOKEN` (or `&k=`
 | `GET /api/portfolios[?since=]` | review | 30-day results per ledger: trades, win rate, expectancy, profit factor, small-sample flag | none |
 | `GET /api/chart?t=SPY&tf=1|2|5` | questions | The desk chart's data: candles, VWAP, EMAs, 2m MACD, levels with sources, markers, the decision snapshot | none |
 | `GET /api/data/status` | questions, debugging | Schwab stream/REST/fallback mode, last message age, reconnects, latency | none |
+| `GET /api/scanner[?date=]` | questions, review | Today's stocks-in-play ranking: every number, the contract checked, why names didn't qualify, scanner alerts | none |
+| `GET /api/research[?since=]` | 4:20 review | Every paper ledger side by side (main, research, v3.1 exits, noise band, stocks in play, old rules, you): expectancy, avg win/loss, drawdown, sample size, stock move vs option, exit reasons | none |
+| `GET /api/diagnostics` | review | The latest backtest diagnostics (coin flip, exits, hold tests, halves) | none |
+| `GET /api/evaluation` | review | The forward paper test against its fixed criteria | none |
 | `GET /api/lessons` | 4:20 PM routine | Existing lessons | none |
 | `POST /api/lessons` `{"text","setup","sample","evidence":[]}` | 4:20 PM routine | Propose a lesson (status PROPOSED) | adds a row |
 | `GET /api/journal?date=` | any | Journal and notes | none |

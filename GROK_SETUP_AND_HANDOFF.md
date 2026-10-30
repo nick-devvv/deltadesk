@@ -1,6 +1,13 @@
-# DeltaDesk v3: setup on Chart's computer
+# DeltaDesk v3.1: setup on Chart's computer
 
 You do every step yourself, in Grok. Nothing here needs Claude to take over your computer. The Schwab login and the Schwab keys are yours to enter; nobody else types them.
+
+## What's new in v3.1 (main paper rules unchanged)
+- **My trades:** tell Chart what you bought (any ticker; add the expiry for non-SPY/QQQ). The desk tracks that exact contract live and says HOLD / TIGHTEN STOP / TAKE PROFIT / EXIT as things change, labels it "desk setup" or "your idea", and never lets the stop go past your 20% max planned loss.
+- **Scanner page:** at 9:35 it ranks stocks in play by unusual opening volume, checks their options contract by contract, and says why names didn't qualify. Passing is a valid day.
+- **Live alerts:** stocks in play, top movers through the day, quick moves on any scanned stock, scanner paper trades and changes in your trade guidance. Each one is labeled as an idea or a desk setup.
+- **Research page:** three experiments on paper, each in its own ledger and kept apart from main paper: exits that let winners run, the noise-band momentum strategy and stocks-in-play breakouts. They're compared on expectancy, average win vs loss and drawdown, never win rate alone.
+- **Diagnostics:** `backtest.py` runs the desk over past days and tests why the October results were bad (coin-flip baseline, exits, hold tests, stock vs option).
 
 ## What changes in v3
 - **Schwab is the only live data.** Candles, quotes and option prices come from Schwab (stream, or REST polling if the stream isn't available). Without Schwab the desk says **FALLBACK - not executable**: plans are marked delayed and the paper engine doesn't trade.
@@ -12,30 +19,25 @@ You do every step yourself, in Grok. Nothing here needs Claude to take over your
 - **Everything else stays:** the chain, watchlist, journal in the chat, alerts, voice and the Kronos test (still forecast-only).
 
 ## Step 1: attach the file to Chart
-Attach `deltadesk-v3.zip` (in Downloads/nicks-desk) to a new Chart chat with the message below.
+Attach `deltadesk-v3.1.zip` (in Downloads/nicks-desk) to a new Chart chat with the message below.
 
 ## Step 2: the message to send Chart (copy all of it)
 
 ```
-DESK V3 INSTALL. Do these steps on your computer, in order, and show me the output of each.
+DESK V3.1 INSTALL. Do these steps on your computer, in order, and show me the output of each.
 You never place real trades, never click buy/sell/order buttons, and never enter passwords or keys.
 
-1. Back up code, settings and the journal: cp -r ~/desk ~/desk_backup_v2_$(date +%Y%m%d)
-2. Unzip the attached deltadesk-v3.zip over ~/desk. Overwrite files with the same names and keep everything else, including journal/desk.db, bot.py, shadow.py, review.py, desk-state.json, config/watchlist.json, config/events.json and my Secrets. The zip has no journal folder, so my trade history is untouched.
-3. pip install websockets==17.3
-4. cd ~/desk && python3 -m pytest -q tests/   -> must end with "53 passed, 1 skipped". If not, stop and show me the error.
-5. Restart the desk server the same way watchdog.sh starts it (same env as before). Then run:
-   curl -s "http://127.0.0.1:8765/api/data/status?k=$DESK_TOKEN" | head -c 400
-   and show me the output. Until I connect Schwab it says "FALLBACK - not executable". That's expected.
-6. Replace your routine instructions with the files in ~/desk/grok/ (put my real DESK_TOKEN from Secrets where a file says DESK_TOKEN; never paste it in chat):
-   - Desk chat webhook routine  -> PRIMARY_COACH_SYSTEM_PROMPT.md
-   - 9:00 AM ET morning routine -> MORNING_ROUTINE_PROMPT.md
-   - 4:20 PM ET review routine  -> REVIEW_PROMPT.md
-   Keep the 20-minute news scan as it is.
-7. In your Library: save ~/desk/grok/RULES_MAP_V3.md as "Desk v3 rules map" (it replaces "Desk v2 rules map"), and replace "Desk commands" with ~/desk/grok/USER_QUICK_COMMANDS.md.
-8. Paper trades are now simulated inside the desk. Never run bot.py, shadow.py or anything that places an order, paper or real.
-9. Later, after I've connected Schwab myself, run: cd ~/desk && python3 replay.py 2026-10-28 and send me reports/replay_2026-10-28.md.
-10. Reply with: the tests result, the data status line, and "routines updated".
+1. Back up: cp -r ~/desk ~/desk_backup_v3_$(date +%Y%m%d)
+2. Unzip the attached deltadesk-v3.1.zip over ~/desk. Overwrite files with the same names and keep everything else (journal/desk.db, schwab.env, webhook.env, DESK_TOKEN.txt, watchdog.sh, bot.py, shadow.py, review.py, config/watchlist.json, config/events.json). The zip has no journal folder and no secrets.
+3. cd ~/desk && python3 -m pytest -q tests/   -> must end with "70 passed, 1 skipped". If not, stop and show me the error.
+4. Restart the desk with watchdog.sh. Then show me:
+   curl -s "http://127.0.0.1:8765/api/scanner?k=$(cat DESK_TOKEN.txt)" | head -c 300
+5. Update your instructions from ~/desk/grok/: Desk chat webhook -> PRIMARY_COACH_SYSTEM_PROMPT.md, 4:20 PM review -> REVIEW_PROMPT.md. In your Library replace "Desk v3 rules map" with RULES_MAP_V3.md and "Desk commands" with USER_QUICK_COMMANDS.md.
+6. Once Schwab is connected, run the diagnostics in the background (about 1-1.5 hours):
+   cd ~/desk && mkdir -p reports && nohup python3 backtest.py --from 2026-09-22 --to 2026-10-29 > reports/backtest.log 2>&1 &
+   When it finishes, send me reports/diagnostics_2026-09-22_2026-10-29.md and reports/backtest_2026-09-22_2026-10-29.md.
+7. Main paper rules did not change. Do not change any rule or setting based on the results; I decide.
+8. Reply with: the tests result, the scanner status line, and "routines updated".
 ```
 
 ## Step 3: connect Schwab (you, about 2 minutes)
@@ -78,4 +80,6 @@ Send Chart: "stop the desk server, restore ~/desk from ~/desk_backup_v2_YYYYMMDD
 | `grok/*` | Chart's routine prompts, rules map, quick commands, endpoint list |
 | `docs/V3_REPORT.md` | What changed, what was verified, what still needs a live session |
 | `docs/SCHWAB_SETUP.md` | Your Schwab steps |
-| `tests/` | 54 offline tests (no network, no AI, fake Schwab) |
+| `scanner.py`, `noiseband.py`, `backtest.py`, `diagnostics.py` | v3.1: stocks-in-play scanner, noise band, multi-day backtest, diagnostics |
+| `docs/V31_REPORT.md`, `docs/RESEARCH_NOTES.md` | What v3.1 does and its limits; the research behind the experiments |
+| `tests/` | 71 offline tests (no network, no AI, fake Schwab) |
