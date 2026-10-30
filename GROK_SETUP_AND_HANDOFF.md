@@ -1,38 +1,45 @@
-# DeltaDesk v3.4.1: the Kronos pile-up fix (send this first)
+# DeltaDesk v3.4.2: the Kronos fix, the contract lab, fair scoring (send this one)
 
-On Oct 30 the desk server got stuck restarting because 40 leftover Kronos copies filled the memory. Every server restart had left the old copy running. v3.4.1 fixes it:
-- one Kronos copy at most;
-- it exits when its server does;
-- the server stops any leftovers when it starts;
-- the lab gets a hard time limit per step.
+v3.4.2 includes everything in v3.4.1:
+- one Kronos copy at most, which exits with its server;
+- leftover copies stopped on start;
+- the lab capped at 4 seconds a step.
 
-Kronos keeps running as a test. Nothing else changes: same rules, same layout, nothing new to pay for.
+What's new on top:
+- **Which option contract:** for each live signal, 12 contracts (same day, 1–2, 3–5 and 6–10 days out at delta 0.35 / 0.45 / 0.60) are followed on real quotes, nothing bought, and compared with and without your 20% line.
+- **Fair scoring:** each strategy's own exits are scored too (the noise band only at its half-hour checks).
+- **Too few:** rows stay "too few" until they have 10 trading days.
+- **Old rules:** old-rules trades now record their best and worst prices.
 
-**The message to send Chart with `deltadesk-v3.4.1.zip` attached (copy all of it):**
+Kronos keeps running as a test. Nothing new costs money, and your rules and layout don't change.
+
+**If Chart already stopped the Kronos copies and made a backup** (it did on Oct 30), send this with `deltadesk-v3.4.2.zip` attached:
 
 ```
-DESK V3.4.1 FIX (Kronos pile-up). Do these in order and show me each output.
+Zip attached: deltadesk-v3.4.2.zip (it replaces v3.4.1 and includes its Kronos fix). sha256: (the one in Claude's message)
+Continue from step 3 with this zip, using the backup you already made. Show me each output.
 You never place real trades, never click buy/sell/order buttons, and never enter passwords or keys. Don't touch cloudflared.
 
-1. Free the memory now:
-   pkill -f "$HOME/desk/kronos_shadow.py"; sleep 5; pgrep -fl kronos_shadow.py || echo "no kronos copies left"
-   If any copies remain: pkill -9 -f "$HOME/desk/kronos_shadow.py"
-   Then show the free memory: vm_stat | head -5 (Mac) or free -m (Linux).
-2. Back up: cp -r ~/desk ~/desk_backup_v34_$(date +%Y%m%d_%H%M)
-3. Check the zip: shasum -a 256 deltadesk-v3.4.1.zip 2>/dev/null || sha256sum deltadesk-v3.4.1.zip   (must match the sha256 Nick gives you; if not, stop)
-4. Unzip it over ~/desk with the same rules as before: keep journal/ and every protected file (schwab.env, webhook.env, DESK_TOKEN.txt, watchdog.sh, bot.py, shadow.py, review.py, config/events.json, config/variants.json, variants.py).
-5. cd ~/desk && python3 -m pytest -q tests/   -> must end with "156 passed, 1 skipped". If not, stop and show me.
-6. Restart only the desk server with watchdog.sh (not cloudflared). Leave KRONOS=1 as it is: I want to keep testing Kronos.
-7. Five minutes later, show me:
+3. Check the zip: shasum -a 256 deltadesk-v3.4.2.zip 2>/dev/null || sha256sum deltadesk-v3.4.2.zip   (must match; if not, stop)
+4. Unzip it over ~/desk: keep journal/ and every protected file (schwab.env, webhook.env, DESK_TOKEN.txt, watchdog.sh, bot.py, shadow.py, review.py, config/events.json, config/variants.json, variants.py).
+5. First make sure no Kronos copies came back: pgrep -fl kronos_shadow.py | wc -l   (if more than 0: pkill -f "$HOME/desk/kronos_shadow.py")
+   Then: cd ~/desk && python3 -m pytest -q tests/   -> must end with "164 passed, 1 skipped". If not, stop and show me.
+6. Restart only the desk server with watchdog.sh (not cloudflared). Leave KRONOS=1 as it is.
+7. Five minutes later show me:
    pgrep -fl kronos_shadow.py | wc -l      (must be 1)
-   curl -s "http://127.0.0.1:8765/api/lab?k=$(cat DESK_TOKEN.txt)" | head -c 300      (status, step_s, bars_behind)
+   curl -s "http://127.0.0.1:8765/api/lab?k=$(cat DESK_TOKEN.txt)" | head -c 400
    curl -s "http://127.0.0.1:8765/api/kronos?k=$(cat DESK_TOKEN.txt)" | head -c 200
-   and the free memory again.
-8. Thirty minutes later check once more: still exactly 1 Kronos copy and the server still answering. Keep the 4:10 PM ET after-close check you already set.
-9. Don't change any rule or setting. Reply with each output.
+   and the free memory (free -m).
+8. Thirty minutes later: still exactly 1 Kronos copy and the server still answering.
+9. Next trading day after 3:31 PM ET: curl -s "http://127.0.0.1:8765/api/lab/contracts?k=$(cat DESK_TOKEN.txt)" | head -c 600
+10. Don't change any rule or setting. Reply with each output.
 ```
 
-**What good looks like:** 1 Kronos copy, memory back to several GB free, `step_s` under about 6 seconds, and `bars_behind` shrinking to near 0 as the lab catches up on the day.
+**What good looks like:**
+- 1 Kronos copy;
+- memory stays around 12 GB free;
+- the lab's `step_s` is under about 6 seconds, and `bars_behind` shrinks toward 0;
+- on the next trading day, `contracts.following_now` goes up during the session.
 
 # DeltaDesk v3.4: setup on Chart's computer
 
@@ -122,5 +129,6 @@ Send Chart: "stop the desk server, restore ~/desk from ~/desk_backup_v33_YYYYMMD
 | `grok/X_SCAN_PROMPT.md` | v3.3: the free X and earnings scan routine for Chart |
 | `docs/V33_REPORT.md` | v3.3: root causes with file/function, fixes, tests, what's research only, the live checks left |
 | `lab.py`, `config/sectors.json` | v3.4: the strategy lab (signal tape, 15 lab paper ledgers, what works where, daily bar archive) |
-| `docs/V34_REPORT.md` | v3.4: what the lab does, costs, limits, live checks |
-| `tests/` | 154 offline tests (no network, no AI, fake Schwab server and stream) |
+| `contract_lab.py` | v3.4.2: which option contract converts the same signals (12 contracts per live signal, followed on real quotes) |
+| `docs/V34_REPORT.md` | v3.4 to v3.4.2: what the lab does, costs, limits, live checks |
+| `tests/` | 165 offline tests (no network, no AI, fake Schwab server and stream) |

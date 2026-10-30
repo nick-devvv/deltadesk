@@ -52,3 +52,8 @@ The plan is always computed first, so it's valid even if Chart is slow or offlin
 - **What works where:** split by strategy, setup, stock, strategy and stock, strategy and stock group, or strategy and a condition (X lean, RVOL, trend, time of day, MACD, gap, earnings and more). Each row shows signals, days, how often it won, the average result in R, what random entries on the same stock and day did, the edge over random with its 95% range, and whether it held in both halves of the dates.
 - Grey rows have under 30 signals: too few to mean anything yet. Ask Chart "what's working?" and it reads the same report.
 - When you're ready to reset paper with only the strategies that held up, tell Claude which rows. The history stays, so the fresh run shows whether they were real.
+
+**v3.4.2:**
+- **Which option contract** (Markets → Strategy lab, bottom): for the same live signals, 12 contracts each (same day, 1–2, 3–5 and 6–10 days out, at delta 0.35 / 0.45 / 0.60), followed on real quotes and nothing bought. It shows how often each choice made money with your 20% line, the average dollars, and how often the 20% line hit before the stock trade was over.
+- **Exits selector:** "Same yardstick for all" or "Each strategy's own exits" (the noise band only at its half-hour checks).
+- Rows stay "too few" until they have 30 signals over 10 trading days.

@@ -143,6 +143,55 @@ The data keeps growing past Schwab's history window, and later studies can be re
 - only orphaned copies are selected for stopping;
 - the step budget covers live bars.
 
+## v3.4.2 (Oct 30): which option contract, and fair scoring
+**Why:** the desk buys SPY/QQQ 0DTE at about delta 0.45. Under your 20% planned-loss rule, at 10 AM that contract hits its 20% line on a SPY move of about $0.48, roughly 0.6 of a normal 5-minute bar. It also loses about 10% of its value per hour to time decay. A 3-day contract at the same delta needs about 2.3 bars to hit the line and loses under 1% an hour. These are Black-Scholes estimates (SPY IV assumed 15%), so v3.4.2 measures it on real quotes instead of assuming it.
+
+**Contract lab (`contract_lab.py`, new):**
+- **What it follows:** for every live lab signal from 9:45 AM to 3:15 PM, up to 12 contracts from the real Schwab chain: 0DTE, 1–2 days, 3–5 days and 6–10 days, each at delta 0.35, 0.45 and 0.60.
+- **How each is picked:**
+  - the nearest expiry inside each range;
+  - the strike whose delta is closest to the target, within 0.10;
+  - a two-sided quote no older than 20 seconds;
+  - when no contract fits, the reason is recorded.
+- **How it follows them:** one batched quote request per lab step for all of them, until 3:26 PM.
+  - It records the 20% line touch, using the strict paper formula from the actual entry.
+  - It also records the best and worst bid and a sample every minute.
+- **Nothing is filled.**
+- **Scoring after the close,** at the moment the signal's stock trade ended under the shared yardstick:
+  - entry = the ask + $0.01; exit = the bid − $0.01; fees $0.02 per side;
+  - "with the 20% line" exits at the line if the bid touched it first;
+  - "held" exits at the stock exit.
+- **Report:** Markets → Strategy lab → **Which option contract**, overall or per strategy. `/api/lab/contracts`.
+- **Limits:**
+  - 4 new signals a minute;
+  - at most 16 signals followed at once;
+  - not the same stock and side twice within 10 minutes;
+  - about 8 extra Schwab requests a minute at the most.
+
+**Each strategy's own exits:**
+- **The rule:** next to the shared yardstick, every resolved signal now also gets an outcome under the way the lab ledgers actually exit.
+  - A finished 1m close past the invalidation stops it; a finished close past the 2R target takes it.
+  - Both fill at the next bar's open, gaps included, so a loss can be bigger than 1R.
+  - The noise band only exits at its half-hour checks (band/VWAP stop or a flipped signal), has no target, and goes flat at 3:25.
+- **Random entries** are scored under the same exits.
+- **Report:** the "Exits" selector, either "Same yardstick for all" or "Each strategy's own exits". `/api/lab/report?exits=own`.
+
+**Too few:** a row now needs 30 signals AND 10 trading days. On Oct 30, 171 VWAP rejection signals came from one day; that is still one day.
+
+**Old-rules ledger:** it now records each trade's best and worst move from the fill (recording only; the frozen exits are unchanged).
+
+**Database:** the new columns are added in place to existing databases. Rows from before v3.4.2 get no own-exit score.
+
+**Tests:** 164 passed, 1 skipped. The new tests (`tests/test_v342.py`) check:
+- a wick doesn't stop a close-based exit, and gaps fill at the next open;
+- the noise band only exits at its checks;
+- the 10-day rule;
+- the database migration;
+- contract picks per expiry and delta, and stale quotes never used;
+- a 0DTE contract cut by its 20% line while a weekly gained;
+- the budget and the capacity limit;
+- old-rules best/worst.
+
 ## Live checks that only Chart's computer can do
 1. **Startup:** the server log shows "Strategy lab ... started", and `/api/lab` shows `with_history` climbing to ~125 within minutes of 07:00 ET.
 2. **During the session:** `/api/lab` today-counts grow, and `last_error` is empty.

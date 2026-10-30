@@ -50,7 +50,7 @@ Chart (Grok agent) <- webhook with compact context (rules, plan, levels, regime,
 - **Code computes, AI explains.** Standard commands never call the model, which keeps AI cost to about 20 scheduled runs a day plus questions. The model may not change any number.
 - **Safety by construction.** No code path sends an order. Paper trading is simulated internally, and the Schwab client allows only market-data paths (plus the one preferences call that returns the streaming address).
 - **Honest numbers.** Indicators run on finished bars only, option P&L in replays is labeled modeled, and results from different ledgers or data sources are never mixed.
-- **Tested.** 153 offline tests (no network, no AI, a fake Schwab provider) cover indicator parity, levels, conflict handling, atomic idea reservation under threads, option math units, every exit rule and their order, outages, stream message merging, the replay sandbox and safety refusals.
+- **Tested.** 164 offline tests (no network, no AI, a fake Schwab provider) cover indicator parity, levels, conflict handling, atomic idea reservation under threads, option math units, every exit rule and their order, outages, stream message merging, the replay sandbox and safety refusals.
 
 ## Stack
 Python 3.12, SQLite, pandas/numpy, websockets; vanilla HTML/CSS/JS with TradingView Lightweight Charts 5.2.1 (Apache-2.0) and canvas animations; Schwab market-data REST and streaming APIs; Grok agent routines; pytest.
@@ -76,6 +76,7 @@ Python 3.12, SQLite, pandas/numpy, websockets; vanilla HTML/CSS/JS with TradingV
   - each family paper trades in its own strict ledger.
 
   A "what works where" report splits results by stock, stock group and condition, with session-clustered intervals and an earlier/later-half check. A daily 1m bar archive keeps the data growing. See `docs/V34_REPORT.md`.
+- **v3.4.1 / v3.4.2 (Oct 30, 2026)** stopped forecast-process copies piling up across server restarts and capped the lab's time per step. They also added a contract lab that follows 12 option contracts (expiry x delta) for each live signal on real quotes, comparing how each converts the same stock move with and without the 20% planned-loss line. Lab signals are now also scored by each strategy's own exits, and a row needs 10 trading days before it counts.
 
 | Scanner | Research |
 |---|---|
