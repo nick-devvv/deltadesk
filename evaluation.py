@@ -63,6 +63,48 @@ def violations(since, version):
     return out
 
 
+LEDGER_INFO = {
+    "paper": ("Main paper", "v3 rules, frozen for the forward test"),
+    "research": ("Research", "v3 setups without the daily limits"),
+    "exit31": ("v3.1 exits", "the research entries with exits that let winners run"),
+    "noise": ("Noise band", "SPY/QQQ half-hour momentum (Zarattini/Aziz/Barbon), with options"),
+    "inplay": ("Stocks in play", "scanner ORB on the day's top-volume names, with options"),
+    "old": ("Old rules", "frozen 20/12/10% stops"),
+    "real": ("You", "your reported trades"),
+}
+
+
+def ledger_report(led, since="2000-01-01"):
+    """Expectancy, average win vs loss, drawdown and sample size for one ledger, plus the stock's move next to the
+    option result (from the underlying price recorded at entry and exit)."""
+    import json as _j
+    rows = store.q("SELECT id, date, side, fill, qty_init, realized, plan, policy_version, setup FROM positions "
+                   "WHERE ledger=? AND date>=? AND status='CLOSED' ORDER BY closed", (led, since))
+    pnls = [r["realized"] or 0 for r in rows]
+    out = stats(pnls)
+    moves, reasons = [], {}
+    for r in rows:
+        try:
+            pl = _j.loads(r["plan"]) if isinstance(r["plan"], str) else (r["plan"] or {})
+        except ValueError:
+            pl = {}
+        if pl.get("entry_px") and pl.get("exit_px"):
+            mv = (pl["exit_px"] - pl["entry_px"]) * (1 if r["side"] == "C" else -1)
+            moves.append(mv / pl["entry_px"] * 100)
+        why = (pl.get("exit_reason") or "unknown").split(":")[0].split(" (")[0][:32]
+        g = reasons.setdefault(why, {"n": 0, "net": 0.0})
+        g["n"] += 1
+        g["net"] = round(g["net"] + (r["realized"] or 0), 2)
+    out["stock_move_avg_pct"] = round(sum(moves) / len(moves), 3) if moves else None
+    out["stock_move_positive_pct"] = round(100 * sum(1 for m in moves if m > 0) / len(moves), 1) if moves else None
+    out["exits"] = reasons
+    out["versions"] = sorted({r["policy_version"] for r in rows if r["policy_version"]})
+    out["avg_win"] = round(sum(x for x in pnls if x > 1) / max(1, sum(1 for x in pnls if x > 1)), 2) if any(x > 1 for x in pnls) else None
+    out["small_sample"] = len(pnls) < 30
+    out["name"], out["what"] = LEDGER_INFO.get(led, (led, ""))
+    return out
+
+
 def report():
     ev = core.policy().get("evaluation") or {}
     since, version = ev.get("start", "2026-10-30"), ev.get("policy_version", "")

@@ -69,10 +69,11 @@ def pick_t1(snap, side, entry_px, stop_px):
     return best[0], best[1], round(tgt, 2)
 
 
-def plan_trade(idea, snap, chain_rows, grade, budget_left=None, ledger="paper"):
-    """Choose the contract and build the full risk plan, or return (None, reason, diagnostics)."""
+def plan_trade(idea, snap, chain_rows, grade, budget_left=None, ledger="paper", cp=None):
+    """Choose the contract and build the full risk plan, or return (None, reason, diagnostics). cp overrides the
+    contract rules (single stocks use the scanner's liquidity rules: wider premium range, delta 0.50-0.70)."""
     p = core.policy()
-    k3, cp = c3(), p["contract"]
+    k3, cp = c3(), (cp or p["contract"])
     side = idea["side"]
     up = side == "C"
     entry_px = snap["close1"]

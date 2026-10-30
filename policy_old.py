@@ -217,7 +217,8 @@ def _open(idea, ticker, st, g, c):
     fill = round(q["ask"] + slip, 4)
     ex = exit_plan(fill, core.hm(core.now_et()), q["ask"] - q["bid"])
     pid = f"OL-{idea}"
-    plan = dict(ex, v=2, invalidation=st["invalidation"], be_hit=False, t1_done=False, trail=None, last_bid=q["bid"])
+    plan = dict(ex, v=2, invalidation=st["invalidation"], be_hit=False, t1_done=False, trail=None, last_bid=q["bid"],
+                entry_px=paper.underlying_px(ticker))
     store.pos_save({"id": pid, "ledger": "old", "date": core.now_et().strftime("%Y-%m-%d"), "ticker": ticker,
                     "contract": f"{int(c['symbol'][-8:]) / 1000:g}{c['symbol'][-9]}", "symbol": c["symbol"], "side": st["side"],
                     "qty_init": qty, "qty_open": qty, "fill": fill, "opened": store.ts(), "closed": None, "status": "OPEN",

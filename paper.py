@@ -8,7 +8,10 @@ Fill model (all labeled 'sim'):
   reason; exits stay PENDING and retry, and the outage is recorded. A fill is never invented during a gap.
   Displayed size (when the provider sends it) caps the fill quantity.
 
-Portfolios: 'paper' (main), 'research' (shadow), 'old' (frozen old-policy shadow). Ideas are reserved atomically
+Portfolios: 'paper' (main), 'research' (shadow), 'old' (frozen old-policy shadow), and the v3.1 research variants
+'exit31' (research entries managed with the v3.1 exits), 'noise' (noise-band momentum on SPY/QQQ) and 'inplay'
+(stocks-in-play opening-range breakouts from the scanner). Each position records its strategy version and the
+underlying price at entry and exit, so the stock's move and the option result can be compared. Ideas are reserved atomically
 (PRIMARY KEY portfolio+idea), so retries, restarts, reconnects or two detectors can't open the same idea twice,
 and the main 4-ideas/day cap can't be exceeded by simultaneous entries.
 """
@@ -19,7 +22,20 @@ import core
 import marketdata
 import store
 
-PORTFOLIOS = ("paper", "research", "old")
+PORTFOLIOS = ("paper", "research", "old", "exit31", "noise", "inplay")
+RESEARCH = ("research", "exit31", "noise", "inplay", "old")   # experimental ledgers, never mixed into main paper
+
+
+def underlying_px(ticker):
+    """Last finished 1m close (or the quote's last) of the underlying, for stock-move vs option-result comparisons."""
+    try:
+        q = marketdata.quote(ticker) or {}
+        if q.get("last"):
+            return round(float(q["last"]), 4)
+        df, _, _ = marketdata.bars(ticker, refresh=False)
+        return round(float(df["Close"].iloc[-1]), 4) if df is not None and len(df) else None
+    except Exception:
+        return None
 
 
 def costs(spread):
@@ -89,7 +105,7 @@ def buy(portfolio, idea, ticker, side, plan, qty, signal_t):
     if plan.get("premium_limit") and q["ask"] > plan["premium_limit"]:
         return None, f"ask {q['ask']:.2f} above the limit {plan['premium_limit']:.2f}: no chase"
     pid = f"{portfolio[:2].upper()}-{idea}"
-    st = {"v": 3, "symbol": sym, "entry_premium": fill, "fees_side": fee, "slip_at_entry": slip,
+    st = {"v": plan.get("v", 3), "symbol": sym, "entry_premium": fill, "fees_side": fee, "slip_at_entry": slip,
           "premium_stop": plan["premium_stop"], "stop_px": plan["stop_px"], "t1": plan["t1"], "t1_level": plan["t1_level"],
           "t1_px": plan["t1_px"], "be_trigger": plan["be_trigger"], "breakeven_net": plan["breakeven_net"],
           "high_water": q["bid"], "high_water_t": store.ts(), "last_progress_t": store.ts(), "be_hit": False,
@@ -98,12 +114,18 @@ def buy(portfolio, idea, ticker, side, plan, qty, signal_t):
           "entry_mode": plan.get("entry_mode"), "stops": [{"t": store.ts(), "stop": plan["premium_stop"], "by": "desk",
                                                             "why": "initial 20% ceiling (costs reserved)"}],
           "actions_done": [], "flat_by": plan.get("flat_by"), "rr_option": plan.get("rr_option"),
-          "rr_underlying": plan.get("rr_underlying"), "model": plan.get("model")}
+          "rr_underlying": plan.get("rr_underlying"), "model": plan.get("model"),
+          "exit_profile": plan.get("exit_profile", "v3"), "variant": plan.get("variant"),
+          "entry_px": plan.get("entry_px") or underlying_px(ticker), "delta_entry": q.get("delta")}
+    for k in ("noise_upper", "noise_lower", "orb_high", "orb_low", "atr14", "rvol", "contract_score", "scan_id", "expiry"):
+        if plan.get(k) is not None:
+            st[k] = plan[k]
     store.pos_save({"id": pid, "ledger": portfolio, "date": core.now_et().strftime("%Y-%m-%d"), "ticker": ticker,
                     "contract": plan["label"], "symbol": sym, "side": side, "qty_init": qty, "qty_open": qty, "fill": fill,
                     "opened": store.ts(), "closed": None, "status": "OPEN", "setup_id": idea, "grade": plan.get("grade"),
                     "setup": plan.get("family"), "plan": st, "realized": round(-fee * qty, 2), "mfe": 0, "mae": 0,
-                    "policy_version": core.policy()["version"], "verified": f"sim fill on {q.get('provider')}", "notes": ""})
+                    "policy_version": plan.get("policy_version") or core.policy()["version"],
+                    "verified": f"sim fill on {q.get('provider')}", "notes": ""})
     store.x("INSERT OR IGNORE INTO orders(client_id,position_id,ts,side,qty,status,broker_id,filled_qty,filled_price,reason) "
             "VALUES(?,?,?,?,?,?,?,?,?,?)", (f"{pid}-B", pid, store.ts(), "buy", qty, "FILLED", "sim", qty, fill, plan.get("family")))
     store.x("UPDATE ideas SET status='FILLED', position_id=? WHERE portfolio=? AND idea=?", (pid, portfolio, idea))
@@ -139,6 +161,8 @@ def sell(p, qty, reason):
     p["qty_open"] -= qty
     if p["qty_open"] == 0:
         p.update(status="CLOSED", closed=store.ts())
+        p["plan"]["exit_px"] = underlying_px(p["ticker"])
+        p["plan"]["exit_reason"] = reason
     store.pos_save(p)
     n = len(store.q("SELECT client_id FROM orders WHERE position_id=?", (p["id"],)))
     store.x("INSERT INTO orders(client_id,position_id,ts,side,qty,status,broker_id,filled_qty,filled_price,reason) VALUES(?,?,?,?,?,?,?,?,?,?)",
@@ -165,4 +189,5 @@ def streak(portfolio, day=None):
 
 
 def _name(portfolio):
-    return {"paper": "PAPER", "research": "RESEARCH", "old": "OLD-POLICY"}.get(portfolio, portfolio.upper())
+    return {"paper": "PAPER", "research": "RESEARCH", "old": "OLD-POLICY", "exit31": "RESEARCH v3.1-EXITS",
+            "noise": "RESEARCH NOISE-BAND", "inplay": "RESEARCH IN-PLAY"}.get(portfolio, portfolio.upper())

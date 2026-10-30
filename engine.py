@@ -17,9 +17,11 @@ import desk
 import exits
 import indicators as I
 import marketdata
+import noiseband
 import optionmath
 import paper
 import policy_old
+import scanner
 import store
 import strategy
 
@@ -135,11 +137,38 @@ def occ_to_label(sym):
 
 def chain_rows(ticker, side):
     exp = core.now_et().strftime("%Y-%m-%d")
+    if ticker not in core.policy()["instruments"]:
+        return stock_contract_rows(ticker, side)
     try:
         rows, err = marketdata.provider().chain(ticker, side, exp)
     except Exception as e:
         rows, err = None, type(e).__name__
     return rows or [], err
+
+
+def stock_contract_rows(ticker, side):
+    """Single stocks: every expiry 0-10 days out, scored on spread, quote age, volume, OI, delta and decay (the nearest
+    expiry is not assumed). Only Schwab data; returns the passing contracts, best first."""
+    if not marketdata.executable():
+        return [], "single-stock contracts need live Schwab quotes"
+    c = core.policy().get("scanner", {}).get("contract", {})
+    now = core.now_et()
+    try:
+        import schwab
+        rows, err = schwab.chain(ticker, side, now.strftime("%Y-%m-%d"), (now + timedelta(days=c.get("max_dte", 10))).strftime("%Y-%m-%d"),
+                                 c.get("strike_count", 16))
+    except Exception as e:
+        return [], type(e).__name__
+    best, top, rej = scanner.score_contracts(rows, side, now)
+    return top, (None if top else "no contract passes the liquidity rules: " + ", ".join(f"{k} {n}" for k, n in rej.items()))
+
+
+def stock_cp():
+    c = core.policy().get("scanner", {}).get("contract", {})
+    base = core.policy()["contract"]
+    return dict(base, premium_min=c.get("premium_min", 0.3), premium_max=c.get("premium_max", 8.0),
+                max_spread_pct=c.get("max_spread_pct", 0.05), abs_delta_min=c.get("delta_min", 0.5),
+                abs_delta_max=c.get("delta_max", 0.7), abs_delta_target=0.6)
 
 
 # ======================= options chain view (read-only; Nick buys in Robinhood) =======================
@@ -228,7 +257,7 @@ def discipline_gate(ledger, grade_):
     day after M. Main paper adds the 4-ideas/day cap (enforced atomically at reservation)."""
     d = core.policy()["discipline"]
     day = core.now_et().strftime("%Y-%m-%d")
-    led = ledger if ledger in ("paper", "research", "old", "real") else "real"
+    led = ledger if ledger in ("paper", "research", "old", "real", "exit31", "noise", "inplay") else "real"
     s = paper.streak(led, day)
     closed = sorted([p for p in store.positions(ledger=led, day=day) if p["status"] == "CLOSED"], key=lambda p: p["closed"] or "")
     if s >= d.get("stop_day_after_consecutive_losses", 99):
@@ -305,10 +334,13 @@ def build_plan(ticker, side, level=None, mode="check", ledger="real"):
     rows, err = chain_rows(ticker, side)
     bud = ledger_budget(ledger)
     plan["budget"] = bud
-    tp, why, diag = optionmath.plan_trade(idea, v3, rows, "A", bud["left"], ledger)
+    tp, why, diag = optionmath.plan_trade(idea, v3, rows, "A", bud["left"], ledger,
+                                          None if ticker in core.policy()["instruments"] else stock_cp())
     g, gp, gf = strategy.grade(idea, v3, tp["rr_option"] if tp else None)
     plan.update(grade=g, grade_passed=gp, grade_failed=gf, day=plan["regime"], chop_day=plan["regime"] == "range/chop",
-                diagnostics=diag)
+                diagnostics=diag,
+                origin=("system setup: " + plan["setup"].replace("_", " ").lower()) if plan.get("setup") not in (None, "LEVEL")
+                else "your idea (discretionary): the desk checked it with its levels, it isn't one of its tested setups")
     if not tp:
         plan.update(contract=None, contract_note=why or err)
         if plan["state"] == "READY":
@@ -409,6 +441,7 @@ def paper_scan(ticker):
     cands = strategy.detect_all(v3)
     for c in cands:
         c["ticker"] = ticker
+        c["decision_t"] = t            # the moment the decision bar was final (entries happen after this)
     ideas, skipped = strategy.arbitrate(cands)
     pname = (s.get("meta") or {}).get("provider")
     if skipped:
@@ -473,6 +506,8 @@ def paper_scan(ticker):
                                               qty, t)
                         if pid:
                             decision = "ORDER"
+                            if pf == "research":
+                                _mirror_exit31(idea_id, ticker, idea, dict(plan, **{k: qty_plan[k] for k in ("premium_limit",)}), qty, t)
                         else:
                             paper.release_idea(pf, idea_id, bwhy)
                             reasons.append(bwhy)
@@ -494,6 +529,23 @@ def paper_scan(ticker):
             pass
 
 
+def _mirror_exit31(idea_id, ticker, idea, plan, qty, t):
+    """Research variant exit31: the SAME entry as the research ledger (same tick, same quote), managed with the v3.1
+    exits, so the only difference between the two ledgers is the exit rules."""
+    v = (core.policy().get("research_variants") or {}).get("exit31") or {}
+    if not v.get("enabled"):
+        return None
+    ok, _ = paper.reserve_idea("exit31", idea_id, ticker, idea["side"])
+    if not ok:
+        return None
+    p31 = dict(plan, exit_profile="v31", variant="exit31", policy_version=v.get("version"),
+               flat_by=(core.now_et() + timedelta(minutes=int(v.get("flat_min", 15)))).strftime("%H:%M"))
+    pid, why = paper.buy("exit31", idea_id, ticker, idea["side"], p31, qty, t)
+    if not pid:
+        paper.release_idea("exit31", idea_id, why)
+    return pid
+
+
 def _setup_cooldown(pf, ticker, idea):
     """A new entry on the same ticker+side needs a fresh setup after the cooldown (requalification)."""
     m = core.policy()["discipline"].get("setup_cooldown_min", 20)
@@ -504,12 +556,34 @@ def _setup_cooldown(pf, ticker, idea):
 
 
 # ======================= real trades (Nick reports) =======================
-def log_real_in(ticker, contract, qty, fill, t=None, plan=None, setup=""):
+def _structure_for(ticker, side):
+    """For a trade Nick brings without a desk plan: the nearest level behind price (+ buffer) as the invalidation and
+    the next opposing level as T1, from the same Schwab snapshot the engine uses. None when there's no snapshot."""
+    try:
+        v3 = (snapshot(ticker).get("v3") or {})
+    except Exception:
+        return None
+    if not v3.get("ok"):
+        return None
+    px, up = v3["close1"], side == "C"
+    behind = [l["value"] for k, l in v3["levels"].items() if l.get("value") is not None and k != "PDC" and
+              ((l["value"] < px - v3["zone"]) if up else (l["value"] > px + v3["zone"]))]
+    if not behind:
+        return None
+    lvl = max(behind) if up else min(behind)
+    inv = round(lvl - v3["buf"] if up else lvl + v3["buf"], 2)
+    t1 = optionmath.pick_t1(v3, side, px, inv)
+    return {"stop_px": inv, "t1": t1[0] if t1 else None, "t1_level": t1[1] if t1 else None, "t1_px": t1[2] if t1 else None,
+            "entry_px": px}
+
+
+def log_real_in(ticker, contract, qty, fill, t=None, plan=None, setup="", expiry=None):
     t = t or core.hm(core.now_et())
     side = contract[-1].upper()
-    sym = f"{ticker.upper()}{core.now_et().strftime('%y%m%d')}{side}{int(round(float(contract[:-1]) * 1000)):08d}"
+    exp = expiry or core.now_et().strftime("%Y-%m-%d")
+    sym = f"{ticker.upper()}{exp[2:4]}{exp[5:7]}{exp[8:10]}{side}{int(round(float(contract[:-1]) * 1000)):08d}"
     pid = store.new_id("R")
-    manual = ticker.upper() not in core.policy()["instruments"]
+    manual = False      # v3.1: every reported trade is tracked with live data (any ticker, any expiry)
     p = core.policy()
     fee = p["v3"]["contract"]["fees_per_contract_side"]
     ex = (plan or {}).get("exit") or {}
@@ -525,8 +599,15 @@ def log_real_in(ticker, contract, qty, fill, t=None, plan=None, setup=""):
           "qualified": bool(same and (plan or {}).get("state") == "READY" and (plan or {}).get("grade") in ("A", "B")),
           "stops": [{"t": store.ts(), "stop": prem_stop, "by": "desk", "why": "20% ceiling on your reported fill"}],
           "actions_done": [], "flat_by": (datetime.strptime(t, "%H:%M") + timedelta(minutes=(core.window_for(t) or p["windows"][-1])["flat_min"])).strftime("%H:%M")}
-    if manual:
-        st["manual"] = True
+    st["ceiling_stop"] = prem_stop
+    st["expiry"] = exp
+    if not same:
+        derived = _structure_for(ticker.upper(), side)
+        if derived:
+            st.update({k: derived[k] for k in ("stop_px", "t1", "t1_level", "t1_px")}, entry_px=derived["entry_px"],
+                      structure_note="derived from the desk's levels (no desk plan for this contract)")
+    st["origin"] = ("desk setup" if st["qualified"] and (plan or {}).get("setup") not in (None, "LEVEL") else
+                    "your idea, desk plan" if same else "your idea (discretionary)")
     store.pos_save({"id": pid, "ledger": "real", "date": core.now_et().strftime("%Y-%m-%d"), "ticker": ticker.upper(),
                     "contract": contract.upper(), "symbol": sym, "side": side, "qty_init": qty, "qty_open": qty, "fill": fill,
                     "opened": store.ts(), "closed": None, "status": "OPEN", "setup_id": (plan or {}).get("id"),
@@ -539,17 +620,12 @@ def log_real_in(ticker, contract, qty, fill, t=None, plan=None, setup=""):
     if gate:
         warn += f" | {gate}"
     if not st["qualified"]:
-        warn += " | NOT a qualified desk setup (no complete plan for this contract): treat it as a chase"
-    if manual:
-        store.event("real_in", f"LOGGED YOUR BUY {qty} {ticker.upper()} {contract.upper()} @ ${fill:.2f} | cost ${fill*100*qty:.0f} | "
-                    f"STOP ${prem_stop:.2f} (20% ceiling, max planned loss ${risk:.2f}){warn} | journal only: ask Chart for the "
-                    f"{ticker.upper()} exit plan | set your stop in Robinhood now", "real", pid)
-        return pid
+        warn += f" | {st['origin'].upper()}: not a validated system setup, so the desk manages it with its levels but its results are tracked separately"
     struct = (f"STOP: {ticker.upper()} 1m close {'below' if side == 'C' else 'above'} {st['stop_px']:.2f} (structure) or ${prem_stop:.2f} premium"
-              if st["stop_px"] else f"STOP ${prem_stop:.2f} premium (20% ceiling; no structural level from a plan)")
-    t1 = f"T1 {st['t1']} {st['t1_level']:.2f}: {'sell 1, keep the rest only on a clean break' if qty >= 2 else 'full exit'}" if st["t1"] else "no level T1 (no plan)"
+              if st["stop_px"] is not None else f"STOP ${prem_stop:.2f} premium (20% ceiling; no structural level available)")
+    t1 = f"T1 {st['t1']} {st['t1_level']:.2f}: {'sell 1, keep the rest only on a clean break' if qty >= 2 else 'full exit'}" if st["t1"] else "no level T1"
     store.event("real_in", f"LOGGED YOUR BUY {qty} {ticker.upper()} {contract.upper()} @ ${fill:.2f} | cost ${fill*100*qty:.0f} | "
-                f"{struct}, max planned loss ${risk:.2f}{warn} | BE at ${st['be_trigger']:.2f} -> stop to ${st['breakeven_net']:.2f} | {t1} | "
+                f"{struct}, max planned loss ${risk:.2f} (planned, not guaranteed: you place the orders){warn} | BE at ${st['be_trigger']:.2f} -> stop to ${st['breakeven_net']:.2f} | {t1} | "
                 f"green but stalled {p['v3']['exits']['stall_min']} min or MACD turns -> out | all out {core.session_info()['all_out']} | "
                 f"set your stop in Robinhood now. The desk watches it and tells you each step.", "real", pid)
     return pid
@@ -639,7 +715,7 @@ def kill_paper(reason="Nick pressed KILL"):
     at the simulated bid (pending if no valid quote). Real trades are Nick's: the desk only reminds him."""
     store.kv_set("paper_enabled", False)
     closed = 0
-    for led in ("paper", "research"):
+    for led in ("paper", "research", "exit31", "noise", "inplay"):
         for p in store.positions(ledger=led, status="OPEN"):
             n, _ = paper.sell(p, p["qty_open"], "KILL SWITCH")
             closed += 1 if n else 0
@@ -656,7 +732,7 @@ def kill_paper(reason="Nick pressed KILL"):
 def day_summary(day=None):
     day = day or core.now_et().strftime("%Y-%m-%d")
     out = {"date": day, "policy_version": core.policy()["version"], "data": marketdata.status().get("live_label")}
-    for led in ("real", "paper", "research", "old"):
+    for led in ("real", "paper", "research", "old", "exit31", "noise", "inplay"):
         ps = [p for p in store.positions(ledger=led, day=day) if p["status"] in ("CLOSED", "OPEN")]
         closed = [p for p in ps if p["status"] == "CLOSED"]
         wins = [p["realized"] for p in closed if p["realized"] > 1]
@@ -709,6 +785,11 @@ def tick():
                 archive(t, s.get("m1"))
                 if sess["entries_allowed"]:
                     paper_scan(t)
+                try:
+                    noiseband.tick(t, s, chain_rows)       # half-hour checks: manages open noise trades, enters if allowed
+                except Exception as e:
+                    _state["last_error"] = f"noise: {type(e).__name__}: {e}"
+                if sess["entries_allowed"]:
                     if core.policy()["v3"]["old_policy_shadow"]["enabled"]:
                         try:
                             policy_old.scan(t, s, {"C": chain_rows(t, "C")[0], "P": chain_rows(t, "P")[0]})
@@ -724,11 +805,14 @@ def tick():
             want = []
             for p in store.positions(status="OPEN"):
                 want.append(p["symbol"])
-                s = snapshot(p["ticker"])
-                if p["plan"].get("v") == 3:
-                    exits.evaluate(p, s.get("v3") or {})
+                if p["ledger"] == "noise":
+                    noiseband.manage(p)
+                elif p["ledger"] == "inplay":
+                    scanner.manage(p)
+                elif p["plan"].get("v") == 3:
+                    exits.evaluate(p, snapshot(p["ticker"]).get("v3") or {})
                 else:
-                    policy_old.manage(p, s, lambda sym: marketdata.option_quote(sym))
+                    policy_old.manage(p, snapshot(p["ticker"]), lambda sym: marketdata.option_quote(sym))
                 q, _ = marketdata.option_quote(p["symbol"])
                 archive_quote(p["symbol"], q)
             try:

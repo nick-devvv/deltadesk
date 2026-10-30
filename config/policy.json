@@ -265,5 +265,92 @@
       "each change separately where the candidates table allows"
     ],
     "never": "a pass does not authorize real-money automation or larger size; Nick decides"
+  },
+  "research_variants": {
+    "note": "v3.1 research variants. Each runs in its own paper ledger with its own version; main paper (policy 2026-10-29.v3) is unchanged and frozen for the forward test.",
+    "exit31": {
+      "enabled": true,
+      "version": "2026-10-30.v3.1-exit31",
+      "mirror_of": "research",
+      "flat_min": 15,
+      "runner_stall_min": 15,
+      "why": "same entries as research, exits that let winners run: no stall/momentum exit before T1, 15-min if-flat, runner trails swing/VWAP to 15:25"
+    },
+    "noise": {
+      "enabled": true,
+      "version": "2026-10-30.v3.1-noise",
+      "tickers": [
+        "SPY",
+        "QQQ"
+      ],
+      "lookback": 14,
+      "min_sessions": 10,
+      "vm": 1.0,
+      "first_check": "10:00",
+      "last_check": "15:00",
+      "delta_target": 0.65,
+      "delta_min": 0.55,
+      "delta_max": 0.75,
+      "qty": 1,
+      "why": "Zarattini/Aziz/Barbon noise-area momentum (SPY shares, 2007-2024), tested here with options"
+    },
+    "inplay": {
+      "enabled": true,
+      "version": "2026-10-30.v3.1-inplay",
+      "or_min": 5,
+      "stop_atr_frac": 0.1,
+      "last_entry": "15:15",
+      "max_open": 6,
+      "qty": 1,
+      "why": "Zarattini/Barbon/Aziz 5-minute ORB on stocks in play (shares, 2016-2023), tested here with options",
+      "first_entry": "09:36"
+    }
+  },
+  "scanner": {
+    "enabled": true,
+    "universe_file": "config/universe.json",
+    "movers_indexes": [
+      "$SPX",
+      "$COMPX"
+    ],
+    "min_price": 20,
+    "min_avg_vol": 1000000,
+    "min_atr": 0.5,
+    "rvol_min": 1.0,
+    "top_n": 20,
+    "prerank_n": 60,
+    "baseline_sessions": 10,
+    "prepare_from": "08:30",
+    "scan_at": "09:35",
+    "movers_updates": [
+      "10:00",
+      "10:30",
+      "11:00",
+      "11:30",
+      "12:30",
+      "13:30",
+      "14:00",
+      "14:30",
+      "15:00"
+    ],
+    "quick_move": {
+      "atr_frac": 0.25,
+      "vol_mult": 2.0,
+      "cooldown_min": 20,
+      "pct_min": 1.0
+    },
+    "contract": {
+      "delta_min": 0.5,
+      "delta_max": 0.7,
+      "max_spread_pct": 0.05,
+      "max_quote_age_s": 20,
+      "min_oi": 500,
+      "min_volume": 100,
+      "max_dte": 10,
+      "premium_min": 0.3,
+      "premium_max": 8.0,
+      "hold_min_est": 120,
+      "strike_count": 16
+    }
   }
 }

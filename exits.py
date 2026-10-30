@@ -70,6 +70,8 @@ def evaluate(p, snap):
     # 3. structural invalidation on a finalized 1m close
     elif c1 is not None and pl.get("stop_px") is not None and ((c1 < pl["stop_px"]) if up else (c1 > pl["stop_px"])):
         acts.append(("exit", p["qty_open"], f"STRUCTURE BROKEN: 1m close {c1:.2f} beyond {pl['stop_px']:.2f}"))
+    elif fresh and pl.get("exit_profile") == "v31":
+        acts += _v31(p, pl, snap, now, up, bid, green, b1, c1)
     elif fresh:
         # 4. full exits
         H, M, S = snap.get("hist"), snap.get("macd"), snap.get("signal")
@@ -130,12 +132,132 @@ def evaluate(p, snap):
                     pl["trail"] = sw
                 if pl["trail"] is not None and c1 is not None and ((c1 < pl["trail"]) if up else (c1 > pl["trail"])):
                     acts.append(("exit", p["qty_open"], f"TRAIL: 1m close {c1:.2f} through the swing {pl['trail']:.2f}"))
+    if p["ledger"] == "real":
+        prev = (pl.get("guidance") or {}).get("action")
+        pl["guidance"] = guidance(p, acts, fresh, bid, green, c1, now)
+        act = pl["guidance"]["action"]
+        if act != prev and act not in ("HOLD",) and not (act == "NO DATA" and prev == "NO DATA"):
+            try:
+                import alerts
+                alerts.alert("mytrades", f"YOUR {p['ticker']} {p['contract']}: {act}",
+                             " | ".join(pl["guidance"]["why"][:3]) + f" | stop {pl['guidance']['plan']['stop']}"
+                             " | advice only: you place the order in Robinhood", f"guide:{p['id']}:{act}:{now.strftime('%H%M')}",
+                             "high" if act.startswith(("EXIT", "TAKE")) else "normal")
+            except Exception:
+                pass
     store.pos_save(p)
     res = _apply(p, acts)
     if acts and acts[0][2].startswith("T1") and not res:   # the partial didn't fill (no valid quote): try again next tick
         pl["t1_done"] = False
+        pl["runner"] = False if pl.get("exit_profile") == "v31" else pl.get("runner")
         store.pos_save(p)
     return res
+
+
+# ---------------------------------------------------------------- v3.1 exits (research variant 'exit31')
+def _v31cfg():
+    return (core.policy().get("research_variants") or {}).get("exit31") or {}
+
+
+def _v31(p, pl, snap, now, up, bid, green, b1, c1):
+    """v3.1 research exits. Before T1: only the hard stops (handled above), a 15-minute if-flat for trades that never
+    went green, and the breakeven/lock ratchets. No stall or momentum exit before T1, so a trade gets room to work.
+    At T1: 2+ contracts sell 1; the rest (or the single contract) becomes a runner with the stop at cost-aware
+    breakeven. Runner: trails the tighter of the last 1m swing and VWAP, exits on a 1m close through it, an opposing
+    2m MACD cross, or no new premium high for runner_stall_min. Session and premium stops still come first."""
+    acts = []
+    k = _v31cfg()
+    M, S = snap.get("macd"), snap.get("signal")
+    cross = I.macd_cross(M, S) if M is not None and len(M) else None
+    opposing = cross == ("down" if up else "up")
+    t1_hit = pl.get("t1_px") is not None and c1 is not None and ((c1 >= pl["t1_px"]) if up else (c1 <= pl["t1_px"]))
+    if not pl.get("t1_done"):
+        if t1_hit:
+            pl["t1_done"], pl["runner"] = True, True
+            pl["trail"] = _trail_level(b1, p["side"], snap.get("vwap"), None)
+            _ratchet(p, max(pl["premium_stop"], pl.get("breakeven_net", p["fill"])), "v3.1 at T1: stop to cost-aware breakeven, the rest runs")
+            if p["qty_open"] >= 2:
+                acts.append(("exit", 1, f"T1 {pl['t1']} {pl['t1_level']:.2f} reached: sell 1 of {p['qty_open']}, trail the rest (v3.1)"))
+        elif not green and not pl.get("be_hit") and pl.get("flat_by") and now.strftime("%H:%M") >= pl["flat_by"]:
+            acts.append(("exit", p["qty_open"], f"IF FLAT: never green by {pl['flat_by']} (v3.1: {k.get('flat_min', 15)} min)"))
+        else:
+            _protect(p, pl, bid)
+        return acts
+    pl["trail"] = _trail_level(b1, p["side"], snap.get("vwap"), pl.get("trail"))
+    stall = int(k.get("runner_stall_min", 15))
+    stalled = (now - datetime.fromisoformat(pl["last_progress_t"])) >= timedelta(minutes=stall)
+    if pl["trail"] is not None and c1 is not None and ((c1 < pl["trail"]) if up else (c1 > pl["trail"])):
+        acts.append(("exit", p["qty_open"], f"TRAIL (v3.1): 1m close {c1:.2f} through {pl['trail']:.2f} (swing/VWAP)"))
+    elif opposing:
+        acts.append(("exit", p["qty_open"], "MOMENTUM EXIT (v3.1 runner): MACD crossed against the trade"))
+    elif stalled:
+        acts.append(("exit", p["qty_open"], f"STALL EXIT (v3.1 runner): no new premium high for {stall} min"))
+    else:
+        _protect(p, pl, bid)
+    return acts
+
+
+def _protect(p, pl, bid):
+    if not pl.get("be_hit") and bid >= pl["be_trigger"]:
+        pl["be_hit"] = True
+        _ratchet(p, pl["breakeven_net"], f"breakeven: bid {bid:.2f} reached the +{int(_c()['be_trigger_pct'] * 100)}% trigger")
+    lock_t = p["fill"] * (1 + _c()["lock_trigger_pct"])
+    if not pl.get("lock_hit") and bid >= lock_t:
+        pl["lock_hit"] = True
+        _ratchet(p, core.cents_up(p["fill"] * (1 + _c()["lock_keep_pct"])),
+                 f"profit lock: +{int(_c()['lock_trigger_pct'] * 100)}% reached, lock +{int(_c()['lock_keep_pct'] * 100)}%")
+
+
+def _trail_level(b1, side, vwap, prev):
+    """Tighter of the last confirmed 1m swing and VWAP, and it only moves toward price."""
+    sw = _swing(b1, side)
+    cands = [x for x in (sw, vwap) if x is not None]
+    if not cands:
+        return prev
+    lvl = max(cands) if side == "C" else min(cands)
+    if prev is None:
+        return round(lvl, 2)
+    return round(max(prev, lvl), 2) if side == "C" else round(min(prev, lvl), 2)
+
+
+# ---------------------------------------------------------------- guidance for Nick's own trades
+def guidance(p, acts, fresh, bid, green, c1, now):
+    """What Nick should do now: EXIT / TAKE PROFIT / TIGHTEN STOP / HOLD / NO DATA, with the reasons and the plan.
+    Advice only: the desk can't place or guarantee anything; Nick places every order in Robinhood, and a fast market can
+    move through a stop."""
+    pl = p["plan"]
+    up = p["side"] == "C"
+    stop_txt = (f"{p['ticker']} 1m close {'below' if up else 'above'} {pl['stop_px']:.2f} or " if pl.get("stop_px") is not None else "") + \
+               f"bid ${pl['premium_stop']:.2f}"
+    plan_txt = {"stop": stop_txt, "max_loss_rule": "20% of premium planned max (not a guaranteed fill)",
+                "t1": f"{pl['t1']} {pl['t1_level']:.2f}" if pl.get("t1_level") is not None else None,
+                "take_profit": ("At T1 sell 1 if you have 2+ and trail the rest; with 1 contract sell at T1" if pl.get("t1_level") is not None
+                                else "No level target: protect gains with breakeven at +10% and the lock at +25%"),
+                "flat_by": pl.get("flat_by"), "origin": pl.get("origin", "discretionary")}
+    if acts:
+        kind, qty, why = acts[0]
+        action = "EXIT" if qty >= p["qty_open"] else f"TAKE PROFIT: sell {qty}"
+        return {"action": action, "why": [why], "at": now.strftime("%H:%M:%S"), "plan": plan_txt}
+    if not fresh:
+        return {"action": "NO DATA", "why": ["no live quote for this exact contract (check the expiry you logged)"],
+                "at": now.strftime("%H:%M:%S"), "plan": plan_txt}
+    why = []
+    pnl = (bid - p["fill"]) / p["fill"] * 100
+    why.append(f"bid {bid:.2f} ({pnl:+.0f}% vs your {p['fill']:.2f}, {'green after costs' if green else 'not green yet'})")
+    if c1 is not None and pl.get("stop_px") is not None:
+        why.append(f"{p['ticker']} {c1:.2f}, {abs(c1 - pl['stop_px']):.2f} from the stop level")
+    if pl.get("t1_level") is not None and not pl.get("t1_done") and c1 is not None:
+        why.append(f"{abs(pl['t1_level'] - c1):.2f} to T1 {pl['t1']}")
+    recent = (pl.get("stops") or [])[-1:]
+    if recent and recent[0].get("by") == "desk" and recent[0]["t"][11:16] == now.strftime("%H:%M") and len(pl.get("stops")) > 1:
+        return {"action": f"TIGHTEN STOP to ${pl['premium_stop']:.2f}", "why": [recent[0]["why"]] + why,
+                "at": now.strftime("%H:%M:%S"), "plan": plan_txt}
+    if green and pl.get("last_progress_t"):
+        left = _c()["stall_min"] - (now - datetime.fromisoformat(pl["last_progress_t"])).total_seconds() / 60
+        why.append(f"stall timer {max(0, left):.0f} min")
+    elif not green and pl.get("flat_by"):
+        why.append(f"needs to be green by {pl['flat_by']}")
+    return {"action": "HOLD", "why": why, "at": now.strftime("%H:%M:%S"), "plan": plan_txt}
 
 
 def _ratchet(p, new_stop, why, by="desk"):
@@ -152,8 +274,20 @@ def _ratchet(p, new_stop, why, by="desk"):
 
 
 def user_stop(p, new_stop, force=False):
-    """Nick reports a stop change on a REAL trade. Widening is refused unless forced, and recorded either way."""
+    """Nick reports a stop change on a REAL trade. Widening is refused unless forced, and recorded either way.
+    Never below the 20% max planned loss: the desk keeps that level as the plan's stop even if Nick reports a wider
+    one (recorded as a rule break), because a wider stop only keeps a losing trade alive."""
     pl = p["plan"]
+    floor = pl.get("ceiling_stop")
+    if floor is not None and new_stop < floor:
+        pl["reported_stop"] = round(new_stop, 2)
+        pl["stops"] = (pl.get("stops") or []) + [{"t": store.ts(), "stop": round(new_stop, 2), "by": "Nick (reported)",
+                                                   "why": "beyond the 20% max planned loss: not accepted as the plan's stop", "prev": pl.get("premium_stop")}]
+        store.pos_save(p)
+        store.event("real", f"STOP ${new_stop:.2f} on {p['contract']} is past your 20% max planned loss (${floor:.2f}). "
+                    f"The plan keeps ${max(floor, pl.get('premium_stop') or floor):.2f}; if the bid gets there the desk says EXIT."
+                    + (" Your reported stop is logged as a rule break." if force else ""), "real", p["id"])
+        return False, "beyond the 20% max planned loss"
     old = pl.get("premium_stop") or pl.get("stop")
     if old is not None and new_stop < old and not force:
         store.event("real", f"STOP CHANGE REFUSED on {p['contract']}: ${new_stop:.2f} would WIDEN the stop from ${old:.2f}. "
