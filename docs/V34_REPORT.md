@@ -85,7 +85,7 @@ The data keeps growing past Schwab's history window, and later studies can be re
 | Chart prompts | The coach, review, endpoint list and quick commands. Lab rows are research: quote sample size, edge vs random and both halves; never a win rate to expect. |
 
 ## Tests and checks
-- **Full suite: 153 passed, 1 skipped.**
+- **Full suite: 153 passed, 1 skipped** (v3.4.1: 156).
 - **13 new tests** (`tests/test_v34.py`):
   - every family is recorded;
   - future bars don't change earlier signals;
@@ -122,6 +122,26 @@ The data keeps growing past Schwab's history window, and later studies can be re
 - **The tape is about the stock move;** the lab ledgers are the option results. A strategy can work on the stock and still lose on options (spread and decay). The page shows both.
 - **Late signals:** the board refreshes quiet names about every 6 minutes. A signal found late still gets its stock outcome, but it isn't paper traded (the 150-second rule). That's honest, but it means fewer paper trades on quiet names.
 - **How to reset paper with the winners later:** tell me which rows. The new run starts as fresh versions, and the old history stays, because the new run is the test of whether the winners were real.
+
+## v3.4.1 (same day): the Kronos pile-up and the lab's time budget
+**What happened on Oct 30.** The desk server went into a restart loop at about 1:40 PM ET. The box was out of memory: 40 copies of `kronos_shadow.py` were running at about 370 MB each, roughly 13.8 GB of 16 GB.
+
+**Why it happened:**
+- **Kronos copies outlived their server.** `server.py start_kronos()` runs Kronos as a child process. When the server stopped (a restart for an install, a tunnel restart, or a crash), nothing stopped the child, and every new server started another copy.
+- **The squeeze fed itself.** Once memory was tight, the server was killed; the watchdog restarted it and added one more copy each time.
+- **The v3.4 lab made it worse.** Just after a restart it catches up on the morning's bars, and its live bars weren't under its time budget, so one step took about 20 seconds.
+
+**Fixed:**
+- `kronos_shadow.py`: one copy at most (an OS file lock in `journal/kronos.lock`). It exits by itself within 5 seconds of its server being gone.
+- `server.py`: on start, it stops leftover Kronos copies of this desk whose server is gone; copies started by a live server and copies from other folders are left alone. Kronos keeps running as a test, as you asked.
+- `lab.py`: one 4-second time budget for the whole lab step, live bars included, and it yields to the desk's other threads between symbols. A lab that falls behind catches up over the next steps instead of hogging the desk; `/api/lab` shows `bars_behind`.
+- The lab's indicator cache resets daily, and the after-close outcome checks run every 2 minutes, not every 15 seconds.
+- Signal rules, outcomes and ledgers are unchanged.
+
+**Tests:** 156 passed, 1 skipped:
+- a second Kronos process is refused while the first holds the lock;
+- only orphaned copies are selected for stopping;
+- the step budget covers live bars.
 
 ## Live checks that only Chart's computer can do
 1. **Startup:** the server log shows "Strategy lab ... started", and `/api/lab` shows `with_history` climbing to ~125 within minutes of 07:00 ET.
