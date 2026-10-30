@@ -426,6 +426,8 @@ def test_early_close_deadline_and_eastern_time():
 
 # ================================================================ strategy flow end to end
 def test_vwap_macd_one_strategy_retest_entry_full_plan_and_no_duplicates(env):
+    import entrygate
+    env.setattr(entrygate, "cfg", lambda: dict(entrygate.DEFAULTS, zone_atr5=3.0, min_rr=2.0))   # this test is about the v3 flow, not the gate
     clock, fk = fakes.install(env, vm_path, DAY, s0=600.0)
     run(clock, "09:31", "10:20")
     c = store.q("SELECT * FROM candidates WHERE family='VWAP_MACD' AND portfolio='paper' AND decision='ORDER'")

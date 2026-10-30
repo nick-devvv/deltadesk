@@ -323,8 +323,11 @@ def test_prompt_pack_safety_lines():
     review = (g / "REVIEW_PROMPT.md").read_text()
     assert "Never propose a looser stop" in review and "/api/lessons" in review
     assert "/api/events" in (g / "MORNING_ROUTINE_PROMPT.md").read_text()
-    ap = json.loads((ROOT / "config" / "agent_policy.json").read_text())
-    assert ap["real_money"]["chart_may_place_orders"] is False and ap["paper"]["chart_runs_bot_take"] is False
+    apf = ROOT / "config" / "agent_policy.json"          # Chart's own file: not in the zip, present on Chart's computer
+    if apf.exists():
+        ap = json.loads(apf.read_text())
+        assert ap["real_money"]["chart_may_place_orders"] is False and ap["paper"]["chart_runs_bot_take"] is False
+    assert "never" in coach.lower() and "untrusted" in coach.lower()
     for f in g.glob("*.md"):
         for line in f.read_text().splitlines():
             if "bot.py take" in line:
@@ -468,13 +471,14 @@ def test_schwab_market_data_only_and_parsing(monkeypatch, tmp_path):
     import schwab
     monkeypatch.setenv("SCHWAB_APP_KEY", "k"); monkeypatch.setenv("SCHWAB_APP_SECRET", "s")
     monkeypatch.setattr(schwab, "TOKEN_FILE", tmp_path / "tok.json")
-    assert schwab.status()["state"] == "not connected" and not schwab.ready()
+    assert schwab.status()["state"] == "disconnected" and not schwab.ready()
     assert "client_id=k" in schwab.login_url() and "127.0.0.1" in schwab.login_url()
     with pytest.raises(RuntimeError):
         schwab._get("/trader/v1/accounts", {})                # trading/account endpoints are refused in code
     monkeypatch.setattr(schwab, "_token_request", lambda form: {"access_token": "A", "refresh_token": "R", "expires_in": 1800})
+    monkeypatch.setattr(schwab, "verify_now", lambda timeout=15: (schwab._record(True, "/marketdata/v1/quotes"), schwab.status(verify=False))[1])
     ok, msg = schwab.connect("https://127.0.0.1/?code=CO.abc%40&session=x")
-    assert ok and schwab.ready() and schwab.status()["days_left"] == 7.0
+    assert ok and schwab.ready() and schwab.status()["days_left"] == 7.0 and schwab.status()["state"] == "connected"
     assert schwab.connect("https://127.0.0.1/")[0] is False
     chain_json = {"callExpDateMap": {"2026-10-28:0": {"600.0": [{"symbol": "SPY   261028C00600000", "strikePrice": 600.0, "bid": 1.10, "ask": 1.14,
                   "delta": 0.47, "volatility": 14.2, "quoteTimeInLong": 1793200000000, "totalVolume": 900, "openInterest": 5000}],
