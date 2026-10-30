@@ -37,8 +37,8 @@ def model_premium(q, dS, side, hold_min=None):
     g = q.get("gamma")
     k = c3()["contract"]
     hold = hold_min if hold_min is not None else k["hold_min_for_theta"]
-    th = q.get("theta")  # per calendar day, negative for longs
-    decay = abs(th) * hold / 390.0 if th is not None else 0.0   # trading-day fraction (approximation)
+    th = q.get("theta")  # UNIT: per calendar day (provider convention), negative for longs; model Greeks use the same unit
+    decay = abs(th) * hold / 390.0 if th is not None else 0.0   # one day's theta spread over the 390-minute session
     move = d * dS + (0.5 * g * dS * dS if g is not None else 0.0)
     if g is None:
         move *= k["gamma_missing_haircut"] if move > 0 else 1.0

@@ -26,6 +26,13 @@ Example (no costs): trigger 100.00, invalidation 99.50, target 101.00 -> RR(100.
 This is the UNDERLYING ratio. The option contract has its own (optionmath rr_option) and must pass separately.
 
 All thresholds live in policy.json "entry_gate". They are starting hypotheses to test on paper, not proven values.
+
+v3.3 (gate2) fixes, found in the outside audit:
+  * BOTH zone bounds: a call needs trigger <= price <= latest entry (puts mirror). Price back under a call's trigger
+    is not an entry, and falling below the old trigger is not automatically a retest (that needs its own new setup).
+  * Fail closed: missing freshness, a missing or stale quote, or an unknown spread blocks the entry (it used to pass).
+  * Setup keys carry the scope (ledger / caller) and the gate version, so state never leaks between experiments or
+    between gate1 and gate2 setups. gate1 setups stay in the table as history.
 """
 import json
 from datetime import datetime, timedelta
@@ -33,7 +40,8 @@ from datetime import datetime, timedelta
 import core
 import store
 
-VERSION = "2026-10-30.v3.2-gate1"
+VERSION = "2026-10-30.v3.3-gate2"
+LEGACY_VERSIONS = ("2026-10-30.v3.2-gate1",)
 SCHEMA = """CREATE TABLE IF NOT EXISTS gate_setups(id TEXT PRIMARY KEY, date TEXT, ticker TEXT, side TEXT, kind TEXT, version TEXT,
   status TEXT, created TEXT, updated TEXT, data TEXT)"""
 TERMINAL = ("MISSED", "INVALIDATED", "EXPIRED")
@@ -70,8 +78,8 @@ def latest_entry(trigger, target, inval, side, cost, atr5, c):
     return round(max(trigger - c["zone_atr5"] * atr5, by_rr), 2), round(by_rr, 2)
 
 
-def _key(day, ticker, side, kind, trigger):
-    return f"G-{day}-{ticker}-{side}-{kind}-{trigger:.2f}"
+def _key(day, ticker, side, kind, trigger, scope="shared"):
+    return f"G2-{scope}-{day}-{ticker}-{side}-{kind}-{trigger:.2f}"
 
 
 def _load(gid):
@@ -97,12 +105,13 @@ def target_for(trigger, side, levels, zone):
     return ahead[0] if ahead else (None, None)
 
 
-def define(ticker, side, kind, trigger, inval, target, target_name, snap, trigger_rule, confirmed_at=None, catalyst=None):
+def define(ticker, side, kind, trigger, inval, target, target_name, snap, trigger_rule, confirmed_at=None, catalyst=None,
+           scope="shared"):
     """Create (once) the versioned setup. An existing setup with the same key is returned unchanged: entry, stop and
-    target can't be edited after the fact."""
+    target can't be edited after the fact. `scope` = the ledger or caller, so experiments never share state."""
     c = cfg()
     day = core.now_et().strftime("%Y-%m-%d")
-    gid = _key(day, ticker, side, kind, trigger)
+    gid = _key(day, ticker, side, kind, trigger, scope)
     old = _load(gid)
     if old:
         return old
@@ -110,7 +119,7 @@ def define(ticker, side, kind, trigger, inval, target, target_name, snap, trigge
     cost = _cost(snap, c)
     le, by_rr = (None, None) if target is None else latest_entry(trigger, target, inval, side, cost, atr5, c)
     now = core.now_et()
-    g = {"id": gid, "date": day, "ticker": ticker, "side": side, "kind": kind, "version": VERSION, "status": "OPEN",
+    g = {"id": gid, "date": day, "ticker": ticker, "side": side, "kind": kind, "version": VERSION, "status": "OPEN", "scope": scope,
          "created": now.isoformat(timespec="seconds"), "trigger": round(trigger, 2), "trigger_rule": trigger_rule,
          "invalidation": round(inval, 2), "target": round(target, 2) if target is not None else None, "target_name": target_name,
          "zone": [round(trigger, 2), round(trigger + (c["zone_atr5"] * atr5 if side == "C" else -c["zone_atr5"] * atr5), 2)],
@@ -149,9 +158,10 @@ def evaluate(g, snap):
     if g["status"] in TERMINAL:
         st = {"MISSED": "WAIT FOR RETEST", "INVALIDATED": "INVALIDATED", "EXPIRED": "NO TRADE"}[g["status"]]
         return dict(out, state=st, rejected=g.get("terminal_why"), terminal=True)
-    fresh = snap.get("fresh", True)
-    if not chk("data fresh", fresh, f"bar {snap.get('bar_age_s')} s old"):
-        return dict(out, state="NO TRADE", rejected="data is stale or missing: no new entries until it is fresh")
+    fresh = snap.get("fresh")                      # gate2: unknown freshness fails closed
+    if not chk("data fresh", fresh is True, f"bar {snap.get('bar_age_s')} s old, quote {snap.get('quote_age_s')} s old"):
+        return dict(out, state="NO TRADE", rejected=("data freshness unknown" if fresh is None else "data is stale or missing")
+                    + ": no new entries until it is fresh")
     if g["target"] is None:
         chk("evidence-based target", False, "no real level beyond the trigger")
         return dict(out, state="NO TRADE", rejected="no evidence-based target beyond the trigger")
@@ -187,15 +197,21 @@ def evaluate(g, snap):
     cur = px if px is not None else c1
     r_now = rr(cur, g["target"], g["invalidation"], side, g["cost_est"])
     out["rr_now"] = r_now
+    lo_ok = (cur >= g["trigger"]) if up else (cur <= g["trigger"])            # gate2: the near side of the zone too
+    if not lo_ok:
+        chk("price inside the entry zone", False, f"price {cur:.2f} is back {'below' if up else 'above'} the trigger {g['trigger']:.2f}")
+        return dict(out, state="WAIT FOR RETEST", rejected=f"price {cur:.2f} is back {'below' if up else 'above'} the trigger "
+                    f"{g['trigger']:.2f}: not an entry. A retest has to form its own new setup (a touch and a confirming close).")
     inside = (cur <= le) if up else (cur >= le)
-    chk("price inside the entry zone", inside, f"price {cur:.2f}, latest acceptable {le:.2f}")
+    chk("price inside the entry zone", inside, f"price {cur:.2f}, zone {g['trigger']:.2f} to {le:.2f}")
     chk("remaining R/R from the current price", r_now is not None and r_now >= c["min_rr"], f"{r_now} vs minimum {c['min_rr']} after est. costs ${g['cost_est']:.2f}")
     if not inside or r_now is None or r_now < c["min_rr"]:
         return dict(out, state="TOO EXTENDED", rejected=f"price {cur:.2f} is past the latest acceptable entry {le:.2f} "
                                                         f"(remaining reward/risk {r_now}). Don't chase: wait for a retest or skip.")
     sp = snap.get("spread_pct")
-    if not chk("stock spread", sp is None or sp <= c["max_stock_spread_pct"], f"{sp}% vs {c['max_stock_spread_pct']}%"):
-        return dict(out, state="NO TRADE", rejected=f"stock spread {sp}% is too wide")
+    if not chk("stock spread", sp is not None and sp <= c["max_stock_spread_pct"], f"{sp}% vs {c['max_stock_spread_pct']}%"):
+        return dict(out, state="NO TRADE", rejected=("stock spread unknown (no bid/ask): fails closed" if sp is None
+                                                      else f"stock spread {sp}% is too wide"))
     mv = snap.get("move_since_news_atr5")
     if mv is not None and not chk("move since the news", mv <= c["max_move_since_news_atr5"], f"{mv} x 5m ATR vs {c['max_move_since_news_atr5']}"):
         return dict(out, state="TOO EXTENDED", rejected=f"price already moved {mv} x the 5m ATR since the news")
@@ -237,7 +253,8 @@ def retest_setup(missed, r1, snap):
     if tgt is None or ((tgt <= trig) if up else (tgt >= trig)):
         return None
     return define(missed["ticker"], missed["side"], "retest", trig, inval, tgt, missed["target_name"], snap,
-                  f"retest of {missed['trigger']:.2f} held; 1m close {'above' if up else 'below'} {trig:.2f}")
+                  f"retest of {missed['trigger']:.2f} held; 1m close {'above' if up else 'below'} {trig:.2f}",
+                  scope=missed.get("scope", "shared"))
 
 
 def snap_from(s):
@@ -247,15 +264,20 @@ def snap_from(s):
     bar_age = s.get("bar_age_s")
     max_age = core.policy()["data"]["max_bar_age_s"]
     sess = core.session_info()["state"]
-    fresh = bool(v3.get("ok")) and not (bar_age is not None and bar_age > max_age and sess in ("OPEN", "ORB FORMING", "NO NEW ENTRIES", "ALL OUT"))
+    live = sess in ("OPEN", "ORB FORMING", "NO NEW ENTRIES", "ALL OUT")
+    q_age = q.get("age_s")
+    max_q = core.policy()["data"].get("max_eq_quote_age_s", 15)
+    fresh = (bool(v3.get("ok")) and bar_age is not None and not (live and bar_age > max_age)
+             and q_age is not None and not (live and q_age > max_q))          # gate2: the quote must be fresh too
     px = q.get("last") or v3.get("close1")
     sp = q.get("spread")
     return {"price": px, "close1": v3.get("close1"), "vwap": v3.get("vwap"), "atr5": v3.get("atr5"), "t": v3.get("t"),
-            "spread": sp, "spread_pct": round(sp / px * 100, 3) if sp and px else None, "bar_age_s": bar_age, "fresh": fresh,
+            "spread": sp, "spread_pct": round(sp / px * 100, 3) if sp is not None and px else None, "bar_age_s": bar_age,
+            "quote_age_s": q_age, "fresh": fresh,
             "buf": v3.get("buf"), "zone": v3.get("zone")}
 
 
-def for_plan(plan, s):
+def for_plan(plan, s, scope="assistant"):
     """Gate a desk plan (Nick's assistant): define/find the setup and evaluate it. None if the plan has no structure."""
     if plan.get("trigger_level") is None or plan.get("invalidation") is None:
         return None
@@ -267,7 +289,7 @@ def for_plan(plan, s):
     kind = (plan.get("setup") or "LEVEL").lower()
     confirmed = v3["t"].isoformat(timespec="seconds") if plan.get("state") == "READY" and v3.get("t") is not None else None
     g = define(plan["ticker"], plan["side"], kind, float(plan["trigger_level"]), float(plan["invalidation"]), tgt, tname, sn,
-               plan.get("trigger_rule"), confirmed_at=confirmed)
+               plan.get("trigger_rule"), confirmed_at=confirmed, scope=scope)
     res = evaluate(g, sn)
     if res["state"] == "WAIT FOR RETEST":
         nxt = retest_setup(_load(g["id"]), v3.get("r1"), sn)

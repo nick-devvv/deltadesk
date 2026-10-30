@@ -708,3 +708,89 @@ def backtest_day(day, m1_by_ticker, base_by_ticker, iv_by_ticker=None):
                        "option_pnl_modeled": round(float(opt), 2), "option_entry_modeled": round(float(e_fill), 2), "strike": float(k),
                        "expiry": str(exp.date()), "iv_assumed": round(iv, 3)})
     return trades
+
+
+BACKTEST_VERSION = "2026-10-30.inplay-bt2"
+
+
+def backtest_day_v2(day, m1_by_ticker, base_by_ticker, iv_by_ticker=None, latency_min=1):
+    """bt2: the in-play rules replayed causally (the audit found bt1 filled at the signal bar's close with the bar's
+    OPEN timestamp and assumed ideal stop fills through gaps).
+      * the signal is known when its 1m bar CLOSES (decision_at = bar open + 1 min), never earlier than the session's
+        first entry (09:45 by policy);
+      * the entry is the OPEN of the first bar starting at decision_at + latency (an executable proxy for the stock;
+        options are still MODELED from it);
+      * a stop that the price gaps through fills at that bar's open, not at the stop price;
+      * all out at the 15:25 bar's open.
+    bt1 (backtest_day) is kept unchanged as the labeled legacy diagnostic."""
+    c, v = cfg(), vcfg()
+    first = core.policy()["session"]["first_entry"]
+    rows = []
+    for t, m1 in m1_by_ticker.items():
+        b = base_by_ticker.get(t) or {}
+        d = m1[m1.index.date == day].between_time("09:30", "15:59")
+        orr = opening_range(d, v.get("or_min", 5))
+        if not orr or not b.get("open5_med"):
+            continue
+        rows.append({"ticker": t, "price": orr["close"], "avg_vol14": b.get("avg_vol14"), "atr14": b.get("atr14"),
+                     "rvol": round(orr["volume"] / b["open5_med"], 2), "direction": orr["direction"], "orr": orr, "m1": d})
+    top, _ = rank_in_play(rows, c)
+    trades, rejected = [], []
+    fee = core.policy()["v3"]["contract"]["fees_per_contract_side"]
+    for r in top:
+        t, d, orr, side = r["ticker"], r["m1"], r["orr"], r["direction"]
+        end = pd.Timestamp(f"{day} {v.get('last_entry', '15:15')}", tz=core.ET)
+        start = pd.Timestamp(f"{day} {first}", tz=core.ET) - timedelta(minutes=1)        # bar whose close is 09:45
+        lvl = orr["high"] if side == "C" else orr["low"]
+        cand = d[(d.index >= start) & (d.index < end)]
+        hit = cand[(cand["Close"] > lvl) if side == "C" else (cand["Close"] < lvl)]
+        if not len(hit):
+            rejected.append({"ticker": t, "why": f"no finished 1m close beyond the range between {first} and {v.get('last_entry', '15:15')}"})
+            continue
+        sig_open = hit.index[0]
+        decision_at = sig_open + timedelta(minutes=1)
+        nxt = d[d.index >= decision_at + timedelta(minutes=latency_min - 1 if latency_min > 0 else 0)]
+        nxt = nxt[nxt.index >= decision_at]
+        if not len(nxt):
+            rejected.append({"ticker": t, "why": "no bar after the decision"})
+            continue
+        fill_at, px = nxt.index[0], float(nxt["Open"].iloc[0])
+        risk = v.get("stop_atr_frac", 0.10) * r["atr14"]
+        stop = px - risk if side == "C" else px + risk
+        after = d[d.index > fill_at]
+        exit_px, exit_ts, why = None, None, "all out 15:25"
+        for i, row in after.iterrows():
+            if i.strftime("%H:%M") >= "15:25":
+                exit_px, exit_ts = float(row["Open"]), i
+                break
+            o = float(row["Open"])
+            if (o <= stop) if side == "C" else (o >= stop):
+                exit_px, exit_ts, why = o, i, "stop gapped: filled at the bar open"
+                break
+            if (row["Low"] <= stop) if side == "C" else (row["High"] >= stop):
+                exit_px, exit_ts, why = stop, i, "stop (10% ATR)"
+                break
+        if exit_px is None:
+            if not len(after):
+                continue
+            exit_px, exit_ts = float(after["Close"].iloc[-1]), after.index[-1]
+        move = (exit_px - px) if side == "C" else (px - exit_px)
+        iv = (iv_by_ticker or {}).get(t) or 0.45
+        exp = pd.Timestamp(day) + timedelta(days=((4 - pd.Timestamp(day).weekday()) % 7) or 7)
+        if (exp.date() - day).days < 2:
+            exp += timedelta(days=7)
+        ty = lambda when: ((pd.Timestamp(exp.date()) + timedelta(hours=16)) - pd.Timestamp(when).tz_localize(None)).total_seconds() / (365 * 86400)
+        strikes = np.arange(round(px * 0.85), round(px * 1.15) + 1, 1.0 if px < 200 else 5.0)
+        k = min(strikes, key=lambda s_: abs(abs(_bs(px, s_, iv, ty(fill_at), side)[1]) - 0.60))
+        e_mid = _bs(px, k, iv, ty(fill_at), side)[0]
+        x_mid = _bs(exit_px, k, iv, ty(exit_ts), side)[0]
+        sp = lambda m: max(0.02, 0.03 * m)
+        e_fill, x_fill = e_mid + sp(e_mid) / 2 + 0.01, max(0.0, x_mid - sp(x_mid) / 2 - 0.01)     # exec2 costs
+        opt = (x_fill - e_fill) * 100 - 2 * fee
+        trades.append({"day": str(day), "ticker": t, "side": side, "rvol": r["rvol"], "signal_bar": sig_open.strftime("%H:%M"),
+                       "decision_at": decision_at.strftime("%H:%M"), "fill_at": fill_at.strftime("%H:%M"), "entry_px": round(px, 2),
+                       "stop": round(stop, 2), "exit_t": exit_ts.strftime("%H:%M"), "exit_px": round(exit_px, 2), "why": why,
+                       "stock_move": round(move, 3), "stock_R": round(move / risk, 2) if risk else None,
+                       "option_pnl_modeled": round(float(opt), 2), "option_entry_modeled": round(float(e_fill), 2),
+                       "strike": float(k), "expiry": str(exp.date()), "iv_assumed": round(iv, 3), "version": BACKTEST_VERSION})
+    return {"trades": trades, "rejected": [dict(x, day=str(day)) for x in rejected], "version": BACKTEST_VERSION}

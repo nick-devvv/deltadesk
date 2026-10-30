@@ -15,6 +15,8 @@ EVENTS_FILE = HERE / "config" / "events.json"   # today's scheduled releases (9 
 POLICY_FILE = HERE / "config" / "policy.json"
 
 # NYSE calendar (source: NYSE Group 2026-2028 holiday and early closings announcement, checked Oct 27 2026)
+# Verified Oct 30 2026 against NYSE Group's 2026-2028 holiday and early-closings announcement (Business Wire, Dec 23 2025).
+# Dec 24 2026 closes at 1:00 p.m. (1:15 p.m. for eligible options); Dec 24 2027 is a full holiday (Christmas observed).
 HOLIDAYS = {
     "2026-01-01", "2026-01-19", "2026-02-16", "2026-04-03", "2026-05-25", "2026-06-19", "2026-07-03",
     "2026-09-07", "2026-11-26", "2026-12-25",

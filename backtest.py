@@ -120,9 +120,11 @@ def inplay_history(d1, d2, csv=None):
     return m1s, daily
 
 
-def run_inplay(m1s, daily, days):
+def run_inplay(m1s, daily, days, legacy=False):
+    """bt2 (causal: decision at bar close, fill at the next bar's open, gap-through stops, 09:45 first entry) unless
+    legacy=True (bt1, kept only to reproduce the old report)."""
     import scanner
-    trades = []
+    trades, rejected = [], []
     for day in days:
         base, iv = {}, {}
         for t, m1 in m1s.items():
@@ -137,7 +139,13 @@ def run_inplay(m1s, daily, days):
             closes = d[[pd.Timestamp(x).date() < day for x in d.index]]["Close"].iloc[-21:]
             rv = closes.pct_change().std() * (252 ** 0.5) if len(closes) > 5 else None
             iv[t] = round(float(rv) * 1.1, 3) if rv == rv and rv else None
-        trades += scanner.backtest_day(day, m1s, base, iv)
+        if legacy:
+            trades += scanner.backtest_day(day, m1s, base, iv)
+        else:
+            r = scanner.backtest_day_v2(day, m1s, base, iv)
+            trades += r["trades"]
+            rejected += r["rejected"]
+    run_inplay.rejected = rejected
     return trades
 
 

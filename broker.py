@@ -127,12 +127,9 @@ def chain(ticker, side, expiry, through=None):
 
 # ---------------- paper orders ----------------
 def submit(symbol, qty, side, client_id):
-    ok, why = paper_account_ok()
-    if not ok:
-        return None, f"REFUSED: {why}"
-    body = {"symbol": symbol, "qty": str(qty), "side": side, "type": "market", "time_in_force": "day",
-            "client_order_id": client_id}
-    return _req("POST", PAPER, "/v2/orders", body)
+    """DISABLED (v3.3). Paper trades are simulated inside the desk (paper.py); no order of any kind is sent to any
+    broker, paper or real. Kept as a stub so old imports fail safe instead of reaching an order endpoint."""
+    return None, "REFUSED: the desk sends no orders to any broker; paper fills are simulated internally"
 
 
 def order_by_client(client_id):

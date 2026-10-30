@@ -36,14 +36,30 @@ POLICIES = ("v3_approx", "bracket", "hold", "vwap_trail", "v31_approx")
 
 
 # ---------------------------------------------------------------- per-day features
-def day_frame(m1, day):
+FRAME_VERSION = "2026-10-30.diag2"     # v3.3: 2m features become available at the END of their bar (was: at its open)
+
+
+def day_frame(m1, day, legacy=False):
+    """1m regular-session frame with VWAP and the 2m MACD histogram as it was KNOWN at each 1m row.
+    A 2m bar opening at 11:30 contains the 11:30 and 11:31 minutes, so its histogram exists only once the 11:31 minute
+    has closed: it is placed on the 11:31 row (the row whose close is the decision time) and carried forward. The old
+    version (legacy=True) placed it on the 11:30 row, one minute before it existed."""
     d = m1[m1.index.date == day].between_time("09:30", "15:59").copy()
     if not len(d):
         return None
     d["vwap"] = I.session_vwap(d).values
     b2, done = I.aggregate(d, 2, d.index[-1])
     M, S, H = I.macd(b2["Close"])
-    d["hist2"] = H.reindex(d.index, method="ffill").values if len(H) else float("nan")
+    if not len(H):
+        d["hist2"] = float("nan")
+        return d
+    if legacy:
+        d["hist2"] = H.reindex(d.index, method="ffill").values
+        return d
+    H = H[done.reindex(H.index).fillna(False).astype(bool).values]           # finished 2m bars only
+    avail = H.copy()
+    avail.index = H.index + pd.Timedelta(minutes=1)                         # last constituent minute of each 2m bar
+    d["hist2"] = avail.reindex(d.index, method="ffill").values
     return d
 
 
@@ -328,7 +344,9 @@ def _s(st):
 def markdown(r):
     L = [f"# Diagnostics {r['from']} to {r['to']}", "",
          f"{r['candidates']} setups on {r['days']} days. Option results are MODELED ({r['modeled_default_contract']} setups had no contract "
-         "quote and use a default delta-0.45 contract). Exits are counterfactual on 1m closes.", "",
+         "quote and use a default delta-0.45 contract). Exits are counterfactual on 1m closes.",
+         f"These {r['candidates']} are diagnostic SETUPS, not paper executions, and the default-contract quotes are modeled, "
+         f"not observed options data. Frame {FRAME_VERSION}: 2m features are used only after their bar has closed.", "",
          "## 1. Signals vs a coin flip (same setups, same times, v3-style exits)", ""]
     b = r["baselines"]
     L.append(f"- Signals: {_s(r['policies']['v3_approx']['option_modeled'])}")

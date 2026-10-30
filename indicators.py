@@ -47,7 +47,7 @@ def sessions(m1):
     return _sess_cache[k]
 
 
-def aggregate(m1_rth, minutes, last_complete_open=None):
+def aggregate(m1_rth, minutes, last_complete_open=None, require_all=False):
     """N-minute bars anchored to the session open (09:30, 09:32, ... for N=2). Returns (bars, complete_flags).
 
     A bar is complete only when its last 1m bar has finished: bar_open + N minutes <= last completed 1m open + 1 min.
@@ -61,7 +61,19 @@ def aggregate(m1_rth, minutes, last_complete_open=None):
     last = last_complete_open if last_complete_open is not None else m1_rth.index[-1]
     done_until = last + pd.Timedelta(minutes=1)
     complete = pd.Series([i + pd.Timedelta(minutes=minutes) <= done_until for i in b.index], index=b.index)
+    if require_all:
+        # v3.3: a finished CLOCK interval is not a valid bar if constituent minutes are missing (thin names, gaps)
+        n = m1_rth["Close"].resample(f"{minutes}min", label="left", closed="left", origin=day0).count().reindex(b.index)
+        complete = complete & (n >= minutes)
     return b, complete
+
+
+def _frame_id(r):
+    """Content identity of a bar frame: any corrected bar (same length, same last close) changes it."""
+    try:
+        return int(pd.util.hash_pandas_object(r[["Open", "High", "Low", "Close", "Volume"]], index=True).sum())
+    except Exception:
+        return id(r)
 
 
 _agg_cache = {}
@@ -75,7 +87,7 @@ def aggregate_multi(m1, minutes, last_complete_open=None):
         r = rth(m1, d)
         if r is None or not len(r):
             continue
-        key = (d, minutes, len(r), r.index[-1], float(r["Close"].iloc[-1]))
+        key = (d, minutes, len(r), r.index[-1], _frame_id(r)) if d != newest else None   # v3.3: content hash
         if d != newest and key in _agg_cache:
             b, c = _agg_cache[key]
         else:

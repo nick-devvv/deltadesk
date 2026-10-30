@@ -22,8 +22,8 @@ import core
 import marketdata
 import store
 
-PORTFOLIOS = ("paper", "research", "old", "exit31", "noise", "inplay", "gated", "earn_post", "earn_pre")
-RESEARCH = ("research", "exit31", "noise", "inplay", "old", "gated", "earn_post", "earn_pre")   # experimental ledgers, never mixed into main paper
+PORTFOLIOS = ("paper", "research", "old", "exit31", "noise", "inplay", "gated", "earn_post", "earn_pre", "board")
+RESEARCH = ("research", "exit31", "noise", "inplay", "old", "gated", "earn_post", "earn_pre", "board")   # experimental ledgers, never mixed into main paper
 
 
 def underlying_px(ticker):
@@ -36,6 +36,23 @@ def underlying_px(ticker):
         return round(float(df["Close"].iloc[-1]), 4) if df is not None and len(df) else None
     except Exception:
         return None
+
+
+# v3.3 "strict" execution model (exec2), for the new ledgers only; legacy ledgers keep their recorded model so their
+# results don't change meaning. exec2 starts from the quote's bid/ask (not the mid): buy at ask + $0.01, sell at
+# bid - $0.01, $0.02 fees per contract per side, so the spread is counted once (half on the way in, half out).
+STRICT = ("gated", "board", "earn_post", "router")
+EXEC_MODEL = {"strict": "2026-10-30.exec2 (ask+0.01 in, bid-0.01 out, $0.02/side; final fill <= limit; latency enforced)",
+              "legacy": "2026-10-29.exec1 (ask + max(0.01, half spread) in, bid - same out)"}
+
+
+def is_strict(portfolio):
+    return portfolio in STRICT or str(portfolio).startswith("spec_")
+
+
+def strict_costs():
+    k = core.policy()["v3"]["contract"]
+    return k["slippage_min"], k["fees_per_contract_side"]
 
 
 def costs(spread):
@@ -103,12 +120,41 @@ def buy(portfolio, idea, ticker, side, plan, qty, signal_t):
         return None, f"no simulated fill: {err}"
     if qty <= 0:
         return None, "size 0"
+    strict = is_strict(portfolio)
     size = q.get("ask_size")
+    if strict:
+        if size is not None and isinstance(size, (int, float)) and size <= 0:
+            return None, "no size offered at the ask: no simulated fill"
+        mult = q.get("multiplier")
+        if mult not in (None, 100, 100.0):
+            return None, f"non-standard contract multiplier {mult}: not simulated"
+        lat = core.policy()["v3"]["contract"].get("latency_s", 1.0)
+        qt = q.get("quote_time")
+        try:
+            from datetime import datetime as _dt
+            sig = _dt.fromisoformat(str(signal_t))
+            if qt is not None and (pd_ts(qt) - sig).total_seconds() < lat:
+                return None, f"no quote yet at least {lat:.0f} s after the signal (decision latency): wait for the next quote"
+        except (ValueError, TypeError):
+            return None, "signal time unknown: no simulated fill"
     if size not in (None, 0) and isinstance(size, (int, float)):
         qty = min(qty, int(size))
-    slip, fee = costs(q["ask"] - q["bid"])
+    if strict:
+        slip, fee = strict_costs()
+    else:
+        slip, fee = costs(q["ask"] - q["bid"])
     fill = round(q["ask"] + slip, 4)
-    if plan.get("premium_limit") and q["ask"] > plan["premium_limit"]:
+    if strict:
+        if plan.get("premium_limit") and fill > plan["premium_limit"] + 1e-9:
+            return None, (f"final fill {fill:.2f} (ask {q['ask']:.2f} + {slip:.2f} slippage) is above the limit "
+                          f"{plan['premium_limit']:.2f}: no chase")
+        cap = core.policy()["risk"]["stop_cap_pct"]
+        ceiling = core.cents_up(fill * (1 - cap) + slip + 2 * fee / 100)          # the 20% line from the ACTUAL fill
+        if ceiling >= q["bid"] or ceiling >= fill:
+            return None, f"the 20% planned-loss line {ceiling:.2f} would sit at or above the bid {q['bid']:.2f}: infeasible"
+        if plan["premium_stop"] < ceiling:
+            plan = dict(plan, premium_stop=ceiling)                                 # tighten to the actual 20% line
+    elif plan.get("premium_limit") and q["ask"] > plan["premium_limit"]:
         return None, f"ask {q['ask']:.2f} above the limit {plan['premium_limit']:.2f}: no chase"
     pid = f"{portfolio[:2].upper()}-{idea}"
     st = {"v": plan.get("v", 3), "symbol": sym, "entry_premium": fill, "fees_side": fee, "slip_at_entry": slip,
@@ -124,7 +170,8 @@ def buy(portfolio, idea, ticker, side, plan, qty, signal_t):
           "exit_profile": plan.get("exit_profile", "v3"), "variant": plan.get("variant"),
           "entry_px": plan.get("entry_px") or underlying_px(ticker), "delta_entry": q.get("delta"),
           "fill_t": store.ts(), "quote_t": str(q.get("quote_time")) if q.get("quote_time") is not None else None,
-          "latency_s": _latency(signal_t), "gate": plan.get("gate"), "catalyst_id": plan.get("catalyst_id")}
+          "latency_s": _latency(signal_t), "gate": plan.get("gate"), "catalyst_id": plan.get("catalyst_id"),
+          "exec_model": EXEC_MODEL["strict" if strict else "legacy"], "x_read": plan.get("x_read"), "row": plan.get("row")}
     for k in ("noise_upper", "noise_lower", "orb_high", "orb_low", "atr14", "rvol", "contract_score", "scan_id", "expiry"):
         if plan.get(k) is not None:
             st[k] = plan[k]
@@ -142,6 +189,12 @@ def buy(portfolio, idea, ticker, side, plan, qty, signal_t):
                 f"stop {_px(plan.get('stop_px'))} underlying / ${plan['premium_stop']:.2f} premium | T1 {plan.get('t1') or 'none'} {_px(plan.get('t1_level'))}",
                 portfolio, pid, {"quote_age_s": q.get("age_s"), "provider": q.get("provider")})
     return pid, None
+
+
+def pd_ts(v):
+    import pandas as pd
+    t = pd.Timestamp(v)
+    return (t.tz_localize(core.ET) if t.tzinfo is None else t).to_pydatetime()
 
 
 def _latency(signal_t):
@@ -171,7 +224,7 @@ def sell(p, qty, reason):
                         p["ledger"], p["id"])
         return 0, err
     store.kv_set(f"pending_exit:{p['id']}", None)
-    slip, fee = costs(q["ask"] - q["bid"])
+    slip, fee = strict_costs() if is_strict(p["ledger"]) else costs(q["ask"] - q["bid"])
     px = round(max(0.0, q["bid"] - slip), 4)
     pnl = round((px - p["fill"]) * 100 * qty - fee * qty, 2)
     p["realized"] = round((p["realized"] or 0) + pnl, 2)

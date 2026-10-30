@@ -59,6 +59,13 @@ def _ncdf(x):
     return 0.5 * (1 + math.erf(x / math.sqrt(2)))
 
 
+# v3.3 (replay2): theta units. bs() returns theta per CALENDAR MINUTE. Every quote dict in the desk carries theta per
+# CALENDAR DAY (Schwab's convention), and optionmath charges it over the 390-minute session (|theta_day| x hold / 390).
+# replay1 multiplied the per-minute value by 60 (per hour), so modeled decay in replays was ~24x too small.
+THETA_MIN_TO_DAY = 24 * 60
+REPLAY_VERSION = "2026-10-30.replay2"
+
+
 def bs(spot, strike, iv, side, now):
     """Black-Scholes price/delta/gamma/theta(per minute) for a 0DTE option, r = 0. Time floored at 2 minutes."""
     close = now.replace(hour=16, minute=0, second=0, microsecond=0)
@@ -135,7 +142,7 @@ class ReplayProvider(marketdata.Provider):
             wmid = bs(worst, strike, iv, side, now)[0]
             bid = min(bid, wmid - sp / 2)
         return {"bid": round(max(bid, 0.01), 2), "ask": round(max(ask, 0.02), 2), "mid": round(mid, 3), "delta": round(d, 3),
-                "gamma": round(g, 4), "theta": round(th * 60, 4), "iv": iv, "quote_time": pd.Timestamp(now) - pd.Timedelta(seconds=1),
+                "gamma": round(g, 4), "theta": round(th * THETA_MIN_TO_DAY, 4), "iv": iv, "quote_time": pd.Timestamp(now) - pd.Timedelta(seconds=1),
                 "bid_size": 100, "ask_size": 100, "multiplier": 100, "src": self.name}
 
     def option_quote(self, symbol):

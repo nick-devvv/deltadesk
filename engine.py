@@ -258,7 +258,7 @@ def discipline_gate(ledger, grade_):
     day after M. Main paper adds the 4-ideas/day cap (enforced atomically at reservation)."""
     d = core.policy()["discipline"]
     day = core.now_et().strftime("%Y-%m-%d")
-    led = ledger if ledger in ("paper", "research", "old", "real", "exit31", "noise", "inplay") else "real"
+    led = ledger if ledger in paper.PORTFOLIOS + ("real",) else "real"     # v3.3: every ledger counts its OWN streak
     s = paper.streak(led, day)
     closed = sorted([p for p in store.positions(ledger=led, day=day) if p["status"] == "CLOSED"], key=lambda p: p["closed"] or "")
     if s >= d.get("stop_day_after_consecutive_losses", 99):
@@ -297,6 +297,20 @@ def build_plan(ticker, side, level=None, mode="check", ledger="real"):
         plan["gate"] = {"state": "NO TRADE", "rejected": f"entry gate error ({type(e).__name__}): no entry without the gate"}
         if plan["state"] == "READY":
             plan["state"], plan["reason"] = "PASS", plan["gate"]["rejected"]
+    try:                                   # v3.3: evidence status of the setup family (strategy_registry)
+        import strategy_registry
+        fam = plan.get("setup")
+        if fam and fam != "LEVEL":
+            ev = strategy_registry.status_for(fam, plan["ticker"])
+            plan["evidence"] = ev
+            plan["research_only"] = not ev["actionable"]
+        else:
+            plan["evidence"] = {"status": "YOUR IDEA", "actionable": False,
+                                "why": "a discretionary idea: the desk checks it with its levels and the gate, but no tested edge stands behind it"}
+            plan["research_only"] = False
+    except Exception as e:
+        plan["evidence"] = {"status": "RESEARCH ONLY", "actionable": False, "why": f"evidence lookup failed ({type(e).__name__})"}
+        plan["research_only"] = plan.get("setup") not in (None, "LEVEL")
     try:
         plan["assistant"] = assess(plan)
     except Exception as e:                    # the read is a summary; a bug in it must never block a plan
@@ -370,6 +384,9 @@ def assess(plan, s=None):
         ex = plan["exit"]
         out["state"] = "ENTRY CONDITIONS MET"
         out["why"] = "every predefined condition below passed. You decide, and you place any order yourself."
+        if plan.get("research_only"):
+            out["why"] = ("the setup's rules are met, but this setup family is RESEARCH ONLY (no demonstrated edge in testing): "
+                          "treat it as information, not an entry instruction.")
         out["conditions_met"] = out["conditions_met"] + [f"trigger: {plan.get('trigger_rule')}",
                                  f"grade {plan.get('grade')} ({', '.join(plan.get('grade_passed') or []) or 'rules passed'})",
                                  f"reward/risk {ex['rr_underlying']} on the stock, {ex['rr_option']} on the option (minimum {core.policy()['v3']['min_reward_risk']})",
@@ -505,6 +522,13 @@ def setup_alert(ticker, idea, plan):
     """Alert Nick only when he could actually take it: A/B, his rules allow it, full plan with a contract."""
     if plan.get("grade") not in ("A", "B") or plan.get("state") not in ("READY",) or not plan.get("contract") or not plan.get("qty"):
         return False
+    if plan.get("research_only") or not (plan.get("evidence") or {}).get("actionable"):
+        k = f"research_note:{ticker}:{idea['side']}:{idea['family']}:{core.now_et().strftime('%Y-%m-%d %H')}"
+        if not store.kv_get(k):                    # v3.3: no trade alert for a setup family without demonstrated edge
+            store.kv_set(k, True)
+            store.event("note", f"RESEARCH SETUP (not an entry): {ticker} {idea['family']} {'calls' if idea['side'] == 'C' else 'puts'} met its "
+                        f"rules, but this setup family is {(plan.get('evidence') or {}).get('status', 'RESEARCH ONLY')}: no demonstrated edge.", "research")
+        return False
     gate = discipline_gate("real", plan["grade"])
     if gate:
         return False
@@ -581,7 +605,7 @@ def paper_scan(ticker):
             try:                    # anti-chasing gate: OBSERVE-ONLY for main paper (frozen v3 forward test); enforced in "gated"
                 sn = entrygate.snap_from(s)
                 gs = entrygate.define(ticker, idea["side"], idea["family"].lower(), float(idea["level"]), float(idea["invalidation"]),
-                                      tp.get("t1_level"), tp.get("t1"), sn, idea["confirm_rule"], confirmed_at=t)
+                                      tp.get("t1_level"), tp.get("t1"), sn, idea["confirm_rule"], confirmed_at=t, scope="main-observe")
                 gate_obs = entrygate.evaluate(gs, sn)
                 plan["gate"] = {k: gate_obs.get(k) for k in ("state", "rejected", "latest_entry", "rr_now", "version", "id")}
             except Exception as e:
@@ -633,8 +657,6 @@ def paper_scan(ticker):
                             decision = "ORDER"
                             if pf == "research":
                                 _mirror_exit31(idea_id, ticker, idea, dict(plan, **{k: qty_plan[k] for k in ("premium_limit",)}), qty, t)
-                                _mirror_gated(idea_id, ticker, idea, dict(plan, **{k: qty_plan[k] for k in ("premium_limit",)}), qty, t,
-                                              gate_obs, sess, pname)
                         else:
                             paper.release_idea(pf, idea_id, bwhy)
                             reasons.append(bwhy)
@@ -647,6 +669,19 @@ def paper_scan(ticker):
                 if decision != "ORDER":
                     txt += " | " + "; ".join((reasons + ([limit] if limit else []))[:3])
                 store.event("opportunity", txt, "paper", idea_id)
+        # v3.3: the gated ledger evaluates EVERY candidate on its own (not only the ones research happened to fill)
+        if tp:
+            try:
+                _gated_independent(idea_id, ticker, idea, plan, rows, v3, s, g, t, sess, pname, list(base))
+            except Exception as e:
+                _record(f"gated-{idea_id}", sess, idea, "gated", "SKIP", [f"gated ledger error: {type(e).__name__}"], None, plan, pname)
+        try:                                   # v3.3: every candidate is routed (shadow-logged until a strategy qualifies)
+            import strategy_router
+            strategy_router.route({"ticker": ticker, "side": idea["side"], "family": idea["family"], "setup_id": idea_id,
+                                   "fresh": entrygate.snap_from(s).get("fresh"), "bar_complete": True,
+                                   "regime": (v3.get("regime") or {}).get("label")})
+        except Exception:
+            pass
         # Nick's alert (same plan, his own discipline)
         try:
             p_real = build_plan(ticker, idea["side"], idea["level"], "watch")
@@ -690,6 +725,54 @@ def _mirror_gated(idea_id, ticker, idea, plan, qty, t, gate_obs, sess, pname):
     if not pid:
         paper.release_idea("gated", idea_id, why)
     _record(f"gated-{idea_id}", sess, idea, "gated", "ORDER" if pid else "SKIP", [] if pid else [why], None, plan, pname)
+    return pid
+
+
+def _gated_independent(idea_id, ticker, idea, plan, rows, v3, s, g, t, sess, pname, reasons):
+    """v3.3 "gated" research ledger (version from policy research_variants.gated): every candidate the engine sees is
+    admitted or rejected HERE, with its own gate setup (scope "gated"), its own limits and its own size, before any fill.
+    It never depends on whether another ledger traded. Every decision is recorded with its reason."""
+    v = (core.policy().get("research_variants") or {}).get("gated") or {}
+    if not v.get("enabled"):
+        return None
+    if store.q("SELECT id FROM candidates WHERE id=?", (f"gated-{idea_id}",)):
+        return None                                              # decided once per idea
+    sn = entrygate.snap_from(s)
+    gs = entrygate.define(ticker, idea["side"], idea["family"].lower(), float(idea["level"]), float(idea["invalidation"]),
+                          plan.get("t1_level"), plan.get("t1"), sn, idea["confirm_rule"], confirmed_at=t, scope="gated")
+    ev = entrygate.evaluate(gs, sn)
+    gplan = dict(plan, gate={k: ev.get(k) for k in ("state", "rejected", "latest_entry", "rr_now", "version", "id")},
+                 variant="gated", policy_version=v.get("version"))
+    limit = None
+    if not sess["entries_allowed"]:
+        reasons.append(f"session {sess['state']}")
+    if ev["state"] != "ENTRY CONDITIONS MET":
+        _record(f"gated-{idea_id}", sess, idea, "gated", "SKIP-GATE", reasons + [f"gate {ev['state']}: {ev['rejected']}"], None, gplan, pname)
+        return None
+    gate = discipline_gate("gated", g)
+    if gate:
+        limit = gate
+    opens = store.positions(ledger="gated", status="OPEN")
+    if len(opens) >= core.policy()["risk"]["max_open_positions"]:
+        limit = limit or "max open positions"
+    cd = _setup_cooldown("gated", ticker, idea)
+    limit = limit or cd
+    if reasons or limit:
+        _record(f"gated-{idea_id}", sess, idea, "gated", "BLOCKED-LIMIT" if limit and not reasons else "SKIP", reasons, limit, gplan, pname)
+        return None
+    qty_plan, _, _ = optionmath.plan_trade(idea, v3, rows, g, ledger_budget("gated")["left"], "gated")
+    qty = (qty_plan or {}).get("qty", 0)
+    if qty <= 0:
+        _record(f"gated-{idea_id}", sess, idea, "gated", "SKIP", [(qty_plan or {}).get("qty_note") or "size 0"], None, gplan, pname)
+        return None
+    ok, rwhy = paper.reserve_idea("gated", idea_id, ticker, idea["side"], core.policy()["v3"]["limits"]["main_ideas_per_day"])
+    if not ok:
+        _record(f"gated-{idea_id}", sess, idea, "gated", "BLOCKED-LIMIT", [], rwhy, gplan, pname)
+        return None
+    pid, why = paper.buy("gated", idea_id, ticker, idea["side"], dict(gplan, premium_limit=qty_plan["premium_limit"]), qty, t)
+    if not pid:
+        paper.release_idea("gated", idea_id, why)
+    _record(f"gated-{idea_id}", sess, idea, "gated", "ORDER" if pid else "SKIP", [] if pid else [why], None, gplan, pname)
     return pid
 
 
@@ -952,7 +1035,7 @@ def tick():
             want = []
             for p in store.positions(status="OPEN"):
                 want.append(p["symbol"])
-                if p["ledger"] in ("earn_post", "earn_pre"):
+                if p["ledger"] in ("earn_post", "earn_pre", "board"):
                     import autopilot
                     autopilot.manage(p)
                 elif p["ledger"] == "noise":

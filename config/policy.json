@@ -307,9 +307,12 @@
     },
     "gated": {
       "enabled": true,
-      "version": "2026-10-30.v3.2-gated",
+      "version": "2026-10-30.v3.3-gated2",
       "mirror_of": "research",
-      "why": "the research entries, only when the anti-chasing entry gate says ENTRY CONDITIONS MET (rejections recorded)"
+      "why": "every research-eligible candidate, admitted independently (own gate setup, limits and size) only when the gate2 entry gate says ENTRY CONDITIONS MET; rejections recorded. v3.2 'gated' results (mirror of research fills, gate1) stay under their old version.",
+      "previous_versions": [
+        "2026-10-30.v3.2-gated"
+      ]
     }
   },
   "scanner": {

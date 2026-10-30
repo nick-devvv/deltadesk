@@ -6,6 +6,7 @@ BEFORE any result existed. Read-only: it never changes a rule or a trade.
 """
 import json
 import random
+from datetime import datetime
 import sys
 from pathlib import Path
 
@@ -49,6 +50,72 @@ def stats(pnls):
             "max_drawdown": round(dd, 2), "avg_loss": round(sum(losses) / len(losses), 2) if losses else None}
 
 
+def stats_v2(trades, sessions=None, seed=7, boots=2000):
+    """v3.3 evaluation (eval2). trades: [{pnl, session, opened?, closed?}]. Differences from stats():
+      * a win is pnl > 0 and a loss pnl < 0, with no +/-$1 band (exact zeros are listed as flat);
+      * the 95% interval resamples whole SESSIONS (trades on one day are not independent), including sessions with
+        no trades when `sessions` lists them;
+      * concurrency (most positions open at once) and exposure (minutes held) are reported."""
+    n = len(trades)
+    out = {"n": n, "version": "eval2", "sessions": len(set(sessions or [t["session"] for t in trades]))}
+    if not n:
+        return dict(out, note="no trades: no win rate")
+    p = [float(t["pnl"]) for t in trades]
+    wins, losses = [x for x in p if x > 0], [x for x in p if x < 0]
+    eq = peak = dd = 0.0
+    for x in p:
+        eq += x
+        peak = max(peak, eq)
+        dd = max(dd, peak - eq)
+    by = {}
+    for t in trades:
+        by.setdefault(t["session"], []).append(float(t["pnl"]))
+    days = sorted(set(sessions or []) | set(by))
+    rnd = random.Random(seed)
+    sims = []
+    for _ in range(boots):
+        pick = [rnd.choice(days) for _ in days]
+        tot = [x for d in pick for x in by.get(d, [])]
+        sims.append(sum(tot) / len(tot) if tot else 0.0)
+    sims.sort()
+    conc, expo = 0, 0.0
+    ev = []
+    for t in trades:
+        if t.get("opened") and t.get("closed"):
+            a, b = datetime.fromisoformat(t["opened"]), datetime.fromisoformat(t["closed"])
+            expo += (b - a).total_seconds() / 60
+            ev += [(a, 1), (b, -1)]
+    cur = 0
+    for _, k in sorted(ev, key=lambda x: (x[0], x[1])):
+        cur += k
+        conc = max(conc, cur)
+    top = sorted(p, reverse=True)[:5]
+    out.update(net=round(sum(p), 2), expectancy=round(sum(p) / n, 2),
+               ci95_session=[round(sims[int(0.025 * boots)], 2), round(sims[int(0.975 * boots) - 1], 2)],
+               win_rate=round(100 * len(wins) / n, 1), wins=len(wins), losses=len(losses), flat=n - len(wins) - len(losses),
+               avg_win=round(sum(wins) / len(wins), 2) if wins else None, avg_loss=round(sum(losses) / len(losses), 2) if losses else None,
+               profit_factor=round(sum(wins) / -sum(losses), 2) if losses else None, max_drawdown=round(dd, 2),
+               max_concurrent=conc, exposure_min=round(expo, 1),
+               top5_share=round(sum(top) / sum(p), 2) if sum(p) > 0 else None, small_sample=n < 30)
+    return out
+
+
+def versioned(led, since="2000-01-01"):
+    """One ledger split by policy version AND execution model: old and corrected trades are never pooled."""
+    import json as _j
+    rows = store.q("SELECT date, realized, plan, policy_version, opened, closed FROM positions WHERE ledger=? AND date>=? AND status='CLOSED' "
+                   "ORDER BY closed", (led, since))
+    groups = {}
+    for r in rows:
+        try:
+            pl = _j.loads(r["plan"]) if isinstance(r["plan"], str) else (r["plan"] or {})
+        except ValueError:
+            pl = {}
+        k = (r["policy_version"] or "unversioned", pl.get("exec_model") or "exec1 (legacy)")
+        groups.setdefault(k, []).append({"pnl": r["realized"] or 0, "session": r["date"], "opened": r["opened"], "closed": r["closed"]})
+    return [{"policy_version": k[0], "exec_model": k[1], **stats_v2(v)} for k, v in sorted(groups.items())]
+
+
 def violations(since, version):
     out = []
     for led in ("paper", "research"):
@@ -71,6 +138,7 @@ LEDGER_INFO = {
     "inplay": ("Stocks in play", "scanner ORB on the day's top-volume names, with options"),
     "old": ("Old rules", "frozen 20/12/10% stops"),
     "gated": ("Gated entries", "the research entries, only when the anti-chasing gate passes"),
+    "board": ("Stocks: setups board", "v3.3: qualifying setups-board rows on stocks/ETFs, through the entry gate, 1 contract; X read recorded, never a trigger"),
     "earn_post": ("Earnings: after the release", "post-release confirmation setups on reporting names"),
     "earn_pre": ("Earnings: held through", "research only: an ATM straddle held through the report, sized by the full premium"),
     "real": ("You", "your reported trades"),
@@ -208,6 +276,7 @@ def report():
         res["verdict"] = "criteria met (paper only; Nick decides what happens next)" if all(checks.values()) else \
                          "criteria not met: " + ", ".join(k for k, ok in checks.items() if not ok)
     res["note"] = "Paper results with modeled costs. A pass is not permission for real-money automation or larger size."
+    res["versioned"] = {led: versioned(led) for led in ("paper", "research", "gated", "board", "earn_post", "noise", "inplay", "exit31", "old", "real")}
     res["rules_compare"] = rules_compare()            # everything the gate has recorded (it started with v3.2)
     res["latency"] = latency()
     return res

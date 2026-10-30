@@ -427,7 +427,13 @@ def test_early_close_deadline_and_eastern_time():
 # ================================================================ strategy flow end to end
 def test_vwap_macd_one_strategy_retest_entry_full_plan_and_no_duplicates(env):
     import entrygate
+    import strategy_registry
     env.setattr(entrygate, "cfg", lambda: dict(entrygate.DEFAULTS, zone_atr5=3.0, min_rr=2.0))   # this test is about the v3 flow, not the gate
+    # v3.3: trade alerts only exist for PAPER QUALIFIED families (none are qualified today); this test checks the alert's
+    # content, so it pretends VWAP_MACD were qualified
+    real = strategy_registry.status_for
+    env.setattr(strategy_registry, "status_for", lambda fam, t: dict(real(fam, t), status="PAPER QUALIFIED", actionable=True)
+                if fam == "VWAP_MACD" else real(fam, t))
     clock, fk = fakes.install(env, vm_path, DAY, s0=600.0)
     run(clock, "09:31", "10:20")
     c = store.q("SELECT * FROM candidates WHERE family='VWAP_MACD' AND portfolio='paper' AND decision='ORDER'")
