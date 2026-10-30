@@ -353,11 +353,19 @@ def test_stops_only_ratchet_toward_protection_and_widening_is_refused(env):
     assert exits._ratchet(p, 1.90, "test higher") is True and p["plan"]["stops"][-1]["prev"] == 1.64
     import commands
     commands.handle("IN SPY 600C 1 at 2.00", "SPY")
-    r = commands.handle("STOP 1.40", "SPY")
-    assert "REFUSED" in r["reply"]
-    r = commands.handle("STOP 1.40 force", "SPY")
-    assert "WIDENED" in r["reply"]
     real = store.positions(ledger="real", status="OPEN")[0]
+    floor = real["plan"]["ceiling_stop"]                               # the 20% max planned loss on the fill
+    assert 1.60 <= floor <= 1.66
+    r = commands.handle("STOP 1.80", "SPY")
+    assert "recorded" in r["reply"]                                    # tightening is accepted
+    r = commands.handle("STOP 1.70", "SPY")
+    assert "REFUSED" in r["reply"]                                     # widening needs 'force'
+    r = commands.handle("STOP 1.70 force", "SPY")
+    assert "WIDENED" in r["reply"]                                     # recorded as a rule break, still inside 20%
+    r = commands.handle("STOP 1.40 force", "SPY")
+    assert "20% max planned loss" in r["reply"]                        # never past the 20% cap, even when forced
+    real = store.positions(ledger="real", status="OPEN")[0]
+    assert real["plan"]["premium_stop"] == 1.70 and real["plan"]["reported_stop"] == 1.40
     assert real["plan"]["stops"][-1]["by"] == "Nick (reported)"
 
 

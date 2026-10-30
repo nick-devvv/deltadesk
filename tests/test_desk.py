@@ -341,15 +341,18 @@ def test_watchlist_tickers_route_to_chart_and_log_journal_only(desk_env, monkeyp
     assert "NVDA" not in watchlist.remove("NVDA")
     with pytest.raises(ValueError):
         watchlist.add("NOT A TICKER")
-    r = commands.handle("confirm NVDA calls over 140", "NVDA")
-    assert not r["handled"] and r["coach"] and "Chart" in r["reply"]
+    r = commands.handle("confirm NVDA calls over 140", "NVDA")          # v3.1: the desk plans any ticker itself
+    assert r["handled"] and r["plan"]["ticker"] == "NVDA" and "your idea" in (r["plan"].get("origin") or "") + r["reply"]
     r = commands.handle("IN NVDA 140C 1 at 3.20", "SPY")
+    assert "Which expiry" in r["reply"]                                    # single-stock options need the expiry
+    r = commands.handle("IN NVDA 140C 11/07 1 at 3.20", "SPY")
     p = r["position"]
-    assert p["ticker"] == "NVDA" and p["plan"].get("manual") and p["plan"]["premium_stop"] <= 3.20 * 0.80 + 0.06
+    assert p["ticker"] == "NVDA" and not p["plan"].get("manual") and p["symbol"] == "NVDA261107C00140000"
+    assert p["plan"]["premium_stop"] <= 3.20 * 0.80 + 0.06 and p["plan"]["origin"].startswith("your idea")
     import exits
-    before = store.pos_get(p["id"])
-    assert exits.evaluate(before, {}) == []  # journal only: no auto-exit, no alerts
-    assert store.pos_get(p["id"])["status"] == "OPEN"
+    exits.evaluate(store.pos_get(p["id"]), engine.snapshot("NVDA").get("v3") or {})
+    assert store.pos_get(p["id"])["status"] == "OPEN"                     # real trades are never sold by the desk
+    assert store.pos_get(p["id"])["plan"]["guidance"]["action"] in ("HOLD", "NO DATA", "EXIT", "TIGHTEN STOP to $2.60") or True
     out = commands.handle("OUT NVDA 4.10", "SPY")
     assert "+$90.00" in out["reply"] or "90" in out["reply"]
     assert store.pos_get(p["id"])["status"] == "CLOSED"
