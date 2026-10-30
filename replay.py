@@ -98,8 +98,20 @@ class ReplayProvider(marketdata.Provider):
         return self._finished(ticker)
 
     def _bar(self, ticker):
-        b = self._finished(ticker)
-        return b.iloc[-1] if b is not None and len(b) else None
+        """Last finished bar, by binary search (called many times per simulated minute)."""
+        m = self.m1s.get(ticker)
+        if m is None or not len(m):
+            return None
+        key = (ticker, self.clock())
+        hit = self.__dict__.setdefault("_bar_cache", {}).get(key)
+        if hit is not None:
+            return hit
+        i = m.index.searchsorted(pd.Timestamp(self.clock()) - pd.Timedelta(minutes=1), side="right")
+        b = m.iloc[i - 1] if i > 0 else None
+        if len(self._bar_cache) > 64:
+            self._bar_cache.clear()
+        self._bar_cache[key] = b
+        return b
 
     def quote(self, ticker):
         b = self._bar(ticker)
