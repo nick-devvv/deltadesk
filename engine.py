@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 import alerts
 import core
 import desk
+import entrygate
 import exits
 import indicators as I
 import marketdata
@@ -282,6 +283,120 @@ def event_block():
 
 # ======================= plans (chat, watches, alerts) =======================
 def build_plan(ticker, side, level=None, mode="check", ledger="real"):
+    """The plan (state WAIT / READY / PASS / DATA UNAVAILABLE) plus the assistant's read of it (see assess)."""
+    plan = _build_plan(ticker, side, level, mode, ledger)
+    try:
+        if plan["state"] != "DATA UNAVAILABLE":
+            g = entrygate.for_plan(plan, snapshot(ticker))
+            if g:
+                plan["gate"] = g
+                if plan["state"] == "READY" and g["state"] != "ENTRY CONDITIONS MET":
+                    plan["state"] = "WAIT" if g["state"] in ("WATCHING", "CONFIRMATION NEEDED", "TOO EXTENDED") else "PASS"
+                    plan["reason"] = f"entry gate {g['state']}: {g['rejected']}"
+    except Exception as e:
+        plan["gate"] = {"state": "NO TRADE", "rejected": f"entry gate error ({type(e).__name__}): no entry without the gate"}
+        if plan["state"] == "READY":
+            plan["state"], plan["reason"] = "PASS", plan["gate"]["rejected"]
+    try:
+        plan["assistant"] = assess(plan)
+    except Exception as e:                    # the read is a summary; a bug in it must never block a plan
+        plan["assistant"] = {"state": "WAIT", "at": core.now_et().strftime("%H:%M:%S"), "why": f"assessment failed: {type(e).__name__}",
+                             "observations": [], "interpretation": [], "conditions_met": [], "missing": []}
+    return plan
+
+
+ASSIST_STATES = ("WATCHING", "CONFIRMATION NEEDED", "ENTRY CONDITIONS MET", "TOO EXTENDED", "WAIT FOR RETEST", "INVALIDATED", "NO TRADE")
+
+
+def assess(plan, s=None):
+    """Evidence-based state for Nick, for ANY ticker, from that ticker's own snapshot:
+      WAIT                  conditions are incomplete (or no fresh data)
+      SETUP FORMING         a trigger is defined and named; the missing confirmation is listed
+      ENTRY CONDITIONS MET  every predefined condition passed (listed); Nick still decides and places the order
+      INVALIDATED           the last finished 1m close is beyond the invalidation level
+    observations = numbers read from Schwab data; interpretation = the desk's rules applied to them. No claims about
+    who is buying or what happens next."""
+    s = s or snapshot(plan["ticker"])
+    v3 = s.get("v3") or {}
+    up = plan["side"] == "C"
+    at = core.now_et().strftime("%H:%M:%S")
+    out = {"at": at, "observations": [], "interpretation": [], "conditions_met": [], "missing": [], "risk": None}
+    if plan["state"] == "DATA UNAVAILABLE":
+        out.update(state="NO TRADE", why=f"no fresh data for {plan['ticker']}: {plan.get('reason')}")
+        out["missing"].append("fresh Schwab bars and quotes")
+        return out
+    c1, t = v3.get("close1"), v3.get("t")
+    d = plan.get("data") or {}
+    if c1 is not None and t is not None:
+        out["observations"].append(f"last finished 1m close {c1:.2f} at {t.strftime('%H:%M')} ET ({d.get('provider')}, bar {d.get('bar_age_s')} s old)")
+    vw = v3.get("vwap")
+    if vw is not None and c1 is not None:
+        out["observations"].append(f"session VWAP {vw:.2f}: price {'above' if c1 > vw else 'below'} by {abs(c1 - vw):.2f}")
+    tl, inv = plan.get("trigger_level"), plan.get("invalidation")
+    if tl is not None and c1 is not None:
+        note = plan.get("setup_note") or ""
+        out["observations"].append(f"trigger {note if f'{tl:.2f}' in note else (note + ' ' + format(tl, '.2f')).strip()} ({c1 - tl:+.2f} from it)")
+    if inv is not None and c1 is not None:
+        out["observations"].append(f"invalidation {inv:.2f} ({c1 - inv:+.2f} from it)")
+    c = plan.get("contract")
+    if c:
+        out["observations"].append(f"{c['label']} bid {c['bid']:.2f} / ask {c['ask']:.2f} ({c.get('feed')})")
+    if plan.get("regime"):
+        out["interpretation"].append(f"regime by the desk's rules: {plan['regime']}")
+    if plan.get("setup"):
+        out["interpretation"].append(f"setup: {plan['setup']} ({plan.get('origin', '')}), grade {plan.get('grade', '—')}")
+    for x in plan.get("support", [])[:3]:
+        out["interpretation"].append("for: " + x)
+    for x in plan.get("objections", [])[:3]:
+        out["interpretation"].append("against: " + x)
+    g = plan.get("gate")
+    triggered = plan["state"] == "READY" or bool(g and g.get("confirmed_at"))
+    invalid = triggered and inv is not None and c1 is not None and ((c1 < inv) if up else (c1 > inv))
+    if g and g.get("checks") is not None:
+        out["observations"].append(f"entry zone {g['zone'][0]:.2f} to latest acceptable {g['latest_entry']:.2f}; target {g.get('target_name')} {g['target']}"
+                                   if g.get("latest_entry") is not None and g.get("target") is not None else "no evidence-based target")
+        if g.get("rr_now") is not None:
+            out["observations"].append(f"remaining reward/risk from the current price after est. costs: {g['rr_now']}")
+        out["gate"] = {k: g.get(k) for k in ("state", "rejected", "kind", "trigger", "zone", "latest_entry", "invalidation", "target", "version", "id")}
+        out["conditions_met"] = [f"{x['check']}: {x['detail']}" for x in g["checks"] if x["pass"]]
+        out["missing"] = [f"{x['check']}: {x['detail']}" for x in g["checks"] if not x["pass"]] + ([g["rejected"]] if g.get("rejected") else [])
+    if g and g.get("checks") is not None and not (plan["state"] == "READY" and g["state"] == "ENTRY CONDITIONS MET"):
+        out.update(state=g["state"], why=g.get("rejected") or plan.get("reason") or "conditions incomplete")
+        if g["state"] == "ENTRY CONDITIONS MET":           # the gate passed but something else (grade, contract, session) didn't
+            out.update(state="NO TRADE" if plan["state"] == "PASS" else "CONFIRMATION NEEDED", why=plan.get("reason") or "; ".join(plan.get("objections", [])[:2]) or "conditions incomplete")
+    elif invalid:
+        out.update(state="INVALIDATED", why=f"the 1m close {c1:.2f} is {'below' if up else 'above'} the invalidation {inv:.2f}")
+    elif plan["state"] == "READY" and c:
+        ex = plan["exit"]
+        out["state"] = "ENTRY CONDITIONS MET"
+        out["why"] = "every predefined condition below passed. You decide, and you place any order yourself."
+        out["conditions_met"] = out["conditions_met"] + [f"trigger: {plan.get('trigger_rule')}",
+                                 f"grade {plan.get('grade')} ({', '.join(plan.get('grade_passed') or []) or 'rules passed'})",
+                                 f"reward/risk {ex['rr_underlying']} on the stock, {ex['rr_option']} on the option (minimum {core.policy()['v3']['min_reward_risk']})",
+                                 f"contract {c['label']}: quote and spread inside the limits",
+                                 f"session {plan['session']['state']}: entries allowed"]
+    elif plan["state"] == "WAIT":
+        out.update(state="CONFIRMATION NEEDED", why=f"trigger defined: {plan.get('trigger_rule')}")
+        out["missing"] = out["missing"] or [f"{plan.get('trigger_rule')}"] + [o for o in plan.get("objections", [])[:2]]
+    else:
+        out.update(state="NO TRADE", why=plan.get("reason") or "conditions are incomplete")
+        out["missing"] = [plan.get("reason") or "see the objections"] if plan.get("reason") else list(plan.get("objections", [])[:3])
+    if c:
+        ex = plan["exit"]
+        lim, stop, q = plan["premium_limit"], ex["stop"], max(1, plan.get("qty") or 1)
+        per = round((lim - stop) * 100, 2)
+        out["risk"] = {"underlying_invalidation": f"{plan['ticker']} 1m close {'below' if up else 'above'} {ex['stop_px']:.2f}" if ex.get("stop_px") is not None else None,
+                       "premium_stop": stop, "entry_limit": lim, "max_loss_pct": ex.get("stop_pct"),
+                       "per_contract_usd": per, "qty": q, "total_usd": round(per * q, 2),
+                       "ceiling_stop": round(lim * (1 - (ex.get("stop_pct") or core.policy()["risk"]["stop_cap_pct"])), 2),
+                       "ceiling_total_usd": round(lim * (ex.get("stop_pct") or core.policy()["risk"]["stop_cap_pct"]) * 100 * q, 2),
+                       "full_premium_usd": round(lim * 100 * q, 2),
+                       "stressed_per_contract_usd": ex.get("loss_per_contract"),
+                       "note": "planned threshold: Robinhood fills, gaps and slippage can make the real loss larger"}
+    return out
+
+
+def _build_plan(ticker, side, level=None, mode="check", ledger="real"):
     """Complete conditional plan with evidence. state: WAIT / READY / PASS / DATA UNAVAILABLE."""
     ticker, side = ticker.upper(), side.upper()[:1]
     up = side == "C"
@@ -461,6 +576,16 @@ def paper_scan(ticker):
             base.append("grade C (failed: " + ", ".join(gf) + ")")
         idea_id = idea.get("idea_hint") or f"{sess['date']}-{ticker}-{idea['side']}-{idea['family']}-{idea['bar'][11:16]}"
         plan = dict(tp or {}, family=idea["family"], entry_mode=idea.get("entry_mode"), grade=g, evidence_rule=idea["confirm_rule"])
+        gate_obs = None
+        if tp:
+            try:                    # anti-chasing gate: OBSERVE-ONLY for main paper (frozen v3 forward test); enforced in "gated"
+                sn = entrygate.snap_from(s)
+                gs = entrygate.define(ticker, idea["side"], idea["family"].lower(), float(idea["level"]), float(idea["invalidation"]),
+                                      tp.get("t1_level"), tp.get("t1"), sn, idea["confirm_rule"], confirmed_at=t)
+                gate_obs = entrygate.evaluate(gs, sn)
+                plan["gate"] = {k: gate_obs.get(k) for k in ("state", "rejected", "latest_entry", "rr_now", "version", "id")}
+            except Exception as e:
+                plan["gate"] = {"state": "error", "rejected": f"{type(e).__name__}: {e}"[:120]}
         if tp:
             win = core.window_for(core.hm(core.now_et())) or core.policy()["windows"][-1]
             plan["flat_by"] = (core.now_et() + timedelta(minutes=win["flat_min"])).strftime("%H:%M")
@@ -508,6 +633,8 @@ def paper_scan(ticker):
                             decision = "ORDER"
                             if pf == "research":
                                 _mirror_exit31(idea_id, ticker, idea, dict(plan, **{k: qty_plan[k] for k in ("premium_limit",)}), qty, t)
+                                _mirror_gated(idea_id, ticker, idea, dict(plan, **{k: qty_plan[k] for k in ("premium_limit",)}), qty, t,
+                                              gate_obs, sess, pname)
                         else:
                             paper.release_idea(pf, idea_id, bwhy)
                             reasons.append(bwhy)
@@ -543,6 +670,26 @@ def _mirror_exit31(idea_id, ticker, idea, plan, qty, t):
     pid, why = paper.buy("exit31", idea_id, ticker, idea["side"], p31, qty, t)
     if not pid:
         paper.release_idea("exit31", idea_id, why)
+    return pid
+
+
+def _mirror_gated(idea_id, ticker, idea, plan, qty, t, gate_obs, sess, pname):
+    """Research variant "gated": the research entry, ONLY if the anti-chasing gate says ENTRY CONDITIONS MET.
+    Rejections are recorded with the failed condition, so skipped setups stay in the sample."""
+    v = (core.policy().get("research_variants") or {}).get("gated") or {}
+    if not v.get("enabled"):
+        return None
+    st = (gate_obs or {}).get("state")
+    if st != "ENTRY CONDITIONS MET":
+        _record(f"gated-{idea_id}", sess, idea, "gated", "SKIP-GATE", [f"gate {st}: {(gate_obs or {}).get('rejected')}"], None, plan, pname)
+        return None
+    ok, _ = paper.reserve_idea("gated", idea_id, ticker, idea["side"])
+    if not ok:
+        return None
+    pid, why = paper.buy("gated", idea_id, ticker, idea["side"], dict(plan, variant="gated", policy_version=v.get("version")), qty, t)
+    if not pid:
+        paper.release_idea("gated", idea_id, why)
+    _record(f"gated-{idea_id}", sess, idea, "gated", "ORDER" if pid else "SKIP", [] if pid else [why], None, plan, pname)
     return pid
 
 
@@ -805,7 +952,10 @@ def tick():
             want = []
             for p in store.positions(status="OPEN"):
                 want.append(p["symbol"])
-                if p["ledger"] == "noise":
+                if p["ledger"] in ("earn_post", "earn_pre"):
+                    import autopilot
+                    autopilot.manage(p)
+                elif p["ledger"] == "noise":
                     noiseband.manage(p)
                 elif p["ledger"] == "inplay":
                     scanner.manage(p)
@@ -818,6 +968,8 @@ def tick():
             try:
                 import schwab_stream
                 schwab_stream.want_options(want)
+                if marketdata._provider is None:     # stream the stocks behind open trades too (any ticker, not only SPY/QQQ)
+                    schwab_stream.want_equities({p["ticker"] for p in store.positions(status="OPEN")})
             except Exception:
                 pass
             check_watches()

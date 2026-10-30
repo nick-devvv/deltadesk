@@ -304,6 +304,12 @@
       "qty": 1,
       "why": "Zarattini/Barbon/Aziz 5-minute ORB on stocks in play (shares, 2016-2023), tested here with options",
       "first_entry": "09:36"
+    },
+    "gated": {
+      "enabled": true,
+      "version": "2026-10-30.v3.2-gated",
+      "mirror_of": "research",
+      "why": "the research entries, only when the anti-chasing entry gate says ENTRY CONDITIONS MET (rejections recorded)"
     }
   },
   "scanner": {
@@ -352,5 +358,39 @@
       "hold_min_est": 120,
       "strike_count": 16
     }
+  },
+  "entry_gate": {
+    "zone_atr5": 0.6,
+    "near_atr5": 0.15,
+    "retest_atr5": 0.15,
+    "window_min": 10,
+    "expire_min": 60,
+    "min_rr": null,
+    "max_stock_spread_pct": 0.15,
+    "slip_per_share": 0.01,
+    "max_move_since_news_atr5": 2.0,
+    "note": "STARTING HYPOTHESES for paper testing, not validated values. min_rr null = the v3 minimum reward/risk. ATR = 5-minute ATR(14) on regular-session bars."
+  },
+  "options_hours": {
+    "late_close": [
+      "SPY",
+      "QQQ",
+      "IWM",
+      "DIA",
+      "GLD",
+      "SLV",
+      "TLT",
+      "XLE",
+      "XLF",
+      "XLK",
+      "EEM",
+      "EFA",
+      "USO",
+      "UNG",
+      "HYG",
+      "SMH"
+    ],
+    "extended_fills": false,
+    "note": "Cboe RTH 9:30-16:00 ET; designated ETF classes to 16:15; half days 13:00/13:15. Check Cboe's designated list. No simulated fills in GTH/Curb."
   }
 }

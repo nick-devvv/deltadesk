@@ -86,6 +86,12 @@ class SchwabFetch:
         import schwab
         return schwab.quotes_full(ts)
 
+    def m1_ext(self, t, day, now):
+        """Today's 1m bars from 04:00 (pre-market included) to now: for the setups board."""
+        import schwab
+        s = datetime.combine(day, datetime.min.time(), core.ET).replace(hour=4)
+        return schwab.bars_range(t, s, now + timedelta(minutes=1), 1, extended=True)
+
     def movers(self, index, sort):
         import schwab
         return schwab.movers(index, sort)
@@ -117,21 +123,42 @@ def use(fetcher):
 def baseline(daily, m5, day, sessions=10):
     """ATR14 (Wilder), 14-day average volume, previous close, and the median first-5-minute volume over the last
     `sessions` sessions. Only data from BEFORE `day` is used."""
-    out = {"atr14": None, "avg_vol14": None, "prev_close": None, "open5_med": None, "open5_n": 0}
+    out = {"atr14": None, "avg_vol14": None, "prev_close": None, "open5_med": None, "open5_n": 0,
+           "pdh": None, "pdl": None, "tod_cum": None, "tod_n": 0}
     if daily is not None and len(daily):
         d = daily[[pd.Timestamp(x).date() < day for x in daily.index]]
+        if len(d):
+            out["pdh"], out["pdl"] = float(d["High"].iloc[-1]), float(d["Low"].iloc[-1])
+            out["prev_close"] = float(d["Close"].iloc[-1])
         if len(d) >= 15:
             a = I.atr(d, 14)
             out["atr14"] = round(float(a.iloc[-1]), 4) if a.iloc[-1] == a.iloc[-1] else None
             out["avg_vol14"] = float(d["Volume"].iloc[-14:].mean())
-            out["prev_close"] = float(d["Close"].iloc[-1])
     if m5 is not None and len(m5):
         first = m5[(m5.index.hour == 9) & (m5.index.minute == 30) & (m5.index.date < day)]
         vols = list(first["Volume"].iloc[-sessions:])
         out["open5_n"] = len(vols)
         if len(vols) >= max(5, sessions // 2):
             out["open5_med"] = float(np.median(vols))
+        out["tod_cum"], out["tod_n"] = tod_profile(m5, day, sessions)
     return out
+
+
+def tod_profile(m5, day, sessions=10):
+    """Time-of-day volume profile: for each 5-minute slot of the regular session, the MEDIAN cumulative volume from
+    09:30 through the end of that slot over the last `sessions` prior sessions. {"09:30": v, "09:35": v, ...}."""
+    r = m5[(m5.index.date < day)]
+    r = r[[("09:30" <= i.strftime("%H:%M") <= "15:55") for i in r.index]]
+    days = sorted(set(r.index.date))[-sessions:]
+    if len(days) < max(5, sessions // 2):
+        return None, len(days)
+    cums = []
+    for d in days:
+        x = r[r.index.date == d]["Volume"]
+        x.index = [i.strftime("%H:%M") for i in x.index]
+        cums.append(x.cumsum())
+    df = pd.DataFrame(cums)
+    return {k: float(np.median(df[k].dropna())) for k in df.columns if df[k].notna().sum() >= max(3, len(days) // 2)}, len(days)
 
 
 def opening_range(m1_day, minutes=5):

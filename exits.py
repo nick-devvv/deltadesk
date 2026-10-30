@@ -234,12 +234,39 @@ def guidance(p, acts, fresh, bid, green, c1, now):
                 "take_profit": ("At T1 sell 1 if you have 2+ and trail the rest; with 1 contract sell at T1" if pl.get("t1_level") is not None
                                 else "No level target: protect gains with breakeven at +10% and the lock at +25%"),
                 "flat_by": pl.get("flat_by"), "origin": pl.get("origin", "discretionary")}
+    per = round((p["fill"] - pl["premium_stop"]) * 100, 2)
+    plan_txt["contract"] = {"symbol": p.get("symbol"), "ticker": p["ticker"], "label": p.get("contract"), "expiry": _occ_exp(p.get("symbol")),
+                            "strike": _occ_strike(p.get("symbol")), "type": "call" if up else "put", "entry": p["fill"], "qty": p["qty_open"]}
+    plan_txt["exposure"] = {"underlying_invalidation": (f"{p['ticker']} 1m close {'below' if up else 'above'} {pl['stop_px']:.2f}"
+                                                        if pl.get("stop_px") is not None else None),
+                            "premium_stop": pl["premium_stop"], "ceiling_stop": pl.get("ceiling_stop"),
+                            "per_contract_usd": per, "total_usd": round(per * p["qty_open"], 2),
+                            "ceiling_total_usd": (round((p["fill"] - pl["ceiling_stop"]) * 100 * p["qty_open"], 2)
+                                                  if pl.get("ceiling_stop") is not None else None),
+                            "threshold_20pct": round(p["fill"] * (1 - core.policy()["risk"]["stop_cap_pct"]), 2),
+                            "threshold_loss_usd": round(p["fill"] * core.policy()["risk"]["stop_cap_pct"] * _mult(p) * p["qty_open"], 2),
+                            "multiplier": _mult(p),
+                            "full_premium_usd": round(p["fill"] * _mult(p) * p["qty_open"], 2),
+                            "broker_stop": "none known: the desk can't see or place Robinhood orders",
+                            "note": ("planned alert/exit threshold, not a loss cap: a fast market, a gap, a halt or a delay "
+                                     "placing the order by hand can make the real loss larger. The desk's alert level adds fees.")}
+    if pl.get("stop_px") is not None and c1 is not None:
+        held = (c1 > pl["stop_px"]) if up else (c1 < pl["stop_px"])
+        plan_txt["thesis"] = (f"intact: {p['ticker']} {c1:.2f} is still {'above' if up else 'below'} the invalidation {pl['stop_px']:.2f} "
+                              "(a pullback that stays on this side is ordinary)" if held else
+                              f"failed: {p['ticker']} closed {c1:.2f}, past the invalidation {pl['stop_px']:.2f}")
+    else:
+        plan_txt["thesis"] = "no underlying invalidation was set for this trade: only the premium levels apply"
+    plan_txt["never"] = "the desk never averages down, never widens the 20% planned level, never reverses into the opposite trade after a stop"
+    plan_txt["monitoring"] = (f"live quote for this exact contract, {pl.get('quote_age_s')} s old" if fresh else
+                              "NOT monitoring the premium: no fresh quote for this exact contract")
     if acts:
         kind, qty, why = acts[0]
         action = "EXIT" if qty >= p["qty_open"] else f"TAKE PROFIT: sell {qty}"
-        return {"action": action, "why": [why], "at": now.strftime("%H:%M:%S"), "plan": plan_txt}
+        state = "INVALIDATED" if "STRUCTURE" in why.upper() else "EXIT CONDITION MET"
+        return {"action": action, "state": state, "why": [why], "at": now.strftime("%H:%M:%S"), "plan": plan_txt}
     if not fresh:
-        return {"action": "NO DATA", "why": ["no live quote for this exact contract (check the expiry you logged)"],
+        return {"action": "NO DATA", "state": "WAIT", "why": ["no live quote for this exact contract (check the expiry you logged)"],
                 "at": now.strftime("%H:%M:%S"), "plan": plan_txt}
     why = []
     pnl = (bid - p["fill"]) / p["fill"] * 100
@@ -250,14 +277,38 @@ def guidance(p, acts, fresh, bid, green, c1, now):
         why.append(f"{abs(pl['t1_level'] - c1):.2f} to T1 {pl['t1']}")
     recent = (pl.get("stops") or [])[-1:]
     if recent and recent[0].get("by") == "desk" and recent[0]["t"][11:16] == now.strftime("%H:%M") and len(pl.get("stops")) > 1:
-        return {"action": f"TIGHTEN STOP to ${pl['premium_stop']:.2f}", "why": [recent[0]["why"]] + why,
+        return {"action": f"TIGHTEN STOP to ${pl['premium_stop']:.2f}", "state": "HOLDING", "why": [recent[0]["why"]] + why,
                 "at": now.strftime("%H:%M:%S"), "plan": plan_txt}
     if green and pl.get("last_progress_t"):
         left = _c()["stall_min"] - (now - datetime.fromisoformat(pl["last_progress_t"])).total_seconds() / 60
         why.append(f"stall timer {max(0, left):.0f} min")
     elif not green and pl.get("flat_by"):
         why.append(f"needs to be green by {pl['flat_by']}")
-    return {"action": "HOLD", "why": why, "at": now.strftime("%H:%M:%S"), "plan": plan_txt}
+    return {"action": "HOLD", "state": "HOLDING", "why": why, "at": now.strftime("%H:%M:%S"), "plan": plan_txt}
+
+
+def _mult(p):
+    """Contract multiplier: Schwab's value for this exact contract when the quote carried one, else the standard 100."""
+    try:
+        q = marketdata._quotes.get(p.get("symbol")) or {}
+        m = q.get("multiplier")
+        return float(m) if m else 100.0
+    except Exception:
+        return 100.0
+
+
+def _occ_exp(sym):
+    try:
+        return f"20{sym[-15:-13]}-{sym[-13:-11]}-{sym[-11:-9]}"
+    except Exception:
+        return None
+
+
+def _occ_strike(sym):
+    try:
+        return int(sym[-8:]) / 1000
+    except Exception:
+        return None
 
 
 def _ratchet(p, new_stop, why, by="desk"):

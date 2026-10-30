@@ -70,6 +70,9 @@ LEDGER_INFO = {
     "noise": ("Noise band", "SPY/QQQ half-hour momentum (Zarattini/Aziz/Barbon), with options"),
     "inplay": ("Stocks in play", "scanner ORB on the day's top-volume names, with options"),
     "old": ("Old rules", "frozen 20/12/10% stops"),
+    "gated": ("Gated entries", "the research entries, only when the anti-chasing gate passes"),
+    "earn_post": ("Earnings: after the release", "post-release confirmation setups on reporting names"),
+    "earn_pre": ("Earnings: held through", "research only: an ATM straddle held through the report, sized by the full premium"),
     "real": ("You", "your reported trades"),
 }
 
@@ -105,6 +108,80 @@ def ledger_report(led, since="2000-01-01"):
     return out
 
 
+RULE_GROUPS = (("reversal", ("failed", "reversal")), ("pullback / retest", ("retest", "pullback", "vwap_retest")),
+               ("confirmed breakout", ("orb", "break", "level", "pdh", "pdl", "pmh", "pml", "vwap", "noise", "inplay")))
+
+
+def _rule_group(kind):
+    k = (kind or "").lower()
+    for name, keys in RULE_GROUPS:
+        if any(x in k for x in keys):
+            return name
+    return "other"
+
+
+def rules_compare(since="2000-01-01"):
+    """Entry rules side by side on the SAME sample of stored setups, including the ones that were never traded
+    (missed, invalidated, too extended, no trade), so fewer trades can't hide missed opportunities.
+    Results are paper P&L after modeled costs. "Early breakout" (entering before a finished close) is never traded by
+    the gate, so it has no P&L here; it would need its own research ledger to be compared fairly."""
+    import json as _j
+    try:
+        setups = store.q("SELECT id, kind, status, data FROM gate_setups WHERE date>=?", (since,))
+    except Exception:
+        setups = []
+    pos = store.q("SELECT ledger, realized, plan, status FROM positions WHERE date>=? AND status='CLOSED'", (since,))
+    by_gate = {}
+    for r in pos:
+        try:
+            pl = _j.loads(r["plan"]) if isinstance(r["plan"], str) else (r["plan"] or {})
+        except ValueError:
+            pl = {}
+        gid = (pl.get("gate") or {}).get("id") if isinstance(pl.get("gate"), dict) else pl.get("gate_id")
+        if gid:
+            by_gate.setdefault(gid, []).append(r["realized"] or 0)
+    groups = {}
+    for g in setups:
+        name = _rule_group(g["kind"])
+        x = groups.setdefault(name, {"setups": 0, "status": {}, "pnls": []})
+        x["setups"] += 1
+        x["status"][g["status"]] = x["status"].get(g["status"], 0) + 1
+        x["pnls"] += by_gate.get(g["id"], [])
+    out = {}
+    for name, x in groups.items():
+        st = stats(x["pnls"])
+        out[name] = {"setups": x["setups"], "traded": len(x["pnls"]), "not_traded": x["setups"] - len(x["pnls"]),
+                     "status": x["status"], "paper": st, "small_sample": len(x["pnls"]) < 30}
+    return {"since": since, "groups": out, "early_breakout": "not traded by design (the gate needs a finished close)",
+            "note": "Same-day paper sample after modeled costs. Under 30 trades a group is not evidence. Chronological, "
+                    "out-of-sample comparison: candidate rules are versioned and judged only on sessions after they were fixed."}
+
+
+def latency(since="2000-01-01"):
+    """Observed latencies: signal bar final -> simulated paper fill (configured decision latency included), and the
+    catalyst publication -> first detection -> alert times. Observations from timestamps, not estimates."""
+    import json as _j
+    import statistics
+    fills = []
+    for r in store.q("SELECT plan FROM positions WHERE date>=? AND ledger != 'real'", (since,)):
+        try:
+            pl = _j.loads(r["plan"]) if isinstance(r["plan"], str) else (r["plan"] or {})
+        except ValueError:
+            continue
+        if pl.get("latency_s") is not None:
+            fills.append(float(pl["latency_s"]))
+    def summ(v):
+        return {"n": len(v), "median_s": round(statistics.median(v), 1), "p90_s": round(sorted(v)[int(0.9 * (len(v) - 1))], 1)} if v else {"n": 0}
+    out = {"signal_to_paper_fill": summ(fills)}
+    try:
+        import catalysts
+        out["catalysts"] = catalysts.metrics()
+    except Exception as e:
+        out["catalysts"] = {"error": type(e).__name__}
+    out["note"] = "Measured on this desk. When other traders or professional feeds saw the same news is unknown."
+    return out
+
+
 def report():
     ev = core.policy().get("evaluation") or {}
     since, version = ev.get("start", "2026-10-30"), ev.get("policy_version", "")
@@ -131,6 +208,8 @@ def report():
         res["verdict"] = "criteria met (paper only; Nick decides what happens next)" if all(checks.values()) else \
                          "criteria not met: " + ", ".join(k for k, ok in checks.items() if not ok)
     res["note"] = "Paper results with modeled costs. A pass is not permission for real-money automation or larger size."
+    res["rules_compare"] = rules_compare()            # everything the gate has recorded (it started with v3.2)
+    res["latency"] = latency()
     return res
 
 

@@ -22,8 +22,8 @@ import core
 import marketdata
 import store
 
-PORTFOLIOS = ("paper", "research", "old", "exit31", "noise", "inplay")
-RESEARCH = ("research", "exit31", "noise", "inplay", "old")   # experimental ledgers, never mixed into main paper
+PORTFOLIOS = ("paper", "research", "old", "exit31", "noise", "inplay", "gated", "earn_post", "earn_pre")
+RESEARCH = ("research", "exit31", "noise", "inplay", "old", "gated", "earn_post", "earn_pre")   # experimental ledgers, never mixed into main paper
 
 
 def underlying_px(ticker):
@@ -81,6 +81,10 @@ def ideas_today(portfolio):
 
 
 def sim_quote(symbol):
+    import optionhours
+    ok, why = optionhours.tradable(symbol)
+    if not ok:
+        return None, why                                  # never a simulated fill against a closed options market
     q, err = marketdata.option_quote(symbol)
     if not q:
         return None, err or "no quote"
@@ -92,6 +96,8 @@ def sim_quote(symbol):
 def buy(portfolio, idea, ticker, side, plan, qty, signal_t):
     """Simulated entry. Returns (position_id or None, reason)."""
     sym = plan["symbol"]
+    if store.kv_get("paper_pause"):
+        return None, "paper entries are paused (emergency pause on the Markets page)"
     q, err = sim_quote(sym)
     if not q:
         return None, f"no simulated fill: {err}"
@@ -116,7 +122,9 @@ def buy(portfolio, idea, ticker, side, plan, qty, signal_t):
           "actions_done": [], "flat_by": plan.get("flat_by"), "rr_option": plan.get("rr_option"),
           "rr_underlying": plan.get("rr_underlying"), "model": plan.get("model"),
           "exit_profile": plan.get("exit_profile", "v3"), "variant": plan.get("variant"),
-          "entry_px": plan.get("entry_px") or underlying_px(ticker), "delta_entry": q.get("delta")}
+          "entry_px": plan.get("entry_px") or underlying_px(ticker), "delta_entry": q.get("delta"),
+          "fill_t": store.ts(), "quote_t": str(q.get("quote_time")) if q.get("quote_time") is not None else None,
+          "latency_s": _latency(signal_t), "gate": plan.get("gate"), "catalyst_id": plan.get("catalyst_id")}
     for k in ("noise_upper", "noise_lower", "orb_high", "orb_low", "atr14", "rvol", "contract_score", "scan_id", "expiry"):
         if plan.get(k) is not None:
             st[k] = plan[k]
@@ -134,6 +142,15 @@ def buy(portfolio, idea, ticker, side, plan, qty, signal_t):
                 f"stop {_px(plan.get('stop_px'))} underlying / ${plan['premium_stop']:.2f} premium | T1 {plan.get('t1') or 'none'} {_px(plan.get('t1_level'))}",
                 portfolio, pid, {"quote_age_s": q.get("age_s"), "provider": q.get("provider")})
     return pid, None
+
+
+def _latency(signal_t):
+    """Seconds from the signal (the decision time) to this simulated fill."""
+    try:
+        from datetime import datetime
+        return round((core.now_et() - datetime.fromisoformat(str(signal_t))).total_seconds(), 1)
+    except Exception:
+        return None
 
 
 def _px(v):

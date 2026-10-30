@@ -189,8 +189,17 @@ def plan_text(p):
     verdict = VERDICT.get(p["state"], p["state"])
     if verdict == "ENTER" and not p.get("contract"):
         verdict = "PASS"
-    lines = [f"{verdict}: {p['ticker']} {side} | {p.get('origin', '')}",
-             f"{p['state']} | {p.get('setup')}{mode} ({p.get('setup_note')}) | grade {p.get('grade')} | regime {p.get('regime')}"]
+    lines = [f"{verdict}: {p['ticker']} {side} | {p.get('origin', '')}"]
+    a = p.get("assistant") or {}
+    if a.get("state"):
+        lines.append(f"DESK READ {a['at']} ET: {a['state']} ({a.get('why')})")
+        if a.get("observations"):
+            lines.append("OBSERVED: " + "; ".join(a["observations"][:5]))
+        if a.get("conditions_met"):
+            lines.append("CONDITIONS MET: " + "; ".join(a["conditions_met"]))
+        if a.get("missing"):
+            lines.append("STILL MISSING: " + "; ".join(x for x in a["missing"] if x))
+    lines.append(f"{p['state']} | {p.get('setup')}{mode} ({p.get('setup_note')}) | grade {p.get('grade')} | regime {p.get('regime')} (interpretation)")
     lines.append(f"TRIGGER: {p.get('trigger_rule')} | STRUCTURE STOP: {p['ticker']} 1m close {'below' if p['side'] == 'C' else 'above'} {p.get('invalidation')}")
     c = p.get("contract")
     if c:
@@ -199,6 +208,11 @@ def plan_text(p):
                      f"{'LIVE Schwab' if d.get('executable') else 'NOT executable data, check Legend'})")
         lines.append(f"SIZE: {p['qty']} (stressed loss ${p['risk_per_contract']:.2f}/contract, ceiling ${ex['ceiling_per_contract']:.2f}){' | ' + p['size_note'] if p.get('size_note') else ''}")
         lines.append(f"T1: {ex['t1_name']} {ex['t1_level']:.2f} (option ~${ex['t1']:.2f}, {ex['model']}) | R/R {ex['rr_underlying']} on the stock, {ex['rr_option']} on the option")
+        rk = a.get("risk") or {}
+        if rk:
+            lines.append(f"PLANNED MAX LOSS: premium stop ${rk['premium_stop']:.2f} vs the ${rk['entry_limit']:.2f} limit = about ${rk['per_contract_usd']:.0f} "
+                         f"a contract, ${rk['total_usd']:.0f} for {rk['qty']} (a planned threshold: fills, gaps and slippage can make it larger). "
+                         f"Separate from the stock invalidation: {rk.get('underlying_invalidation')}")
         lines.append(f"STOPS: structure above, or premium ${ex['stop']:.2f} (20% max planned loss; you place the order, a fast market can skip past it) | BE at ${ex['be_trigger']:.2f} -> stop ${ex['be_stop']:.2f} | "
                      f"green + no new high {ex['stall_min']} min or MACD turns -> out | if not green by {ex['flat_by']} -> out | all out {ex['all_out']}")
     else:
@@ -225,6 +239,19 @@ def _in_play():
              "range": [r.get("or_low"), r.get("or_high")], "status": r.get("status"), "earnings": r.get("earnings"),
              "contract": {k: (r.get("contract") or {}).get(k) for k in ("symbol", "exp", "delta", "spread_pct", "oi")} if r.get("contract") else None}
             for r in rows if r["rank"] < 900][:8]
+
+
+def _setups_brief():
+    """The setups board for Chart: the summary and the top qualifying rows (observations with their rule, not tips)."""
+    try:
+        import scanner_setups
+        b = scanner_setups.board()
+    except Exception:
+        return None
+    keep = ("ticker", "setup", "direction", "state", "level_name", "level", "distance_atr", "rvol", "rvol_method", "why", "missing",
+            "invalidation_text", "extended", "flags", "score", "fresh")
+    return {"status": b["status"], "summary": b["summary"], "coverage": b["coverage"]["limits"][0],
+            "rows": [{k: r.get(k) for k in keep} for r in b["rows"] if r["qualifies"]][:6]}
 
 
 def _alt(t):
@@ -305,12 +332,13 @@ def coach_context(selected="SPY", text=""):
         "regime": v3.get("regime"),
         "levels": {k: {"value": v["value"], "source": v["source"]} for k, v in (v3.get("levels") or {}).items()},
         "active_plan": active_plan(selected),
-        "open_real": [{k: p[k] for k in ("ticker", "contract", "qty_open", "fill")} | {k: p["plan"].get(k) for k in ("premium_stop", "stop_px", "t1", "t1_level", "be_hit", "green")}
+        "open_real": [{k: p[k] for k in ("ticker", "contract", "symbol", "qty_open", "fill")} | {k: p["plan"].get(k) for k in ("premium_stop", "stop_px", "t1", "t1_level", "be_hit", "green", "guidance")}
                       for p in store.positions(ledger="real", status="OPEN")],
         "open_paper": [{k: p[k] for k in ("ticker", "contract", "qty_open", "fill", "ledger")} for p in store.positions(status="OPEN") if p["ledger"] in ("paper", "research")],
         "budget_real": engine.ledger_budget("real"), "lessons": lessons,
         "recent_events": [e["text"] for e in store.q("SELECT text FROM events ORDER BY seq DESC LIMIT 6")],
-        "desk_plans_for_ticker": selected in core.policy()["instruments"],
+        "desk_plans_for_ticker": True,       # v3.2: the desk plans and tracks any Schwab-supported ticker
+        "setups_board": _setups_brief(),
         "watchlist_quote": None if selected in core.policy()["instruments"] else watchlist.quote(selected),
         "alt_data": None if selected in core.policy()["instruments"] else _alt(selected),
         "cards": cards_for(text),
