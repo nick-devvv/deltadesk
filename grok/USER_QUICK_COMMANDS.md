@@ -30,6 +30,13 @@ The plan is always computed first, so it's valid even if Chart is slow or offlin
 
 **Journal (in the chat):** after each closed trade, a short card asks: followed the plan?, any mistakes, why you took it, why you got out, next time. Tap and type a few words, and it saves to the Journal tab. Press Later and it asks again in about 45 minutes. After 4:10 PM it asks 3 end-of-day questions (how it went, how you felt, one lesson). The 4:20 review uses all of it to suggest lessons. You never have to open the Journal tab.
 
-**Pages:** **My trades** (your positions, the chart, Chart's guidance) · **Scanner** (stocks in play, live movers, why names didn't qualify) · **Paper** (the main strategy) · **Research** (experiments side by side) · Journal · Review · Rules.
+**Pages:** **My trades** (your positions, the chart, Chart's guidance) · **Scanner** (stocks in play, live movers, why names didn't qualify) · **Markets** (v3.2: search any ticker, its live chart, the setups board, news & catalysts, earnings, paper autopilot, settings and spending) · **Paper** (the main strategy) · **Research** (experiments side by side) · Journal · Review · Rules.
 
 **Live market alerts (Rules → Live alerts to switch each on/off):** stocks in play at 9:35, a top-movers digest every 30-60 minutes, quick moves on any scanned stock, scanner paper trades, and changes in the guidance on your own trades. Scanner and mover alerts are ideas, not validated setups.
+
+**v3.2 (Markets tab):**
+- Search any stock or ETF and open its live chart (1/2/5/15m, extended hours, Back to live). Times are Pacific by default.
+- `check once NVDA calls` (or the Check calls / Check puts buttons) gives the desk's read: WAIT / SETUP FORMING / ENTRY CONDITIONS MET / INVALIDATED, the entry gate's state, and the planned max loss.
+- If the gate says **TOO EXTENDED** or **WAIT FOR RETEST**, the move already happened: wait for a new setup or skip it.
+- `IN NVDA 140C 11/07 2 at 3.20` tracks that exact contract (add the expiry for anything that isn't same-day SPY/QQQ).
+- News labels: confirmed / attributed / unverified / opinion. Unverified never triggers an entry.

@@ -16,6 +16,14 @@ Base: `http://127.0.0.1:8765` on Chart's computer. Add `?k=DESK_TOKEN` (or `&k=`
 | `GET /api/research[?since=]` | 4:20 review | Every paper ledger side by side (main, research, v3.1 exits, noise band, stocks in play, old rules, you): expectancy, avg win/loss, drawdown, sample size, stock move vs option, exit reasons | none |
 | `GET /api/diagnostics` | review | The latest backtest diagnostics (coin flip, exits, hold tests, halves) | none |
 | `GET /api/evaluation` | review | The forward paper test against its fixed criteria | none |
+| `GET /api/chart?t=ANY&tf=1|2|5|15&ext=0|1` | questions | v3.2: any ticker, with the feed status (live / stale / closed / no data) | none |
+| `GET /api/symbol?q=` | questions | v3.2: symbol search (Schwab instruments) | none |
+| `GET /api/setups` | questions, review | v3.2: the setups board: rows, coverage, definitions, "no qualifying setups" | none |
+| `GET /api/catalysts[?t=]` | questions, review | v3.2: catalysts with labels, sources, timestamps, price since detection | none |
+| `POST /api/news` `{"items":[...]}` | 20-min news routine | Headlines WITH their source URLs (see NEWS_SCAN_PROMPT.md); the desk labels them | adds news + catalysts |
+| `POST /api/earnings` `{"ticker","date","timing","source_url","call_time"}` | news routine, 9 AM routine | Confirm an earnings date with its source | marks the date confirmed |
+| `GET /api/earnings` | questions | v3.2: the calendar with each name's phase | none |
+| `GET /api/autopilot` | review | v3.2: today's paper autopilot decisions, accepted and rejected | none |
 | `GET /api/lessons` | 4:20 PM routine | Existing lessons | none |
 | `POST /api/lessons` `{"text","setup","sample","evidence":[]}` | 4:20 PM routine | Propose a lesson (status PROPOSED) | adds a row |
 | `GET /api/journal?date=` | any | Journal and notes | none |
