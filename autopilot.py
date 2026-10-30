@@ -8,6 +8,12 @@ anywhere: every fill is the internal simulator (paper.py) on live Schwab quotes,
              before the event, sold at the bid 15 minutes into the next session. Sized by the FULL premium at risk
              (no 20% stop can protect an overnight gap). Measures IV crush and gaps; it is not expected to be profitable.
 
+  board      (v3.3) the setups board on PAPER across the scanned stocks and ETFs: a qualifying row (a finished close
+             beyond a level, a retest that held, a VWAP reclaim/rejection, a trend pullback) goes through the same
+             anti-chasing gate and a fresh contract check. One idea per ticker and setup per day, 1 contract, max 4 open.
+             The latest X / news read on the ticker is RECORDED with the trade (label, trader lean) so it can be measured
+             later; it never triggers or blocks an entry.
+
 Every decision, accepted or rejected, is written to the candidates table with its reasons (so skipped setups stay in
 the sample). Missing data blocks new entries. The emergency pause (kv "paper_pause") stops all new paper entries.
 Taking no trade is a normal day.
@@ -25,7 +31,10 @@ import store
 VERSION = "2026-10-30.v3.2-earnings"
 DEFAULTS = {"enabled": True, "earn_post": True, "earn_pre": True, "earn_pre_buy_at": "15:40", "earn_pre_sell_at": "09:45",
             "earn_pre_max_premium_usd": 600.0, "earn_post_from": "09:46", "earn_post_until": "14:30", "max_spread_pct": 0.10,
-            "max_open": 4}
+            "max_open": 4, "board": True, "board_from": "10:00", "board_until": "14:30", "board_max_open": 4,
+            "board_min_score": 4.0, "board_states": ["CLOSED BEYOND", "RETEST HOLDING", "RECLAIMED", "REJECTED", "PULLBACK"],
+            "board_kinds": ["orb", "pm", "pd", "vwap", "momo"]}
+BOARD_VERSION = "2026-10-30.v3.3-board"
 _state = {"thread": None, "stop": False, "status": "idle", "last_error": None, "done": set()}
 
 
@@ -93,7 +102,7 @@ def earn_post(now, fetch=None):
               "spread": None, "spread_pct": info.get("spread_pct"), "fresh": bool((r.get("fresh") or {}).get("ok")), "bar_age_s": None, "buf": 0.02}
         tgt, tname = entrygate.target_for(r["level"], side, dict(_levels(info), **{l["name"]: {"value": l["value"]} for l in r.get("chart_levels") or []}), atr5 * 0.1)
         g = entrygate.define(t, side, "earn_post", float(r["level"]), float(r["invalidation"]), tgt, tname, sn, r["why"],
-                             confirmed_at=now.isoformat(timespec="seconds"), catalyst=rec.get("release_source"))
+                             confirmed_at=now.isoformat(timespec="seconds"), catalyst=rec.get("release_source"), scope="earn_post")
         ev = entrygate.evaluate(g, sn)
         if ev["state"] != "ENTRY CONDITIONS MET":
             _rec(f"earnpost-{idea}-{g['id']}", now.isoformat(), side, "EARN_POST", "earn_post", "SKIP-GATE",
@@ -123,6 +132,103 @@ def earn_post(now, fetch=None):
         if not pid:
             paper.release_idea("earn_post", idea, bwhy)
         _rec(f"earnpost-{idea}", now.isoformat(), side, "EARN_POST", "earn_post", "ORDER" if pid else "SKIP", [] if pid else [bwhy], plan, t)
+        out.append(pid)
+    return [p for p in out if p]
+
+
+def _x_read(t):
+    """The newest catalyst / X read on this ticker, as recorded data (never a trigger)."""
+    try:
+        import catalysts
+        f = catalysts.feed(t, None, 5)
+    except Exception:
+        return None
+    if not f:
+        return None
+    c = f[0]
+    tr = ((c.get("sentiment") or {}).get("trader") or {})
+    return {"id": c.get("id"), "label": c.get("label"), "headline": (c.get("headline") or "")[:140], "trader_lean": tr.get("lean"),
+            "published_at": c.get("published_at"), "recycled": bool(c.get("recycled"))}
+
+
+def board(now, fetch=None):
+    """Paper-trade the setups board across stocks/ETFs: qualifying rows -> entry gate -> contract check -> 1 contract."""
+    import scanner
+    import scanner_setups as SS
+    c = cfg()
+    hm = now.strftime("%H:%M")
+    if not (c["board_from"] <= hm <= c["board_until"]) or not core.session_info(now)["entries_allowed"]:
+        return []
+    if store.kv_get("paper_pause"):
+        return []
+    out = []
+    try:
+        rows = SS.board(best_per_stock=True)["rows"]
+    except Exception:
+        return []
+    for r in rows:
+        if not r.get("qualifies") or r["kind"] not in c["board_kinds"] or r["state"] not in c["board_states"]:
+            continue
+        if (r.get("score") or 0) < c["board_min_score"] or r["ticker"] in core.policy()["instruments"]:
+            continue                                   # SPY/QQQ already have the v3 ledgers
+        t, side = r["ticker"], ("C" if r["direction"] == "long" else "P")
+        day = now.date().isoformat()
+        fam = "BOARD_" + r["setup"].upper().replace(" ", "_").replace("(", "").replace(")", "")[:40]
+        idea = f"{day}-{t}-{fam}-{side}"
+        if store.q("SELECT idea FROM ideas WHERE portfolio='board' AND idea=?", (idea,)):
+            continue
+        row = (SS._state["rows"].get(t) or {})
+        info = row.get("info") or {}
+        if not info.get("price"):
+            continue
+        bars = (SS._state["bars"].get(t) or (None, None))[1]
+        atr5 = _atr5(bars) or (info.get("atr14") or 1) / 8
+        sn = {"price": info["price"], "close1": float(bars["Close"].iloc[-1]) if bars is not None and len(bars) else info["price"],
+              "t": str(bars.index[-1]) if bars is not None and len(bars) else now.isoformat(), "atr5": atr5,
+              "spread": None, "spread_pct": info.get("spread_pct"), "fresh": bool((r.get("fresh") or {}).get("ok")), "bar_age_s": None, "buf": 0.02}
+        tgt, tname = entrygate.target_for(r["level"], side, dict(_levels(info), **{l["name"]: {"value": l["value"]} for l in r.get("chart_levels") or []}), atr5 * 0.1)
+        g = entrygate.define(t, side, fam.lower(), float(r["level"]), float(r["invalidation"]), tgt, tname, sn, r["why"],
+                             confirmed_at=now.isoformat(timespec="seconds"), scope="board")
+        ev = entrygate.evaluate(g, sn)
+        xr = _x_read(t)
+        try:
+            import strategy_router
+            strategy_router.route({"ticker": t, "side": side, "family": fam, "setup_id": g["id"], "fresh": sn["fresh"], "bar_complete": True})
+        except Exception:
+            pass
+        if ev["state"] != "ENTRY CONDITIONS MET":
+            k = f"board-gate-{g['id']}-{ev['state']}"
+            if not store.kv_get(k):                    # one record per setup and state, not one per 20 s
+                store.kv_set(k, True)
+                _rec(f"board-{idea}-{g['id']}-{ev['state']}", now.isoformat(), side, fam, "board", "SKIP-GATE",
+                     [f"gate {ev['state']}: {ev['rejected']}"], {"gate": ev, "row": {k2: r.get(k2) for k2 in ("setup", "state", "score", "rvol", "day_pct")}, "x_read": xr}, t)
+            continue
+        if len(store.positions(ledger="board", status="OPEN")) >= c["board_max_open"]:
+            _rec(f"board-{idea}-limit-{hm}", now.isoformat(), side, fam, "board", "BLOCKED-LIMIT", ["max open board trades"], ticker=t)
+            continue
+        f = fetch or scanner._fetch
+        rows_c, err = f.chain(t, side, now.date().isoformat(), (now.date() + timedelta(days=10)).isoformat(), 16)
+        best, _, rej = scanner.score_contracts(rows_c, side, now, None)
+        if not best:
+            _rec(f"board-{idea}-noc", now.isoformat(), side, fam, "board", "SKIP",
+                 ["valid stock setup, no valid option: " + (", ".join(f"{k} {n}" for k, n in rej.items()) or err or "empty chain")], {"gate": ev, "x_read": xr}, t)
+            paper.reserve_idea("board", idea, t, side)        # one try per idea a day
+            continue
+        ok, why = paper.reserve_idea("board", idea, t, side)
+        if not ok:
+            continue
+        slip, fee = paper.costs(best["ask"] - best["bid"])
+        plan = {"symbol": best["symbol"], "label": f"{best['strike']:g}{side} {best['exp'][5:]}", "family": fam,
+                "premium_stop": core.cents_up(best["ask"] * (1 - core.policy()["risk"]["stop_cap_pct"]) + slip + 2 * fee / 100),
+                "stop_px": g["invalidation"], "t1": tname, "t1_level": tgt, "t1_px": None, "be_trigger": None,
+                "breakeven_net": core.cents_up(best["ask"] + slip + 2 * fee / 100), "flat_by": None, "exit_profile": "board",
+                "variant": "board", "policy_version": BOARD_VERSION, "entry_px": info["price"], "expiry": best["exp"], "grade": "R", "v": 33,
+                "row": {k2: r.get(k2) for k2 in ("setup", "kind", "state", "score", "score_parts", "rvol", "rvol_method", "day_pct", "distance_atr", "flags")},
+                "gate": {k: ev.get(k) for k in ("state", "latest_entry", "rr_now", "id", "version")}, "x_read": xr}
+        pid, bwhy = paper.buy("board", idea, t, side, plan, 1, now.isoformat())
+        if not pid:
+            paper.release_idea("board", idea, bwhy)
+        _rec(f"board-{idea}", now.isoformat(), side, fam, "board", "ORDER" if pid else "SKIP", [] if pid else [bwhy], plan, t)
         out.append(pid)
     return [p for p in out if p]
 
@@ -248,6 +354,8 @@ def step(now=None):
         earn_post(now)
     if c["earn_pre"]:
         earn_pre(now)                     # exits are managed by the engine tick (one place, no double sells)
+    if c["board"]:
+        board(now)
     if not store.kv_get("paper_pause"):
         _state["status"] = "running"
 

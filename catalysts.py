@@ -548,6 +548,51 @@ def targets(now=None):
     return out[:4]
 
 
+def x_targets(now=None):
+    """What Chart's X scan (free, through Chart's own Grok) should research now, with the reason for each. Earnings names
+    come first, then unusual movers and qualifying setups, then Nick's open trades and watchlist. No paid calls here."""
+    now = now or core.now_et()
+    out, seen = [], set()
+
+    def add(t, why, focus):
+        t = (t or "").upper()
+        if t and t not in seen and len(out) < 12:
+            seen.add(t)
+            out.append({"ticker": t, "why": why, "focus": focus})
+    try:
+        import earnings
+        for r in earnings.cached_calendar(3):
+            ph = earnings.phase(r, now)
+            if ph in ("RELEASE", "CALL", "NEXT SESSION"):
+                add(r["ticker"], f"earnings {ph.lower()} ({r.get('date')})", "the report vs expectations, guidance, what the call said, how traders read it")
+        for r in earnings.cached_calendar(3):
+            if earnings.phase(r, now) == "PRE":
+                add(r["ticker"], f"reports {r.get('date')} {r.get('timing') or ''}".strip(), "what traders expect, whisper numbers, key metrics, confirm date and time")
+    except Exception:
+        pass
+    for p in store.positions(ledger="real", status="OPEN"):
+        add(p["ticker"], "your open trade", "anything new that changes the trade")
+    try:
+        import scanner_setups
+        b = scanner_setups.board()
+        for r in sorted(b["rows"], key=lambda r: -abs(r.get("day_pct") or 0)):
+            if abs(r.get("day_pct") or 0) >= 3 or (r.get("rvol") or 0) >= 2.5:
+                add(r["ticker"], f"moving {r.get('day_pct'):+.1f}% on {r.get('rvol') or '?'}x volume", "why it's moving: the catalyst and its source")
+        for r in b["rows"]:
+            if r.get("qualifies"):
+                add(r["ticker"], f"setup: {r['setup']} ({r['state'].lower()})", "any news behind the move; is it already priced in")
+    except Exception:
+        pass
+    try:
+        import watchlist
+        for t in watchlist.tickers()[:6]:
+            add(t, "watchlist", "new developments only")
+    except Exception:
+        pass
+    return {"at": now.isoformat(timespec="seconds"), "targets": out,
+            "note": "research with your own X search; send each story WITH the links you opened to POST /api/news (via x_scan)"}
+
+
 # ---------------------------------------------------------------- read side
 def feed(ticker=None, label=None, limit=80):
     day_from = (core.now_et() - timedelta(days=3)).isoformat(timespec="seconds")

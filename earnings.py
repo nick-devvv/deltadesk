@@ -104,6 +104,23 @@ def record_results(ticker, d, metrics, source_url, consensus_source=None, consen
     return rec
 
 
+def record_call(ticker, d, statements, source_url, source_kind="transcript"):
+    """Phase C: material statements from the call, each with who said it and when. Only with a named source (an
+    authorized transcript, the company's webcast page, or identifiable reporting); posts alone are not a source."""
+    rec = _get(ticker, d) or {"ticker": ticker, "date": d}
+    keep = []
+    for st in (statements or [])[:12]:
+        if not isinstance(st, dict) or not st.get("text"):
+            continue
+        keep.append({"text": str(st["text"])[:400], "speaker": str(st.get("speaker") or "not stated")[:80],
+                     "time": str(st.get("time") or "")[:30], "topic": str(st.get("topic") or "")[:40]})
+    if not source_url or not keep:
+        return {"error": "a call note needs a source link and at least one statement"}
+    rec.setdefault("call", []).append({"statements": keep, "source": source_url, "source_kind": source_kind, "recorded_at": store.ts()})
+    _put(rec)
+    return rec
+
+
 def phase(rec, now=None):
     """PRE / RELEASE / CALL / NEXT SESSION / DONE / NONE for an earnings record."""
     if not rec:
