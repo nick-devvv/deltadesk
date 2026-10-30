@@ -45,7 +45,7 @@ import matched_benchmarks as MB
 import paper
 import store
 
-VERSION = "2026-10-30.v3.4-lab1"          # 3.4.1: whole-step time budget (signal rules unchanged)
+VERSION = "2026-10-30.v3.4-lab1"          # 3.4.1: whole-step time budget; 3.4.2: own-exit outcomes (signal rules unchanged)
 ET = core.ET
 ARCHIVE = core.HERE / "journal" / "bars"          # tests point this at a temporary folder
 COLS = ["Open", "High", "Low", "Close", "Volume"]
@@ -56,7 +56,7 @@ DEFAULTS = {"enabled": True, "tape": True, "paper": True,
             "window": ["09:45", "15:15"], "max_signal_age_s": 150, "episode_gap_min": 10,
             "max_open_per_ledger": 2, "max_ideas_per_ledger": 6, "max_open_total": 20, "attempts_per_min": 8, "qty": 1,
             "target_r": 2.0, "flat": "15:25", "cost_per_share": 0.04, "stop_buffer_atr": 0.05,
-            "controls_paths": 20, "resolve_after": "15:31", "archive_after": "16:06", "min_n": 30,
+            "controls_paths": 20, "resolve_after": "15:31", "archive_after": "16:06", "min_n": 30, "min_days": 10,
             "max_dte": 10, "limit_cents_over_ask": 0.03}
 
 FAMILIES = {
@@ -105,9 +105,16 @@ def cfg():
     return c
 
 
+NEW_COLS = (("r_own", "REAL"), ("own_why", "TEXT"), ("ctl_own", "REAL"), ("exit_at", "TEXT"), ("exit_own_at", "TEXT"))
+
+
 def _schema():
     for s in SCHEMA:
         store.x(s)
+    have = {r["name"] for r in store.q("PRAGMA table_info(lab_tape)")}
+    for col, typ in NEW_COLS:                                  # v3.4.2 columns, added to an existing database in place
+        if col not in have:
+            store.x(f"ALTER TABLE lab_tape ADD COLUMN {col} {typ}")
 
 
 def use(fetcher):
@@ -715,6 +722,7 @@ def scan(now, base_all, c=None):
             break
         time.sleep(0)                           # let the desk's other threads run between symbols
     _state["behind"] = sum(max(0, w[0]) for w in work) - done_n
+    hm = now.strftime("%H:%M")
     for s in new:
         if s["live"] and c["paper"]:
             try:
@@ -723,6 +731,12 @@ def scan(now, base_all, c=None):
                 s["paper"] = f"error {type(e).__name__}"
                 _state["last_error"] = f"paper {s['ticker']}: {type(e).__name__}: {e}"[:200]
             store.x("UPDATE lab_tape SET paper=? WHERE id=?", (str(s["paper"])[:300], s["id"]))
+        if s["live"] and c.get("contracts", True) and c["window"][0] <= hm <= c["window"][1]:
+            try:                                             # v3.4.2: follow 12 contracts for the same signal
+                import contract_lab
+                s["contracts"] = contract_lab.start(s, now)
+            except Exception as e:
+                _state["last_error"] = f"contracts {s['ticker']}: {type(e).__name__}: {e}"[:200]
     return new
 
 
@@ -781,17 +795,73 @@ def resolve(day, now=None, c=None):
                         kw = {"flat": c["flat"], "cost_per_share": c["cost_per_share"]}
                         o = MB.outcome_arrays(a, ei, r["side"], sd, target_r=c["target_r"], **kw)
                         upd.update(entry=e, stop_dist=round(sd, 4), r=o["r"] if o else None, exit_why=o["why"] if o else "no path")
+                        if o:
+                            touch = o["why"] in ("stop", "target", "stop (ambiguous bar)")
+                            upd["exit_at"] = (m1d.index[o["exit_i"]] + pd.Timedelta(seconds=30 if touch else 0)).isoformat()
                         for h in (5, 15, 30):
                             oh = MB.outcome_arrays(a, ei, r["side"], sd, target_r=1e9, horizon_min=h, **kw)
                             upd[f"r_{h}m"] = oh["r"] if oh else None
                         seed = int(hashlib.sha1(r["id"].encode()).hexdigest()[:8], 16)
                         upd["ctl_r"], upd["ctl_n"] = MB.control_mean(a, r["side"], sd, paths=c["controls_paths"], seed=seed,
                                                                      window=(lo, hi), target_r=c["target_r"], **kw)
+                        # v3.4.2: each strategy's OWN exits too (finished closes, next-bar fills; the noise band only at
+                        # its half-hour checks, no target), with random entries under the same exits
+                        sd_own = abs(e - inv)
+                        if sd_own > max(0.01, 0.0002 * e) and (e - inv) * (1 if r["side"] == "C" else -1) > 0:
+                            checks = None
+                            if r["family"] == "noise":
+                                checks = (noise_checks(t, m1d, now).get(r["side"]) or {})
+                            fn = lambda i, _sd=sd_own, _side=r["side"], _ck=checks: MB.outcome_close_arrays(
+                                a, i, _side, _sd, target_r=c["target_r"], checks=_ck, **kw)
+                            oo = fn(ei)
+                            upd.update(r_own=oo["r"] if oo else None, own_why=oo["why"] if oo else "no path")
+                            if oo:
+                                upd["exit_own_at"] = m1d.index[oo["exit_i"]].isoformat()
+                            upd["ctl_own"], _n = MB.control_mean_fn(a, fn, paths=c["controls_paths"], seed=seed + 1, window=(lo, hi))
             sets = ", ".join(f"{k}=?" for k in upd)
             store.x(f"UPDATE lab_tape SET {sets} WHERE id=?", tuple(upd.values()) + (r["id"],))
             done += 1
     _state["resolved_at"] = store.ts()
     return done
+
+
+def _archive_hist(t, day, sessions=16):
+    days = [d for d in archive_days() if d < str(day)][-sessions:]
+    parts = [x for x in (archive_read(datetime.fromisoformat(d).date(), t) for d in days) if x is not None and len(x)]
+    return _rth(pd.concat(parts)) if parts else None
+
+
+_noise_cache = {}
+
+
+def noise_checks(t, m1d, now=None):
+    """The noise band's half-hour checks for one ticker-day, per side: {side: {bar_index: (stop_level, flipped)}}."""
+    if m1d is None or not len(m1d):
+        return {}
+    day = m1d.index[0].date()
+    key = (t, str(day), len(m1d))
+    if key in _noise_cache:
+        return _noise_cache[key]
+    import noiseband
+    today = (now or core.now_et()).date()
+    hist = _hist_for(t, day) if day == today else _archive_hist(t, day)
+    m = pd.concat([hist, m1d]) if hist is not None and len(hist) else m1d
+    out = {"C": {}, "P": {}}
+    for j, ts in enumerate(m1d.index):
+        t_end = ts + pd.Timedelta(minutes=1)
+        hm = _hm(t_end)
+        if t_end.minute in (0, 30) and "10:00" <= hm <= "15:00":
+            try:
+                st = noiseband.state_at(m, day, t_end)
+            except Exception:
+                st = None
+            if st:
+                out["C"][j] = (st["stop_long"], st["signal"] == "P")
+                out["P"][j] = (st["stop_short"], st["signal"] == "C")
+    if len(_noise_cache) > 500:
+        _noise_cache.clear()
+    _noise_cache[key] = out
+    return out
 
 
 # ================================================================ lab paper ledgers
@@ -985,7 +1055,7 @@ def _boot_ci(per_session, boots=1000, seed=3):
     return [round(float(sims[int(0.025 * boots)]), 3), round(float(sims[int(0.975 * boots) - 1]), 3)]
 
 
-def _summ(rows, min_n):
+def _summ(rows, min_n, min_days=1):
     v = [r for r in rows if r["r"] is not None]
     n = len(v)
     out = {"n": n, "signals": len(rows), "sessions": len({r["day"] for r in v})}
@@ -1010,18 +1080,22 @@ def _summ(rows, min_n):
             late = [r["r"] - r["ctl_r"] for r in ctl if r["day"] in days[h:]]
             out["edge_early"], out["edge_late"] = round(float(np.mean(early)), 3), round(float(np.mean(late)), 3)
             out["n_early"], out["n_late"] = len(early), len(late)
-            out["both_halves"] = bool(out["edge_early"] > 0 and out["edge_late"] > 0 and len(early) >= min_n and len(late) >= min_n)
-    out["too_few"] = n < min_n
+            out["both_halves"] = bool(out["edge_early"] > 0 and out["edge_late"] > 0 and len(early) >= min_n and len(late) >= min_n
+                                      and len(days) >= 2 * max(1, min_days // 2))
+    out["too_few"] = n < min_n or out["sessions"] < min_days        # v3.4.2: one busy day is still one day
     return out
 
 
-def what_works(by="strategy", cond=None, family=None, ticker=None, since=None, min_n=None, include_all=False, limit=300):
+def what_works(by="strategy", cond=None, family=None, ticker=None, since=None, min_n=None, include_all=False, limit=300,
+               exits="shared", min_days=None):
     """Grouped results from the resolved tape (stock outcomes in R), each next to its matched random entries.
-    by: strategy | setup | ticker | strategy_ticker | strategy_group | strategy_condition (cond = a CONDITIONS key)."""
+    by: strategy | setup | ticker | strategy_ticker | strategy_group | strategy_condition (cond = a CONDITIONS key).
+    exits: shared (one yardstick for all) | own (each strategy's own exit rules, random entries under the same rules)."""
     _schema()
     c = cfg()
     min_n = int(min_n or c["min_n"])
-    q = "SELECT id, day, ticker, family, setup, side, conditions, r, r_15m, ctl_r FROM lab_tape WHERE status='DONE'"
+    min_days = int(min_days or c.get("min_days", 10))
+    q = ("SELECT id, day, ticker, family, setup, side, conditions, r, r_15m, ctl_r, r_own, ctl_own FROM lab_tape WHERE status='DONE'")
     args = []
     if since:
         q += " AND day>=?"
@@ -1035,6 +1109,8 @@ def what_works(by="strategy", cond=None, family=None, ticker=None, since=None, m
     rows = store.q(q, tuple(args))
     for r in rows:
         r["cond"] = json.loads(r["conditions"] or "{}")
+        if exits == "own":
+            r["r"], r["ctl_r"] = r["r_own"], r["ctl_own"]
     if not include_all:                                        # the desk's own filters for board rows
         rows = [r for r in rows if r["cond"].get("qualifies", "yes") == "yes"]
     if by == "strategy_condition" and cond not in CONDITIONS:
@@ -1062,16 +1138,16 @@ def what_works(by="strategy", cond=None, family=None, ticker=None, since=None, m
         grp_all.setdefault((r["family"], r["cond"].get("group", "Other")), []).append(r)
     out = []
     for k, rs in groups.items():
-        s = _summ(rs, min_n)
+        s = _summ(rs, min_n, min_days)
         row = {"key": list(k), "strategy": k[0] if by != "ticker" else None,
                "label": FAMILIES.get(k[0], {}).get("label") if by != "ticker" else None, **s}
         if by == "strategy_ticker" and s["too_few"]:                 # the hierarchy: the stock's group, then all stocks
             t = k[1]
             g = rs[0]["cond"].get("group", "Other")
             row["group"] = g
-            row["group_level"] = {kk: v for kk, v in _summ(grp_all.get((k[0], g), []), min_n).items()
+            row["group_level"] = {kk: v for kk, v in _summ(grp_all.get((k[0], g), []), min_n, min_days).items()
                                   if kk in ("n", "win_rate", "avg_r", "edge", "too_few")}
-            row["all_stocks"] = {kk: v for kk, v in _summ(fam_all.get(k[0], []), min_n).items()
+            row["all_stocks"] = {kk: v for kk, v in _summ(fam_all.get(k[0], []), min_n, min_days).items()
                                  if kk in ("n", "win_rate", "avg_r", "edge", "too_few")}
             row["ticker"] = t
         out.append(row)
@@ -1084,14 +1160,19 @@ def what_works(by="strategy", cond=None, family=None, ticker=None, since=None, m
         led[f_] = {"ledger": v["ledger"], "n": len(pn), "won": round(100 * sum(1 for x in pn if x > 0) / len(pn), 1) if pn else None,
                    "net": round(sum(pn), 2) if pn else 0.0, "per_trade": round(sum(pn) / len(pn), 2) if pn else None,
                    "open": len(store.positions(ledger=v["ledger"], status="OPEN"))}
-    return {"by": by, "cond": cond, "cond_label": CONDITIONS.get(cond) if cond else None, "min_n": min_n, "rows": out[:limit],
+    return {"by": by, "cond": cond, "cond_label": CONDITIONS.get(cond) if cond else None, "min_n": min_n, "min_days": min_days,
+            "exits": exits, "rows": out[:limit],
             "groups": len(out), "signals": len(rows), "paper": led, "version": VERSION,
-            "note": ("Stock outcomes in R (risk = entry to stop), one uniform yardstick for every strategy: next-bar entry, stop "
-                     f"just past the signal's invalidation, {c['target_r']:g}R target, flat {c['flat']}, ${c['cost_per_share']:.2f}/share "
-                     "costs. 'Random' = matched random entries on the same stock, day, side, window and stop. With hundreds of "
-                     "combinations some will look good by luck: a combination counts only with enough signals, an interval above "
-                     "zero AND a positive edge in both the earlier and the later half of the dates. Paper option results are "
-                     "shown separately per ledger. Nothing here is promoted automatically.")}
+            "note": (("Stock outcomes in R (risk = entry to stop), one shared yardstick for every strategy: next-bar entry, stop "
+                      f"just past the signal's invalidation (any touch), {c['target_r']:g}R target, flat {c['flat']}, "
+                      f"${c['cost_per_share']:.2f}/share costs. " if exits != "own" else
+                      "Stock outcomes in R under each strategy's OWN exits: stop on a finished 1m close past the invalidation, "
+                      f"{c['target_r']:g}R target on a finished close, both filled at the next bar's open (gaps included); the noise "
+                      f"band only at its half-hour checks with no target; flat {c['flat']}; ${c['cost_per_share']:.2f}/share costs. ")
+                     + "'Random' = matched random entries on the same stock, day, side, window, stop and exit rules. With hundreds "
+                     f"of combinations some will look good by luck: a row counts only with {min_n}+ signals over {min_days}+ days, an "
+                     "interval above zero AND a positive edge in both the earlier and the later half of the dates. Paper option "
+                     "results are shown separately per ledger. Nothing here is promoted automatically.")}
 
 
 def signals(day=None, ticker=None, family=None, limit=200):
@@ -1120,14 +1201,23 @@ def status():
                                                                                          "resolved": r["done"] or 0} for r in cnt},
             "total": {"signals": tot["n"], "days": tot["days"], "resolved": tot["done"] or 0},
             "archive_days": len(archive_days()), "archived_today": store.kv_get(f"lab_archived:{day}"),
+            "contracts": _contracts_status(),
             "families": {f: {"ledger": v["ledger"], "label": v["label"], "source": v["source"]} for f, v in FAMILIES.items()},
             "conditions": CONDITIONS, "open": [{k: p[k] for k in ("ledger", "ticker", "contract", "fill", "opened")} for p in _lab_open()],
             "recent": [{k: e[k] for k in ("ts", "text")} for e in store.q("SELECT ts, text FROM events WHERE kind='lab' ORDER BY seq DESC LIMIT 12")],
             "config": {k: cfg()[k] for k in ("window", "max_open_per_ledger", "max_ideas_per_ledger", "max_open_total", "attempts_per_min",
-                                             "target_r", "flat", "min_n", "controls_paths")}}
+                                             "target_r", "flat", "min_n", "min_days", "controls_paths")}}
 
 
 # ================================================================ worker
+def _contracts_status():
+    try:
+        import contract_lab
+        return contract_lab.status()
+    except Exception as e:
+        return {"error": type(e).__name__}
+
+
 def _persist(day):
     store.kv_set(f"lab_state:{day}", {"last_bar": _state["last_bar"], "ep": _state["ep"], "noise_prev": _state["noise_prev"]})
     _state["saved_at"] = time.time()
@@ -1164,15 +1254,30 @@ def step(now=None):
     elif not base_all:
         _state["status"] = "waiting for the 08:30 baselines"
     manage_all(now)
+    try:
+        import contract_lab
+        contract_lab.poll(now)
+    except Exception as e:
+        _state["last_error"] = f"contracts poll: {type(e).__name__}: {e}"[:200]
     if hm >= c["resolve_after"] and time.time() - (_state.get("resolve_t") or 0) > 120:
         _state["resolve_t"] = time.time()
         resolve(str(day), now, c)
+        try:
+            import contract_lab
+            contract_lab.resolve(str(day))
+        except Exception as e:
+            _state["last_error"] = f"contracts resolve: {type(e).__name__}: {e}"[:200]
     if hm >= c["archive_after"] and _state["archived"] != str(day):
         archive_today(now)
     if time.time() - (_state.get("old_resolved") or 0) > 600:
         _state["old_resolved"] = time.time()
         for d in store.q("SELECT DISTINCT day FROM lab_tape WHERE status='OPEN' AND day<?", (str(day),)):
             resolve(d["day"], now, c)                                  # earlier days, from the archive (back-filled each morning)
+            try:
+                import contract_lab
+                contract_lab.resolve(d["day"])
+            except Exception:
+                pass
     if time.time() - _state["saved_at"] > 60:
         _persist(day)
     _state["step_s"] = round(time.time() - t0, 2)

@@ -248,6 +248,9 @@ def manage(p, s, quote_fn):
     else:
         bid = q["bid"]
         pl["last_bid"] = bid
+        if p.get("fill"):                      # v3.4.2: best / worst % move from the fill (recording only; exits unchanged)
+            mv = (bid - p["fill"]) / p["fill"] * 100
+            p["mfe"], p["mae"] = round(max(p["mfe"] or 0, mv), 1), round(min(p["mae"] or 0, mv), 1)
         up = p["side"] == "C"
         inv_hit = last_close is not None and (last_close < pl["invalidation"] if up else last_close > pl["invalidation"])
         if now >= sess["all_out"]:

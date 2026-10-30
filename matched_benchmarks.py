@@ -43,7 +43,7 @@ def arrays(m1_day):
     """The day's bars as plain arrays for the fast path (v3.4 lab: thousands of outcomes a day)."""
     idx = m1_day.index
     return {"o": m1_day["Open"].to_numpy(float), "h": m1_day["High"].to_numpy(float), "l": m1_day["Low"].to_numpy(float),
-            "mins": (idx.hour * 60 + idx.minute).to_numpy(), "n": len(m1_day)}
+            "c": m1_day["Close"].to_numpy(float), "mins": (idx.hour * 60 + idx.minute).to_numpy(), "n": len(m1_day)}
 
 
 def outcome_arrays(a, entry_i, side, stop_dist, target_r=2.0, horizon_min=None, flat="15:25", cost_per_share=0.04):
@@ -74,6 +74,62 @@ def outcome_arrays(a, entry_i, side, stop_dist, target_r=2.0, horizon_min=None, 
         if ht:
             return {"r": round(target_r - cr, 4), "why": "target", "exit_i": j}
     return None
+
+
+def outcome_close_arrays(a, entry_i, side, stop_dist, target_r=2.0, flat="15:25", cost_per_share=0.04, checks=None):
+    """v3.4.2 'own exits' path, the way the desk's paper ledgers actually exit: decisions on FINISHED 1m closes, filled
+    at the NEXT bar's open (gaps included, so a loss can exceed 1R). Without `checks`: a close beyond entry -/+ stop_dist
+    stops it, a close beyond the target takes it. With `checks` ({bar_index: (stop_level, flip)}, e.g. the noise band's
+    half-hour checks): only those bars can stop it (close beyond the level, or the signal flipped), no target. Flat at
+    the flat time's bar open. R = stop_dist."""
+    n = a["n"]
+    if entry_i is None or entry_i >= n or not stop_dist or stop_dist <= 0:
+        return None
+    o, c, mins = a["o"], a["c"], a["mins"]
+    up = side == "C"
+    e = float(o[entry_i])
+    stop = e - stop_dist if up else e + stop_dist
+    tgt = e + target_r * stop_dist if up else e - target_r * stop_dist
+    fm = int(flat[:2]) * 60 + int(flat[3:5])
+    cr = cost_per_share / stop_dist
+    r = lambda x: round(((x - e) if up else (e - x)) / stop_dist - cr, 4)
+    for j in range(entry_i, n):
+        if int(mins[j]) >= fm:
+            return {"r": r(float(o[j])), "why": "time", "exit_i": j}
+        cj = float(c[j])
+        why = None
+        if checks is not None:
+            ck = checks.get(j)
+            if ck is not None:
+                lvl, flip = ck
+                if flip:
+                    why = "signal flipped"
+                elif lvl is not None and ((cj < lvl) if up else (cj > lvl)):
+                    why = "stop (check)"
+        elif (cj <= stop) if up else (cj >= stop):
+            why = "stop (close)"
+        elif (cj >= tgt) if up else (cj <= tgt):
+            why = "target (close)"
+        if why:
+            if j + 1 >= n:
+                return None
+            return {"r": r(float(o[j + 1])), "why": why, "exit_i": j + 1}
+    return None
+
+
+def control_mean_fn(a, fn, paths=20, seed=11, window=("09:45", "15:15")):
+    """Mean R of `paths` random admissible entries for any outcome function fn(entry_i) -> {r} or None."""
+    lo, hi = int(window[0][:2]) * 60 + int(window[0][3:]), int(window[1][:2]) * 60 + int(window[1][3:])
+    idx = [i for i in range(a["n"] - 1) if lo <= int(a["mins"][i]) <= hi]
+    if not idx:
+        return None, 0
+    rnd = random.Random(seed)
+    rs = []
+    for _ in range(paths):
+        o = fn(rnd.choice(idx) + 1)
+        if o:
+            rs.append(o["r"])
+    return (round(sum(rs) / len(rs), 4) if rs else None), len(rs)
 
 
 def control_mean(a, side, stop_dist, paths=20, seed=11, window=("09:45", "15:15"), **kw):
