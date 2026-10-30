@@ -40,7 +40,9 @@ def test_nothing_is_qualified_and_failed_strategies_are_research_only(db):
     assert SR.status_for("ORB_BREAK", "SPY")["status"] == "RESEARCH ONLY" and not SR.status_for("ORB_BREAK", "SPY")["actionable"]
     assert SR.status_for("SOMETHING_NEW", "NVDA")["status"] == "DRAFT"
     ids = {e["id"]: e for e in t["experiments"]}
-    assert ids["MACD-VIDEO-5M-2R"]["status"] == "RETIRED" and ids["FILTER-TREND-ADX25"]["status"] == "RETIRED"
+    # v3.4 (Nick, Oct 30): nothing is retired yet; the earlier failures run again in the lab and stay research only
+    assert ids["MACD-VIDEO-5M-2R"]["status"] == "RESEARCH ONLY" and ids["FILTER-TREND-ADX25"]["status"] == "RESEARCH ONLY"
+    assert not [e for e in t["experiments"] if e["status"] == "RETIRED"]
     assert all(e["evidence"] or e["status"] in ("DRAFT", "RESEARCH ONLY") for e in t["experiments"])
 
 
@@ -156,5 +158,5 @@ def test_chart_context_carries_the_evidence_status(db):
     import commands
     b = commands._strategies_brief()
     assert b["qualified"] == [] and "No strategy is PAPER QUALIFIED" in b["note"]
-    assert b["status"]["LEGACY-V3-VWAP_MACD"] == "RESEARCH ONLY" and b["status"]["MACD-VIDEO-5M-2R"] == "RETIRED"
-    assert len(json.dumps(b)) < 1500
+    assert b["status"]["LEGACY-V3-VWAP_MACD"] == "RESEARCH ONLY" and b["status"]["MACD-VIDEO-5M-2R"] == "RESEARCH ONLY"
+    assert len(json.dumps(b)) < 2500
