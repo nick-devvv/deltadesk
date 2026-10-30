@@ -45,14 +45,14 @@ import matched_benchmarks as MB
 import paper
 import store
 
-VERSION = "2026-10-30.v3.4-lab1"
+VERSION = "2026-10-30.v3.4-lab1"          # 3.4.1: whole-step time budget (signal rules unchanged)
 ET = core.ET
 ARCHIVE = core.HERE / "journal" / "bars"          # tests point this at a temporary folder
 COLS = ["Open", "High", "Low", "Close", "Volume"]
 
 DEFAULTS = {"enabled": True, "tape": True, "paper": True,
             "history_days": 30, "history_sessions": 16, "history_calls_per_min": 30,
-            "max_bars_per_step": 40, "step_budget_s": 8, "v3_stocks": True, "macd_video_min_bars": 1000,
+            "max_bars_per_step": 40, "step_budget_s": 4, "v3_stocks": True, "macd_video_min_bars": 1000,
             "window": ["09:45", "15:15"], "max_signal_age_s": 150, "episode_gap_min": 10,
             "max_open_per_ledger": 2, "max_ideas_per_ledger": 6, "max_open_total": 20, "attempts_per_min": 8, "qty": 1,
             "target_r": 2.0, "flat": "15:25", "cost_per_share": 0.04, "stop_buffer_atr": 0.05,
@@ -337,7 +337,7 @@ def _hist_agg(hist, minutes):
         bars, done = I.aggregate(g, minutes)
         parts.append(bars[done.values] if len(done) else bars)
     out = pd.concat(parts) if parts else None
-    if len(cache) > 2000:
+    if len(cache) > 600:
         cache.clear()
     cache[key] = out
     return out
@@ -699,14 +699,22 @@ def scan(now, base_all, c=None):
     # symbols that are only a bar or three behind first (live signals); catch-up after a restart uses what time is left
     work.sort(key=lambda w: w[0])
     t_start = time.time()
-    for n_new, t, m1, idx in work:
-        for k, b in enumerate(idx[:c["max_bars_per_step"]]):
-            if k >= 3 and time.time() - t_start > c.get("step_budget_s", 8):
+    done_n = 0
+    out_of_time = False
+    for n_new, t, m1, idx in work:              # v3.4.1: ONE time budget for the whole step, live bars included
+        for b in idx[:c["max_bars_per_step"]]:
+            if done_n and time.time() - t_start > c.get("step_budget_s", 4):
+                out_of_time = True
                 break
             mk = m1[m1.index <= b]
             got = process_bar(t, mk, b, now, ctx)
             _state["last_bar"][t] = b.isoformat()
+            done_n += 1
             new += got
+        if out_of_time:
+            break
+        time.sleep(0)                           # let the desk's other threads run between symbols
+    _state["behind"] = sum(max(0, w[0]) for w in work) - done_n
     for s in new:
         if s["live"] and c["paper"]:
             try:
@@ -1107,6 +1115,7 @@ def status():
     tot = store.q("SELECT COUNT(*) n, COUNT(DISTINCT day) days, SUM(CASE WHEN status='DONE' THEN 1 ELSE 0 END) done FROM lab_tape")[0]
     hist_n = sum(1 for t in tickers() if _hist_for(t, core.now_et().date()) is not None)
     return {"version": VERSION, "status": _state["status"], "last_error": _state["last_error"], "step_s": _state["step_s"],
+            "bars_behind": _state.get("behind"),
             "symbols": len(tickers()), "with_history": hist_n, "today": {r["family"]: {"signals": r["n"], "live": r["live"] or 0,
                                                                                          "resolved": r["done"] or 0} for r in cnt},
             "total": {"signals": tot["n"], "days": tot["days"], "resolved": tot["done"] or 0},
@@ -1137,7 +1146,7 @@ def step(now=None):
         saved = store.kv_get(f"lab_state:{day}") or {}
         with _lock:
             _state.update(day=day, last_bar=saved.get("last_bar") or {}, ep=saved.get("ep") or {}, noise_prev=saved.get("noise_prev") or {},
-                          counts={}, cats=None)
+                          counts={}, cats=None, agg={})
     if sess.get("holiday") or now.weekday() >= 5:
         _state["status"] = "market closed"
         return
@@ -1155,7 +1164,8 @@ def step(now=None):
     elif not base_all:
         _state["status"] = "waiting for the 08:30 baselines"
     manage_all(now)
-    if hm >= c["resolve_after"]:
+    if hm >= c["resolve_after"] and time.time() - (_state.get("resolve_t") or 0) > 120:
+        _state["resolve_t"] = time.time()
         resolve(str(day), now, c)
     if hm >= c["archive_after"] and _state["archived"] != str(day):
         archive_today(now)

@@ -649,11 +649,64 @@ def engine_loop():
         time.sleep(5)
 
 
+def kronos_orphans(ps_out=None):
+    """v3.4.1: kronos_shadow.py copies of THIS desk whose server is gone (their parent is pid 1 / launchd, or isn't a
+    server.py). Copies started by a live server are left alone. Returns [(pid, ppid)]."""
+    import subprocess
+    if ps_out is None:
+        try:
+            ps_out = subprocess.run(["ps", "-axo", "pid=,ppid=,command="], capture_output=True, text=True, timeout=10).stdout
+        except Exception:
+            return []
+    script = os.path.join(HERE, "kronos_shadow.py")
+    procs = {}
+    for line in ps_out.splitlines():
+        parts = line.strip().split(None, 2)
+        if len(parts) == 3 and parts[0].isdigit() and parts[1].isdigit():
+            procs[int(parts[0])] = (int(parts[1]), parts[2])
+    out = []
+    for pid, (ppid, cmd) in procs.items():
+        if script not in cmd or pid == os.getpid():
+            continue
+        parent_cmd = procs.get(ppid, (None, ""))[1]
+        if ppid <= 1 or "server.py" not in parent_cmd:
+            out.append((pid, ppid))
+    return out
+
+
+def stop_kronos_orphans():
+    import signal
+    killed = []
+    for pid, _ppid in kronos_orphans():
+        try:
+            os.kill(pid, signal.SIGTERM)
+            killed.append(pid)
+        except OSError:
+            pass
+    if killed:
+        time.sleep(3)
+        for pid in killed:
+            try:
+                os.kill(pid, 0)
+                os.kill(pid, signal.SIGKILL)               # still there after SIGTERM
+            except OSError:
+                pass
+    return killed
+
+
 def start_kronos():
-    """Kronos runs in its own process, without broker keys or the desk token, and can never block the desk."""
+    """Kronos runs in its own process, without broker keys or the desk token, and can never block the desk.
+    v3.4.1: leftover copies from earlier servers are stopped first, the child holds a lock (one copy at most) and
+    exits when this server dies, so restarts can't pile copies up."""
     if os.environ.get("KRONOS") != "1":
         return None
     import subprocess
+    try:
+        k = stop_kronos_orphans()
+        if k:
+            print(f"Kronos: stopped {len(k)} leftover copies from earlier servers: {k}", flush=True)
+    except Exception as e:
+        print("Kronos: leftover check failed:", e, flush=True)
     env = {k: v for k, v in os.environ.items() if not k.startswith(("ALPACA", "DESK_TOKEN", "CHAT_WEBHOOK", "QUIVER", "SCHWAB"))}
 
     def run():

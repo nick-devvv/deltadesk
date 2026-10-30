@@ -44,7 +44,8 @@ def _run(world, hh, mm, mutate=None, **kw):
     now = clock()
     SS._state["bars"] = {t: (time.time(), f.m1_today(t, now.date())) for t in f.m1s}
     _reset_lab()
-    c = dict(lab.cfg(), max_bars_per_step=500, step_budget_s=999, paper=False, **kw)
+    c = dict(lab.cfg(), max_bars_per_step=500, step_budget_s=999, paper=False)
+    c.update(kw)
     lab._pull_history(now, c)
     base = store.kv_get(f"scan_base:{now.date()}")
     return lab.scan(now, base, c), now, c
@@ -332,3 +333,40 @@ def test_kill_switch_closes_lab_trades_and_lab_has_no_order_path(lw):
     assert not store.positions(ledger="lab_orb_break", status="OPEN")
     src = open(core.HERE / "lab.py").read()
     assert "broker" not in src and "/orders" not in src and "/trader" not in src
+
+
+# ---------------------------------------------------------------- v3.4.1: Kronos can't pile up, the lab can't hog the desk
+def test_kronos_holds_a_single_instance_lock(tmp_path):
+    import kronos_shadow as K
+    p = str(tmp_path / "kronos.lock")
+    a = K.single_instance(p)
+    assert a is not None
+    import subprocess
+    import sys
+    code = ("import sys; sys.path.insert(0, %r); import kronos_shadow as K; print('second' if K.single_instance(%r) else 'refused')"
+            % (str(core.HERE), p))
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=60).stdout.strip()
+    assert out.endswith("refused")                          # another process can't start a second copy
+    a.close()
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=60).stdout.strip()
+    assert out.endswith("second")                           # released when the holder ends
+    assert K.parent_alive(__import__("os").getppid()) and not K.parent_alive(-1)
+
+
+def test_server_stops_only_orphaned_kronos_copies(monkeypatch):
+    import os
+    import server
+    script = os.path.join(server.HERE, "kronos_shadow.py")
+    ps = "\n".join([f"  101     1 /usr/bin/python3 {script}",                     # orphan (re-parented to pid 1)
+                    f"  102   500 /usr/bin/python3 {script}",                     # parent is a live server: keep
+                    f"  103   777 /usr/bin/python3 {script}",                     # parent is not a server: orphan
+                    "  500     1 /usr/bin/python3 /home/x/desk/server.py",
+                    "  777     1 /bin/bash something.sh",
+                    "  104     1 /usr/bin/python3 /other/place/kronos_shadow.py"])  # another folder: never touched
+    assert sorted(server.kronos_orphans(ps)) == [(101, 1), (103, 777)]
+
+
+def test_one_time_budget_covers_the_whole_lab_step(lw):
+    sigs, now, c = _run(lw, 10, 40, step_budget_s=0)
+    done = sum(1 for v in lab._state["last_bar"].values() if v)
+    assert done == 1 and lab._state["behind"] > 100          # one bar processed, the rest waits for the next steps

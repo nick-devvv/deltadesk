@@ -196,6 +196,42 @@ def load_predictor():
     return predict_fn
 
 
+LOCK = os.path.join(HERE, "journal", "kronos.lock")
+
+
+def single_instance(path=LOCK):
+    """v3.4.1: at most ONE Kronos process per desk. Returns the open lock file (keep it) or None if another copy
+    already holds the lock. The lock is released by the OS when the process ends, however it ends."""
+    import fcntl
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    f = open(path, "a+")
+    try:
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        f.close()
+        return None
+    f.seek(0)
+    f.truncate()
+    f.write(str(os.getpid()))
+    f.flush()
+    return f
+
+
+def parent_alive(ppid0):
+    """True while the desk server that started this process is still our parent. When the server dies, the OS
+    re-parents us (pid 1 / launchd), and this copy exits instead of living on as an orphan."""
+    return os.getppid() == ppid0
+
+
+def _sleep_watching(seconds, ppid0, step=5.0):
+    end = time.time() + seconds
+    while time.time() < end:
+        if not parent_alive(ppid0):
+            return False
+        time.sleep(min(step, max(0.0, end - time.time())))
+    return parent_alive(ppid0)
+
+
 def _until_next_bar():
     """Wake once per 5-minute bar (20 s after it completes) instead of polling Yahoo every 30 s."""
     now = core.now_et()
@@ -204,15 +240,20 @@ def _until_next_bar():
 
 
 def main():
+    ppid0 = os.getppid()
+    lock = single_instance()
+    if lock is None:
+        print("kronos_shadow: another copy is already running; this one exits", flush=True)
+        return
     migrate()
-    status("loading", model=MODEL, rev=REV)
+    status("loading", model=MODEL, rev=REV, pid=os.getpid())
     try:
         predict_fn = load_predictor()
     except Exception as e:
         status("error", error=f"{type(e).__name__}: {e}"[:300], hint="see setup steps at the top of kronos_shadow.py")
         return
-    status("running", model=MODEL, rev=REV)
-    while True:
+    status("running", model=MODEL, rev=REV, pid=os.getpid())
+    while parent_alive(ppid0):
         sess = core.session_info()
         try:
             scoring_window = sess["state"] != "AFTER HOURS" or sess["time"] <= "16:30"
@@ -225,7 +266,9 @@ def main():
             status("running", model=MODEL, rev=REV, verdict=verdict(metrics()))
         except Exception as e:
             status("running", model=MODEL, rev=REV, last_error=f"{type(e).__name__}: {e}"[:300])
-        time.sleep(_until_next_bar())
+        if not _sleep_watching(_until_next_bar(), ppid0):
+            break
+    status("stopped", why="the desk server that started it is gone; the next server starts a fresh copy")
 
 
 if __name__ == "__main__":
