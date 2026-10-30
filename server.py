@@ -18,9 +18,12 @@ Main endpoints:
   POST /api/events           {"date","events":[{"time":"08:30","name":"CPI"}]} from the 9 AM routine
   GET/POST /api/watchlist     other tickers: quotes, earnings date; {"add":"NVDA"} / {"remove":"NVDA"}
   GET  /api/alt?t=NVDA        optional Quiver data (QUIVER_KEY): congress trades, short volume, WSB, lobbying, contracts
-  GET  /api/schwab/status|login, POST /api/schwab/connect   optional live Schwab market data (market data only)
+  GET  /api/schwab/status|login, POST /api/schwab/connect|disconnect|restart-stream   Schwab market data (market data only)
   GET/POST /api/news         Chart's news scan posts headlines {"items":[{headline,source,time,tickers,impact,direction,why}]}
   GET/POST /api/alerts       alert toggles (setups, moves, news); phone push via NTFY_TOPIC (ntfy app)
+  GET  /api/chart?t=ANY&tf=1|2|5|15&ext=0|1&since=<unix s>  desk chart (since = live tail only)
+  GET  /api/symbol?q=nvid    symbol search (Schwab instruments; desk lists as a labeled fallback)
+  GET  /api/setups           setups board: objective setups over the scanned universe, coverage and definitions
   GET  /api/chart?t=SPY&tf=1|2|5  desk chart from the SAME Schwab pipeline as the engine: candles, volume, VWAP,
                              EMA9/21, MACD, levels (with sources), entry/exit markers, feed + freshness
   GET  /api/data/status      provider, stream/REST/fallback mode, entitlements check, latency distributions, gaps
@@ -165,6 +168,49 @@ def counters():
             "real": {"streak": paper.streak("real")}}
 
 
+def schwab_view():
+    """Connection + stream + feed state for the Rules page and the top bar. Never contains a token."""
+    st = schwab.status()
+    try:
+        import schwab_stream
+        stream = schwab_stream.state()
+    except Exception as e:
+        stream = {"phase": "off", "detail": type(e).__name__}
+    md = marketdata.status()
+    return dict(st, stream=stream, feed=md.get("live_label"), mode=md.get("mode"), last_msg_age_s=md.get("last_msg_age_s"),
+                api={k: v for k, v in schwab.STATS.items()}, candles=engine.data_source())
+
+
+SETTINGS_KEYS = {"catalyst_settings": {"xai_enabled": bool, "xai_daily_budget_usd": float, "xai_max_calls_per_hour": int,
+                                        "edgar_enabled": bool, "alert_min_gap_min": int},
+                  "setups_settings": {"enabled": bool, "quotes_every_s": int, "bars_calls_per_min": int, "mover_pct": float,
+                                      "rvol_unusual": float}}
+LIMITS = {"xai_daily_budget_usd": (0, 50), "xai_max_calls_per_hour": (0, 60), "quotes_every_s": (30, 600),
+          "bars_calls_per_min": (0, 40), "alert_min_gap_min": (0, 120), "mover_pct": (0.5, 20), "rvol_unusual": (1, 10)}
+
+
+def markets_settings(b=None):
+    """Scan schedule, universe sizing, alert pacing and spending limits (validated, clamped; never secrets)."""
+    import catalysts
+    import scanner_setups
+    if b:
+        for key, spec in SETTINGS_KEYS.items():
+            cur = store.kv_get(key) or {}
+            for k, typ in spec.items():
+                if k in b:
+                    v = typ(b[k]) if typ is not bool else bool(b[k])
+                    if k in LIMITS:
+                        v = max(LIMITS[k][0], min(LIMITS[k][1], v))
+                    cur[k] = v
+            store.kv_set(key, cur)
+    c, s2 = catalysts.cfg(), scanner_setups.cfg()
+    return {"catalysts": {k: c[k] for k in SETTINGS_KEYS["catalyst_settings"]}, "setups": {k: s2[k] for k in SETTINGS_KEYS["setups_settings"]},
+            "xai_key_set": bool(os.environ.get("XAI_API_KEY")), "sec_user_agent_set": bool(os.environ.get("SEC_USER_AGENT")),
+            "spend_today": catalysts._spend_today(), "limits": LIMITS,
+            "prices": {"grok-4.7 input per 1M tokens": 2.0, "grok-4.7 output per 1M tokens": 6.0, "x_search per 1k posts": 5.0,
+                       "web_search per 1k calls": 5.0, "checked": "docs.x.ai pricing page, updated Oct 10 2026"}}
+
+
 def state(since):
     sess = core.session_info()
     pos = store.positions(status="OPEN") + store.positions(status="PENDING")
@@ -268,7 +314,7 @@ class H(BaseHTTPRequestHandler):
             if u.path == "/api/alerts":
                 return self._json(alerts.settings())
             if u.path == "/api/schwab/status":
-                return self._json(dict(schwab.status(), callback=schwab.callback(), candles=engine.data_source()))
+                return self._json(clean(schwab_view()))
             if u.path == "/api/schwab/login":
                 if not schwab.configured():
                     return self._send(400, "Add SCHWAB_APP_KEY and SCHWAB_APP_SECRET to Chart's Secrets first.", "text/plain")
@@ -329,7 +375,41 @@ class H(BaseHTTPRequestHandler):
                 return self._json(out)
             if u.path == "/api/chart":
                 import chartfeed
-                return self._json(clean(chartfeed.build(q.get("t", ["SPY"])[0].upper(), q.get("tf", ["2"])[0])))
+                t = q.get("t", ["SPY"])[0].upper().strip()
+                if not watchlist.valid(t):
+                    return self._json({"ticker": t, "error": "That isn't a valid ticker symbol.", "candles": [],
+                                       "status": {"state": "unavailable", "why": "invalid symbol"}})
+                return self._json(clean(chartfeed.build(t, q.get("tf", ["2"])[0], q.get("ext", ["0"])[0], q.get("since", [None])[0])))
+            if u.path == "/api/symbol":
+                return self._json(clean(schwab.search(q.get("q", [""])[0])))
+            if u.path == "/api/catalysts":
+                import catalysts
+                return self._json(clean({"items": catalysts.feed(q.get("t", [None])[0], q.get("label", [None])[0] or None),
+                                         "metrics": catalysts.metrics()}))
+            if u.path == "/api/earnings":
+                import earnings
+                t = q.get("t", [None])[0]
+                if t:
+                    rec = earnings.event(t.upper())
+                    return self._json(clean({"event": dict(rec, phase=earnings.phase(rec)) if rec else None,
+                                             "straddle": earnings.straddle(t.upper(), rec) if rec and earnings.phase(rec) == "PRE" else None}))
+                return self._json(clean({"calendar": earnings.cached_calendar()}))
+            if u.path == "/api/assess":
+                t = q.get("t", ["SPY"])[0].upper()
+                if not watchlist.valid(t):
+                    return self._json({"error": "invalid symbol"}, 400)
+                p = engine.build_plan(t, q.get("side", ["C"])[0].upper()[:1], None, "check")
+                return self._json(clean({"plan": p, "text": commands.plan_text(p)}))
+            if u.path == "/api/autopilot":
+                import autopilot
+                return self._json(clean({"decisions": autopilot.today(), "status": autopilot._state["status"],
+                                         "last_error": autopilot._state["last_error"], "paused": store.kv_get("paper_pause"),
+                                         "gate_setups": __import__("entrygate").today()[-40:]}))
+            if u.path == "/api/markets/settings":
+                return self._json(clean(markets_settings()))
+            if u.path == "/api/setups":
+                import scanner_setups
+                return self._json(clean(scanner_setups.board(best_per_stock=q.get("all", ["0"])[0] != "1")))
             if u.path == "/api/data/status":
                 return self._json(clean(marketdata.status()))
             if u.path == "/api/candidates":
@@ -427,14 +507,49 @@ class H(BaseHTTPRequestHandler):
                 return self._json({"ok": True})
             if u.path == "/api/news":  # Chart's news-scan routine posts market-moving headlines here
                 items = b.get("items") if isinstance(b.get("items"), list) else [b]
-                return self._json({"added": len(alerts.add_news(items))})
+                import catalysts                  # also into the catalyst store: label from the URL, "via Chart"
+                cat = catalysts.ingest([{"tickers": [x for x in str(i.get("tickers", "")).replace(",", " ").split() if x],
+                                         "headline": i.get("headline"), "summary": i.get("why"), "category": i.get("category"),
+                                         "published_at": i.get("published_at") or None,
+                                         "sources": [{"url": i.get("url")}] + [{"url": u2} for u2 in (i.get("source_urls") or [])]}
+                                        for i in items if isinstance(i, dict)], "Chart news routine")
+                return self._json({"added": len(alerts.add_news(items)), "catalysts": cat})
+            if u.path == "/api/catalysts/search":
+                import catalysts
+                t = str(b.get("ticker", "")).upper()
+                if not watchlist.valid(t):
+                    return self._json({"error": "invalid symbol"}, 400)
+                return self._json(clean(catalysts.xai_search([t], "Nick asked")))
+            if u.path == "/api/earnings":
+                import earnings
+                return self._json(clean(earnings.confirm(str(b.get("ticker", "")).upper(), str(b.get("date", ""))[:10], b.get("timing"),
+                                                         b.get("source_url"), b.get("call_time"))))
+            if u.path == "/api/paper/pause":
+                on = bool(b.get("on"))
+                store.kv_set("paper_pause", {"at": store.ts(), "by": "Nick"} if on else None)
+                store.event("note", "PAPER entries PAUSED by Nick (emergency pause)" if on else "Paper entries resumed", "paper")
+                return self._json({"paused": on})
+            if u.path == "/api/markets/settings":
+                return self._json(clean(markets_settings(b)))
             if u.path == "/api/alerts":
                 return self._json(alerts.set_settings(b))
             if u.path == "/api/schwab/connect":
                 ok, msg = schwab.connect(str(b.get("url", ""))[:2000])
                 if ok:
-                    store.event("system", "Schwab live data connected (renew every 7 days on the Rules page)")
-                return self._json({"ok": ok, "message": msg, "status": schwab.status()}, 200 if ok else 400)
+                    store.event("system", "Schwab connected: market data verified (log in again every 7 days on the Rules page)")
+                return self._json(clean({"ok": ok, "message": msg, "status": schwab_view()}), 200 if ok else 400)
+            if u.path == "/api/schwab/disconnect":
+                msg = schwab.disconnect()
+                store.event("system", "Schwab disconnected by Nick: " + msg)
+                return self._json(clean({"ok": True, "message": msg, "status": schwab_view()}))
+            if u.path == "/api/schwab/restart-stream":
+                import schwab_stream
+                if not schwab.ready():
+                    return self._json({"ok": False, "message": "No working Schwab login: press Connect Schwab first."}, 400)
+                started = schwab_stream.restart("restarted by Nick")
+                return self._json(clean({"ok": bool(started), "message": "Stream restarting (one clean connection)." if started
+                                         else "The stream can't start: the websockets package isn't installed (REST polling continues).",
+                                         "status": schwab_view()}))
             if u.path == "/api/trade_note":
                 r = store.trade_note(str(b.get("id", "")), b.get("fields") or {})
                 return self._json({"ok": r is not None, "notes": r}, 200 if r is not None else 404)
@@ -515,6 +630,13 @@ if __name__ == "__main__":
     try:
         import scanner
         print("Scanner:", "started" if scanner.start() else "off", flush=True)
+        import scanner_setups
+        print("Setups board:", "started" if scanner_setups.start() else "off", flush=True)
+        import autopilot
+        import catalysts
+        import earnings
+        print("Catalysts:", "started" if catalysts.start() else "off", "| Autopilot (paper):", "started" if autopilot.start() else "off", flush=True)
+        threading.Thread(target=earnings.refresh_calendar, daemon=True, name="earnings-calendar").start()
     except Exception as e:
         print("Scanner not started:", e, flush=True)
     start_kronos()
