@@ -210,6 +210,7 @@ main{min-width:0;min-height:0;overflow:hidden;display:flex;flex-direction:column
 .setf{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;padding:12px 16px 4px;font-size:12.5px;color:var(--ink-3)}
 .setf select,.setf input[type=number]{height:28px;border-radius:8px;border:1px solid var(--line);background:var(--glass);color:var(--ink);font:500 12px var(--sans);padding:0 6px}
 .setf input[type=number]{width:70px} .setf label{display:inline-flex;gap:6px;align-items:center}
+.setf label[hidden]{display:none} #wwCtl select{max-width:min(320px,100%)} #wwCtl label{max-width:100%}
 .setups table{min-width:1080px} .setups tr.hit{cursor:pointer} .setups tr.hit:hover td{background:var(--raise)} .setups tr.hit:focus-visible{outline:2px solid var(--brand);outline-offset:-2px}
 .setups td{vertical-align:top} .setups .why{font-size:12px;color:var(--ink-2);max-width:360px} .setups .why i{font-style:normal;color:var(--ink-3)}
 .setups .stt{font-size:11px;color:var(--ink-3)} .setups .q{color:var(--up);font-weight:600} .setups .flag{font-size:11px;color:var(--warn)} .setups .L{color:var(--up)} .setups .S{color:var(--down)}
@@ -726,6 +727,18 @@ td.n,th.n{text-align:right;white-space:nowrap}
       </div>
       <div class="box" style="margin-top:16px"><div class="ph"><h2>Entry rules compared<small>every stored setup, traded or not, after modeled costs</small></h2></div><div class="bd scan" id="ruleCmp" style="overflow:auto"></div></div>
       <div class="box" style="margin-top:16px"><div class="ph"><h2>Strategy evidence<small>every strategy tested, its status and why</small></h2><div class="r"><span class="pill dim" id="stratQ">—</span></div></div><div class="bd scan" id="stratTable" style="overflow:auto"></div></div>
+      <div class="box" style="margin-top:16px"><div class="ph"><h2>Strategy lab<small>every strategy on every stock, every day, on paper</small></h2><div class="r"><span class="pill dim" id="labQ">—</span></div></div>
+        <div class="bd" id="labStat" style="padding-bottom:0"></div>
+        <div class="bd scan" id="labLedgers" style="overflow:auto"></div>
+        <div class="setf" id="wwCtl">
+          <b style="color:var(--ink)">What works where</b>
+          <label>Split by <select id="wwBy"><option value="strategy">Strategy</option><option value="setup">Setup</option><option value="ticker">Stock</option><option value="strategy_ticker">Strategy and stock</option><option value="strategy_group">Strategy and stock group</option><option value="strategy_condition">Strategy and condition</option></select></label>
+          <label id="wwCondL" hidden>Condition <select id="wwCond"></select></label>
+          <label>Strategy <select id="wwFam"><option value="">All</option></select></label>
+          <label>Stock <input type="text" id="wwT" placeholder="any" style="width:70px;height:28px;border-radius:8px;border:1px solid var(--line);background:var(--glass);color:var(--ink);font:500 12px var(--sans);padding:0 6px"></label>
+          <label><input type="checkbox" id="wwAll"> Include board rows that didn't qualify</label>
+        </div>
+        <div class="bd scan" id="wwTable" style="overflow:auto"></div></div>
     </section>
 
     <!-- RESEARCH -->
@@ -1209,6 +1222,7 @@ function addEvent(e){
     if (booted) { const r = $("#rscroll"); r.scrollTop = r.scrollHeight; }
     return;
   }
+  if (e.kind === "lab") return;              // v3.4: lab paper trades show in Markets → Strategy lab, not in the trade feed
   $("#feedEmpty")?.remove();
   if (booted && $("#pane-feed").hidden){ unread++; const bd = $("#feedBadge"); bd.hidden = false; bd.textContent = unread > 99 ? "99+" : unread; }
   if (booted) Core.pulse(/^paper/.test(e.kind) || e.ledger === "paper" ? "PAPER" : /QQQ/.test(e.text) ? "QQQ" : "SPY");
@@ -1543,7 +1557,7 @@ function posV3(p, pl, vq, upl, real){
     <span class="next">${next}</span>${real ? guideHtml(p, pl) : ""}</div>`;
 }
 function renderPositions(){
-  const all = S.positions || [], ps = all.filter(p => p.ledger === "real"), sim = all.length - ps.length;
+  const all = S.positions || [], ps = all.filter(p => p.ledger === "real"), sim = all.filter(p => p.ledger !== "real" && !/^lab_/.test(p.ledger)).length;
   const el = $("#positions");
   $("#simNote").innerHTML = sim ? ` <a href="#paper">${sim} simulated open</a>` : "";
   if (!ps.length){ el.innerHTML = '<div class="empty">None open. Tell Chart what you bought, like <b>IN SPY 600C 2 at 1.20</b>. Other tickers need the expiry: <b>IN NVDA 140C 11/07 1 at 3.20</b>.</div>'; return; }
@@ -1926,6 +1940,52 @@ async function loadAuto(){
 }
 $("#autoPause").onclick = async () => { const on = !$("#autoPause").dataset.on; try { await api("api/paper/pause", {on}); } catch(e){} loadAuto(); };
 const SCLS = {"PAPER QUALIFIED":"up", "RESEARCH ONLY":"warn", "DRAFT":"dim", "PAUSED":"warn", "RETIRED":"down"};
+/* ---------- v3.4 strategy lab ---------- */
+let LABS = null;
+const r2 = v => v == null ? "—" : (v > 0 ? "+" : "") + Number(v).toFixed(2) + "R";
+async function loadLabBox(){
+  let d; try { d = await api("api/lab"); } catch(e){ $("#labStat").innerHTML = `<p class="d">${esc(e.message)}</p>`; return; }
+  LABS = d;
+  const tdy = Object.values(d.today || {}), sig = tdy.reduce((a, x) => a + x.signals, 0), live = tdy.reduce((a, x) => a + x.live, 0);
+  $("#labQ").textContent = d.status || "—"; $("#labQ").className = "pill " + (d.status === "recording" ? "up" : "dim");
+  $("#labStat").innerHTML = `<p class="m" style="margin:0">${d.symbols} symbols (${d.with_history} with prior-day history). Today: ${sig} signals recorded, ${live} seen live enough to paper trade.
+    All time: ${d.total.signals || 0} signals on ${d.total.days || 0} days, ${d.total.resolved || 0} with outcomes. Bar archive: ${d.archive_days} days.
+    ${d.last_error ? `<span class="d">Last error: ${esc(d.last_error)}</span>` : ""}</p>`;
+  if ($("#wwFam").options.length <= 1) {
+    $("#wwFam").innerHTML = '<option value="">All</option>' + Object.entries(d.families || {}).map(([k, v]) => `<option value="${esc(k)}">${esc(v.label)}</option>`).join("");
+    $("#wwCond").innerHTML = Object.entries(d.conditions || {}).map(([k, v]) => `<option value="${esc(k)}">${esc(v)}</option>`).join("");
+  }
+  loadWhatWorks();
+}
+let wwSeq = 0;
+async function loadWhatWorks(){
+  const my = ++wwSeq;                         // a newer selection always wins over an older, slower answer
+  const by = $("#wwBy").value; $("#wwCondL").hidden = by !== "strategy_condition";
+  const qs = new URLSearchParams({by}); if (by === "strategy_condition") qs.set("cond", $("#wwCond").value);
+  if ($("#wwFam").value) qs.set("family", $("#wwFam").value); if ($("#wwT").value.trim()) qs.set("t", $("#wwT").value.trim().toUpperCase());
+  if ($("#wwAll").checked) qs.set("all", "1");
+  let d; try { d = await api("api/lab/report?" + qs); } catch(e){ if (my === wwSeq) $("#wwTable").innerHTML = `<p class="d">${esc(e.message)}</p>`; return; }
+  if (my !== wwSeq) return;
+  const P = d.paper || {}, fams = (LABS && LABS.families) || {};
+  $("#labLedgers").innerHTML = `<table><thead><tr><th>Lab ledger (paper, 1 contract)</th><th>Source</th><th class="n">Open</th><th class="n">Closed trades</th><th class="n">Won</th><th class="n">Per trade</th><th class="n">Net</th></tr></thead><tbody>${
+    Object.entries(P).map(([k, v]) => `<tr><td><b>${esc((fams[k] || {}).label || k)}</b></td><td class="m" style="font-size:12px">${esc((fams[k] || {}).source || "")}</td>
+      <td class="n">${v.open}</td><td class="n">${v.n}</td><td class="n">${v.won != null ? v.won + "%" : "—"}</td>
+      <td class="n ${tone(v.per_trade)}">${v.per_trade != null ? money(v.per_trade) : "—"}</td><td class="n ${tone(v.net)}">${v.n ? money(v.net) : "—"}</td></tr>`).join("")}</tbody></table>`;
+  const head = {strategy: ["Strategy"], setup: ["Strategy", "Setup"], ticker: ["Stock"], strategy_ticker: ["Strategy", "Stock"],
+                strategy_group: ["Strategy", "Stock group"], strategy_condition: ["Strategy", d.cond_label || "Condition"]}[d.by] || ["Group"];
+  const name = (r, i) => i === 0 && d.by !== "ticker" ? esc(r.label || r.key[0]) : esc(r.key[i]);
+  const rows = d.rows || [];
+  $("#wwTable").innerHTML = rows.length ? `<table><thead><tr>${head.map(h => `<th>${esc(h)}</th>`).join("")}<th class="n">Signals</th><th class="n">Days</th><th class="n">Won</th><th class="n">Avg</th><th class="n">Random</th><th class="n">Edge vs random</th><th class="n">95% range</th><th class="n">Both halves</th></tr></thead><tbody>${
+    rows.map(r => `<tr${r.too_few ? ' style="opacity:.55"' : ""}>${head.map((h, i) => `<td>${i === 0 ? "<b>" : ""}${name(r, i)}${i === 0 ? "</b>" : ""}</td>`).join("")}
+      <td class="n">${r.n}${r.too_few ? ' <span class="m" style="font-size:11px">too few</span>' : ""}</td><td class="n">${r.sessions}</td>
+      <td class="n">${r.win_rate != null ? r.win_rate + "%" : "—"}</td><td class="n ${tone(r.avg_r)}">${r2(r.avg_r)}</td><td class="n">${r2(r.ctl_avg_r)}</td>
+      <td class="n ${tone(r.edge)}">${r2(r.edge)}</td><td class="n">${r.edge_ci95 ? r2(r.edge_ci95[0]) + " to " + r2(r.edge_ci95[1]) : "—"}</td>
+      <td class="n">${r.both_halves ? '<span class="pill up">holds</span>' : r.edge_early != null ? `<span class="m" style="font-size:11px">${r2(r.edge_early)} / ${r2(r.edge_late)}</span>` : "—"}</td></tr>${
+      r.group_level ? `<tr style="opacity:.55"><td></td><td class="m" style="font-size:11px" colspan="${head.length + 7}">Too few on ${esc(r.ticker)} alone: its group (${esc(r.group)}) ${r.group_level.n} signals, avg ${r2(r.group_level.avg_r)}, edge ${r2(r.group_level.edge)}; all stocks ${r.all_stocks.n}, avg ${r2(r.all_stocks.avg_r)}, edge ${r2(r.all_stocks.edge)}</td></tr>` : ""}`).join("")}</tbody></table>
+    <p class="m" style="font-size:11.5px;margin-top:8px">${esc(d.note)}</p>`
+    : `<div class="empty">No outcomes yet. Signals get their outcome after 3:31 PM ET each day; the lab needs about ${d.min_n} per row before a row means anything.</div>`;
+}
+$$("#wwCtl select, #wwCtl input").forEach(x => x.addEventListener("change", loadWhatWorks));
 async function loadStrategies(){
   let d; try { d = await api("api/strategies"); } catch(e){ $("#stratTable").innerHTML = `<p class="d">${esc(e.message)}</p>`; return; }
   const q = d.qualified || [];
@@ -1974,11 +2034,11 @@ async function loadSettings(save){
   $("#setSave").onclick = () => { const b = {}; $$("#mkSettings [data-k]").forEach(x => b[x.dataset.k] = x.type === "checkbox" ? x.checked : +x.value); loadSettings(b).then(() => { const m = $("#setMsg"); if (m) m.textContent = "Saved."; }); };
 }
 function loadMarkets(){
-  drawHealth(); MkChart.show(); loadSetups(); loadCats(); loadEarn(); loadAuto(); loadSettings(); loadTickerSide(); loadRules(); loadStrategies();
+  drawHealth(); MkChart.show(); loadSetups(); loadCats(); loadEarn(); loadAuto(); loadSettings(); loadTickerSide(); loadRules(); loadStrategies(); loadLabBox();
   $("#mkSym").innerHTML = esc(ticker) + ` <span>${MkChart.tf()}m</span>`; $("#mkReadT").textContent = "Desk read: " + ticker;
 }
 setInterval(() => { if (document.hidden || $("#v-markets").hidden) return; loadSetups(); loadCats(); loadAuto(); }, 20000);
-setInterval(() => { if (!document.hidden && !$("#v-markets").hidden) loadRules(); }, 60000);
+setInterval(() => { if (!document.hidden && !$("#v-markets").hidden) { loadRules(); loadLabBox(); } }, 60000);
 
 async function loadScanner(){
   let d; try { d = await api("api/scanner"); } catch(e){ $("#scanTable").innerHTML = `<div class="d">${esc(e.message)}</div>`; return; }
