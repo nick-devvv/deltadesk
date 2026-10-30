@@ -725,6 +725,7 @@ td.n,th.n{text-align:right;white-space:nowrap}
         <div class="box"><div class="ph"><h2>Settings and spending</h2></div><div class="bd" id="mkSettings"></div></div>
       </div>
       <div class="box" style="margin-top:16px"><div class="ph"><h2>Entry rules compared<small>every stored setup, traded or not, after modeled costs</small></h2></div><div class="bd scan" id="ruleCmp" style="overflow:auto"></div></div>
+      <div class="box" style="margin-top:16px"><div class="ph"><h2>Strategy evidence<small>every strategy tested, its status and why</small></h2><div class="r"><span class="pill dim" id="stratQ">—</span></div></div><div class="bd scan" id="stratTable" style="overflow:auto"></div></div>
     </section>
 
     <!-- RESEARCH -->
@@ -830,10 +831,30 @@ let S = null, seq = 0, ticker = store.get("ticker","SPY"), muted = store.get("mu
 const hhmm = iso => String(iso || "").slice(11,16);
 const todayET = () => new Intl.DateTimeFormat("en-CA",{timeZone:"America/New_York"}).format(new Date());
 
+/* Every desk call goes through readJson: it checks the status AND that the answer is JSON before parsing, so a tunnel
+   or proxy error page (e.g. Cloudflare 530 HTML) becomes one short message instead of raw HTML on screen. */
+function explainHttp(status, ctype, text){
+  const html = /text\/html/i.test(ctype || "") || /^\s*<(!doctype|html)/i.test(text || "");
+  const cf = (text || "").match(/error code:?\s*(1\d{3})/i) || (text || "").match(/Error (1\d{3})/i);
+  if (status === 530 || (html && cf)) return `The desk server couldn’t be reached through the tunnel (HTTP ${status}${cf ? ", Cloudflare " + cf[1] : ""}). Chart’s computer may be asleep, offline, or the tunnel restarted with a new link. Retrying.`;
+  if (status === 502 || status === 503 || status === 504) return `The desk server didn’t answer in time (HTTP ${status}). Retrying.`;
+  if (status === 401 || status === 403) return `The desk refused the request (HTTP ${status}): open the desk with your current link.`;
+  if (status === 429) return "Too many requests (HTTP 429): slowing down.";
+  if (html) return `The desk returned a web page instead of data (HTTP ${status}). Retrying.`;
+  let j = null; try { j = JSON.parse(text); } catch(e){}
+  if (j && j.error) return `${j.error}${j.diag_id ? " (ref " + j.diag_id + ")" : ""}`;
+  return `HTTP ${status}: ${(text || "").replace(/<[^>]+>/g, " ").slice(0, 100)}`;
+}
+async function readJson(r){
+  const ctype = r.headers.get("content-type") || "";
+  const text = await r.text();
+  if (!r.ok){ const e = new Error(explainHttp(r.status, ctype, text)); e.status = r.status; e.transport = r.status >= 500 || /text\/html/i.test(ctype); throw e; }
+  if (!/json/i.test(ctype)){ const e = new Error(explainHttp(r.status, ctype, text)); e.status = r.status; e.transport = true; throw e; }
+  try { return JSON.parse(text); } catch(x){ const e = new Error("The desk sent data that couldn’t be read (malformed JSON). Retrying."); e.transport = true; throw e; }
+}
 async function api(path, body){
   const r = await fetch(path, body ? {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)} : {cache:"no-store"});
-  if (!r.ok) throw new Error(r.status + " " + (await r.text()).slice(0,120));
-  return r.json();
+  return readJson(r);
 }
 
 /* ---------- clock ---------- */
@@ -944,20 +965,21 @@ function makeChart(o){
     if (!since && ctl) ctl.abort();
     const c = new AbortController(); if (!since) ctl = c;
     const r = await fetch(`api/chart?t=${encodeURIComponent(ticker)}&tf=${tf}&ext=${ext ? 1 : 0}${since ? "&since=" + since : ""}`, {cache:"no-store", signal:c.signal});
-    if (!r.ok) throw new Error(r.status + " " + (await r.text()).slice(0, 120));
-    const d = await r.json();
+    const d = await readJson(r);
+    if (!d || !Array.isArray(d.candles)) throw Object.assign(new Error("The chart data was incomplete. Retrying."), {transport: true});
     // drop anything that isn't for the chart on screen right now (fast ticker / timeframe switching)
     if (k !== key() || d.ticker !== ticker || d.tf !== tf || !!d.ext !== ext) return null;
     if (my !== seq) return null;          // a newer full load started (or finished) after this request: drop it
     return d;
   }
-  async function load(){
+  async function load(force){
     if (using() !== "desk" || !isVisible() || !init()) return;
+    if (!force && Date.now() < failUntil) return;          // backing off after a failure: only a user action retries early
     const k = key();
     try{
       const d = await fetchChart(null);
       if (!d) return;
-      last = d; lastFull = Date.now();
+      last = d; lastFull = Date.now(); failN = 0; failUntil = 0;
       status(d);
       if (!d.candles.length){
         [cs, vol, vw, e9, e21, hist, mac, sig].forEach(x => x.setData([])); mk.setMarkers([]); lines.forEach(l => cs.removePriceLine(l)); lines = [];
@@ -969,7 +991,15 @@ function makeChart(o){
       mk.setMarkers(d.markers || []);
       priceLines(d); legend(null);
       if (fitKey !== k){ fitKey = k; const n = d.candles.length; chart.timeScale().setVisibleLogicalRange({from: Math.max(0, n - (tf === 1 ? 150 : tf === 2 ? 120 : 90)), to: n + 3}); }
-    }catch(e){ if (e.name !== "AbortError") { msg("Desk chart couldn’t load: " + e.message); status({status:{state:"unavailable", why:e.message}}); } }
+    }catch(e){ if (e.name !== "AbortError") fail(e); }
+  }
+  // a failed load keeps the last good candles on screen with a clear badge; retries back off (5 s .. 60 s)
+  let failN = 0, failUntil = 0;
+  function fail(e){
+    failN += 1; failUntil = Date.now() + Math.min(60000, 5000 * 2 ** Math.min(failN - 1, 4));
+    const keep = last && last.ticker === ticker && last.candles && last.candles.length;
+    if (!keep) msg(e.message); else msg("");
+    status(Object.assign({}, keep ? last : {ticker}, {status: {state: "unavailable", why: (keep ? "Showing the last good candles. " : "") + e.message}}));
   }
   async function tail(){
     if (tailBusy || !last || !last.candles.length || using() !== "desk") return;
@@ -988,7 +1018,7 @@ function makeChart(o){
       last.status = d.status; last.notes = d.notes; last.levels = d.levels.length ? d.levels : last.levels;
       if (d.markers && d.markers.length) { last.markers = merge(last.markers, d.markers); mk.setMarkers(last.markers); }
       status(last); legend(null);
-    }catch(e){ if (e.name !== "AbortError") load(); }   // an update the chart can't take (older bar): redraw everything
+    }catch(e){ if (e.name === "AbortError") return; if (e.transport || e.status) { fail(e); return; } load(); }   // a bar the chart can't take: redraw
     finally{ tailBusy = false; }
   }
   const SESS = {"OPEN":"regular session", "ORB FORMING":"regular session (opening range)", "NO NEW ENTRIES":"regular session (no new entries)",
@@ -1015,7 +1045,7 @@ function makeChart(o){
     if (o.ext) $o(o.ext).setAttribute("aria-pressed", String(ext));
     $o(o.root).hidden = u !== "desk"; $o(o.lgd).hidden = u !== "desk"; if (o.tv) $o(o.tv).hidden = u !== "tv"; if (o.stat) $o(o.stat).hidden = u !== "desk";
     if (u === "tv"){ $o(o.live).hidden = true; const k = ticker + tf; if (tvDrawn !== k){ tvDrawn = k; drawTV(); } }
-    else { if (tvDrawn){ tvDrawn = ""; $o(o.tv).innerHTML = ""; doLoad = true; } if (!L) msg("The desk chart script didn’t load. Switch to TradingView."); if (doLoad || !last) load(); }
+    else { if (tvDrawn){ tvDrawn = ""; $o(o.tv).innerHTML = ""; doLoad = true; } if (!L) msg("The desk chart script didn’t load. Switch to TradingView."); if (doLoad || !last) load(doLoad); }
   }
   function reset(){ last = null; fitKey = ""; if (chart) { [cs, vol, vw, e9, e21, hist, mac, sig].forEach(x => x.setData([])); mk.setMarkers([]); lines.forEach(l => cs.removePriceLine(l)); lines = []; } msg("Loading " + ticker + "…"); if (o.stat) $o(o.stat).innerHTML = ""; }
   const isVisible = () => !document.hidden && !$o(o.view).hidden;
@@ -1029,7 +1059,7 @@ function makeChart(o){
     lastPx(){ return last && last.ticker === ticker && last.candles.length ? last.candles[last.candles.length - 1].close : null; },
     redraw(){ if (chart) chart.applyOptions({timeScale:{tickMarkFormatter:tfmt}, localization:{timeFormatter:t => tfmt(t) + " " + zab()}}); if (last) load(); },
     show(){ if (!last || last.ticker !== ticker) { reset(); } apply(true); },
-    start(){ if (!timer) timer = setInterval(() => { if (!isVisible()) return; if (!last) { apply(true); return; }
+    start(){ if (!timer) timer = setInterval(() => { if (!isVisible() || Date.now() < failUntil) return; if (!last) { apply(true); return; }
       const st = (last.status || {}).state; if (st === "live" || st === "polling" || st === "stale" || Date.now() - lastFull > 15000) tail(); }, 2000); }};
 }
 const DeskChart = makeChart({root:"desk", lgd:"lgd", live:"goLive", tfSeg:"tfSeg", srcSeg:"srcSeg", chip:"feedChip", sym:"chartSym", view:"v-trade",
@@ -1468,9 +1498,10 @@ function renderPlan(p){
     rows.push(["Grade", `${esc(p.grade)} <small>${(p.grade_passed||[]).length} checks passed${(p.grade_failed||[]).length ? ", missed: " + esc(p.grade_failed.join(", ")) : ""}</small>`]);
   const AS = {"ENTRY CONDITIONS MET":"READY", "SETUP FORMING":"WAIT", "WAIT":"WAIT", "INVALIDATED":"INVALIDATED"};
   const headState = A.state && !(p.watch && p.watch.state && !["WAIT","READY","PASS"].includes(p.watch.state)) ? A.state : state;
-  const headCls = A.state && headState === A.state ? AS[A.state] : cls;
+  const roMet = p.research_only && headState === "ENTRY CONDITIONS MET";
+  const headCls = roMet ? "WAIT" : A.state && headState === A.state ? AS[A.state] : cls;
   const exp = c && c.symbol && !isMain(p.ticker) ? `${c.symbol.slice(-13, -11)}/${c.symbol.slice(-11, -9)}` : "0DTE";
-  el.innerHTML = `<div class="plan-head"><span class="state ${headCls}" title="${esc(A.why || "")}">${esc(headState)}</span>${A.at ? `<span class="m" style="font-size:11px">${esc(A.at)} ET</span>` : ""}<span class="side ${p.side}">${side}</span><span class="pill dim">Grade ${esc(p.grade||"—")}</span>${p.chop_day?'<span class="pill warn">Chop day</span>':''}</div>
+  el.innerHTML = `<div class="plan-head"><span class="state ${headCls}" title="${esc(A.why || "")}">${roMet ? "RESEARCH SETUP" : esc(headState)}</span>${A.at ? `<span class="m" style="font-size:11px">${esc(A.at)} ET</span>` : ""}<span class="side ${p.side}">${side}</span><span class="pill dim">Grade ${esc(p.grade||"—")}</span>${p.chop_day?'<span class="pill warn">Chop day</span>':''}${p.research_only ? `<span class="pill warn" title="${esc((p.evidence || {}).why || "")}">Research only</span>` : (p.evidence && p.evidence.status === "YOUR IDEA" ? '<span class="pill dim" title="No tested edge behind a discretionary idea">Your idea</span>' : "")}</div>
     ${A.why ? `<p class="trig" style="margin-top:4px">${esc(A.why)}</p>` : ""}
     ${c ? `<div class="contract">${esc(p.ticker)} ${esc(c.label)} ${esc(exp)}<span>Δ ${c.delta != null ? Math.abs(c.delta).toFixed(2) : "—"}${c.delta_src === "estimated" ? " est." : ""}</span></div>` : `<div class="contract">${esc(p.ticker)}<span>${esc(p.contract_note || "no contract yet")}</span></div>`}
     ${nums}
@@ -1483,7 +1514,7 @@ function renderPlan(p){
     </details>`;
   keepOpen();
 }
-const LEDGER = {real:"You", paper:"Paper", research:"Research", old:"Old rules", exit31:"v3.1 exits", noise:"Noise band", inplay:"In play"};
+const LEDGER = {real:"You", paper:"Paper", research:"Research", old:"Old rules", exit31:"v3.1 exits", noise:"Noise band", inplay:"In play", gated:"Entry gate", board:"Stocks board", earn_post:"Earnings after", earn_pre:"Earnings held"};
 const GCLS = a => /^EXIT/.test(a) ? "d" : /^TAKE/.test(a) ? "u" : /^TIGHTEN/.test(a) ? "w" : /NO DATA/.test(a) ? "m" : "";
 function guideHtml(p, pl){
   const g = pl.guidance, tag = `<span class="origin">${esc(pl.origin || "your idea (discretionary)")}</span>`;
@@ -1894,6 +1925,22 @@ async function loadAuto(){
   } catch(e){ $("#autoList").innerHTML = `<p class="d">${esc(e.message)}</p>`; }
 }
 $("#autoPause").onclick = async () => { const on = !$("#autoPause").dataset.on; try { await api("api/paper/pause", {on}); } catch(e){} loadAuto(); };
+const SCLS = {"PAPER QUALIFIED":"up", "RESEARCH ONLY":"warn", "DRAFT":"dim", "PAUSED":"warn", "RETIRED":"down"};
+async function loadStrategies(){
+  let d; try { d = await api("api/strategies"); } catch(e){ $("#stratTable").innerHTML = `<p class="d">${esc(e.message)}</p>`; return; }
+  const q = d.qualified || [];
+  $("#stratQ").textContent = q.length ? `${q.length} qualified` : "none qualified"; $("#stratQ").className = "pill " + (q.length ? "up" : "warn");
+  const routed = d.routed_today || [], shadow = routed.filter(r => r.decision === "SHADOW").length;
+  $("#stratTable").innerHTML = `<p class="m" style="margin:0 0 8px">${esc(d.qualified_note || "")} Routed today: ${routed.length} setups, ${shadow} logged as research only, ${routed.filter(r => r.decision === "ADMIT").length} admitted.</p>
+    <table><thead><tr><th>Strategy</th><th>Status</th><th>Type</th><th>Where / when</th><th>Evidence so far</th><th>Why</th></tr></thead><tbody>${
+    (d.experiments || []).map(e => `<tr><td><b>${esc(e.id)}</b><div class="m" style="font-size:11px">${esc(e.family || "")}${e.policy ? " · " + esc(e.policy) : ""}</div></td>
+      <td><span class="pill ${SCLS[e.status] || "dim"}">${esc(e.status)}</span>${e.status_note ? `<div class="d" style="font-size:11px">${esc(e.status_note)}</div>` : ""}</td>
+      <td class="m">${e.kind === "signal" ? "stock signal study" : "paper ledger"}</td>
+      <td class="m" style="font-size:12px">${esc(e.assets ? (e.assets.symbols ? e.assets.symbols.join(", ") : e.assets.group || "") : "")}${e.windows ? "<br>" + esc(e.windows.map(w => w.join("–")).join(", ")) + " ET" : ""}</td>
+      <td style="font-size:12px">${(e.evidence || []).map(x => `${esc(x.result)}<div class="m" style="font-size:11px">${esc(x.source)}</div>`).join("") || '<span class="m">none yet</span>'}</td>
+      <td class="m" style="font-size:12px">${esc(e.why_status || "")}</td></tr>`).join("")}</tbody></table>
+    <p class="m" style="font-size:11.5px;margin-top:8px">Win rates here come from the samples listed, not a chance of winning the next trade. A strategy becomes PAPER QUALIFIED only with later, unseen evidence that beats matched random entries after costs. None is qualified, so the desk shows setups as research, not entry instructions. You decide every real trade.</p>`;
+}
 async function loadRules(){
   let d; try { d = await api("api/evaluation"); } catch(e){ $("#ruleCmp").innerHTML = `<p class="d">${esc(e.message)}</p>`; return; }
   const rc = d.rules_compare || {}, G = rc.groups || {}, lat = d.latency || {}, sf = lat.signal_to_paper_fill || {};
@@ -1927,7 +1974,7 @@ async function loadSettings(save){
   $("#setSave").onclick = () => { const b = {}; $$("#mkSettings [data-k]").forEach(x => b[x.dataset.k] = x.type === "checkbox" ? x.checked : +x.value); loadSettings(b).then(() => { const m = $("#setMsg"); if (m) m.textContent = "Saved."; }); };
 }
 function loadMarkets(){
-  drawHealth(); MkChart.show(); loadSetups(); loadCats(); loadEarn(); loadAuto(); loadSettings(); loadTickerSide(); loadRules();
+  drawHealth(); MkChart.show(); loadSetups(); loadCats(); loadEarn(); loadAuto(); loadSettings(); loadTickerSide(); loadRules(); loadStrategies();
   $("#mkSym").innerHTML = esc(ticker) + ` <span>${MkChart.tf()}m</span>`; $("#mkReadT").textContent = "Desk read: " + ticker;
 }
 setInterval(() => { if (document.hidden || $("#v-markets").hidden) return; loadSetups(); loadCats(); loadAuto(); }, 20000);
@@ -1954,7 +2001,7 @@ async function loadScanner(){
 }
 
 /* ---------- research ---------- */
-const LAB = ["research","exit31","noise","inplay","old"];
+const LAB = ["research","exit31","noise","inplay","board","old"];
 async function loadLab(){
   let d; try { d = await api("api/research"); } catch(e){ $("#labTable").innerHTML = `<div class="d">${esc(e.message)}</div>`; return; }
   const L = d.ledgers || {}, v = d.variants || {};

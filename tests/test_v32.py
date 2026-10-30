@@ -702,3 +702,23 @@ def test_stream_interruption_reconnects_with_one_socket(live, monkeypatch):
     monkeypatch.setattr(_WS, "recv", flaky)
     assert _wait(lambda: schwab_stream.state()["sessions"] >= 2 and schwab_stream.state()["phase"] == "live", 8), schwab_stream.state()
     assert socks.max_open == 1 and socks.open == 1 and dropped["n"] == 1
+
+
+def test_a_research_only_plan_never_reads_as_an_entry(chart_env):
+    import commands
+    import engine
+    clock, fk = chart_env
+    _go(clock, 10, 40, 5)
+    p = engine.build_plan("SPY", "C")
+    p = dict(p, contract={"label": "SPY 601C 0DTE", "bid": 1.00, "ask": 1.04, "delta": 0.45}, premium_limit=1.05, qty=1,
+             risk_per_contract=21.0, exit={"ceiling_per_contract": 21.0, "t1_name": "PDH", "t1_level": 602.06, "t1": 1.6, "model": "delta",
+                                           "rr_underlying": 2.1, "rr_option": 2.0, "stop": 0.84, "be_trigger": 1.15, "be_stop": 1.05,
+                                           "stall_min": 10, "flat_by": "11:10", "all_out": "15:25"})
+    ro = dict(p, state="READY", setup="VWAP_MACD", research_only=True,
+              evidence={"status": "RESEARCH ONLY", "actionable": False, "why": "no demonstrated edge"})
+    txt = commands.plan_text(ro)
+    first = txt.splitlines()[0]
+    assert first.startswith("RESEARCH ONLY") and "ENTER" not in first
+    assert "EVIDENCE: RESEARCH ONLY" in txt and "\nBUY:" not in txt and "CONTRACT (research only, not an instruction)" in txt
+    idea = dict(p, state="READY", research_only=False, evidence={"status": "YOUR IDEA", "actionable": False})
+    assert commands.plan_text(idea).splitlines()[0].startswith("ENTER")

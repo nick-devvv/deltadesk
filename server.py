@@ -23,6 +23,7 @@ Main endpoints:
   GET/POST /api/alerts       alert toggles (setups, moves, news); phone push via NTFY_TOPIC (ntfy app)
   GET  /api/chart?t=ANY&tf=1|2|5|15&ext=0|1&since=<unix s>  desk chart (since = live tail only)
   GET  /api/symbol?q=nvid    symbol search (Schwab instruments; desk lists as a labeled fallback)
+  GET  /api/x/targets        v3.3: what Chart's free X scan should research now (earnings, movers, setups, your trades)
   GET  /api/setups           setups board: objective setups over the scanned universe, coverage and definitions
   GET  /api/chart?t=SPY&tf=1|2|5  desk chart from the SAME Schwab pipeline as the engine: candles, volume, VWAP,
                              EMA9/21, MACD, levels (with sources), entry/exit markers, feed + freshness
@@ -255,6 +256,15 @@ class H(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def _fail(self, e, path):
+        """A structured error with a diagnostic id; the traceback goes to the server log only (never tokens: the
+        query string, which carries k=, is not logged)."""
+        import traceback
+        import uuid
+        diag = uuid.uuid4().hex[:8]
+        print(f"[error {diag}] {path}: {type(e).__name__}: {str(e)[:200]}\n" + "".join(traceback.format_exc(limit=6)), flush=True)
+        return self._json({"error": f"the desk hit an internal error on {path} ({type(e).__name__})", "diag_id": diag}, 500)
+
     def _json(self, obj, code=200):
         return self._send(code, json.dumps(obj, default=str))
 
@@ -382,6 +392,13 @@ class H(BaseHTTPRequestHandler):
                 return self._json(clean(chartfeed.build(t, q.get("tf", ["2"])[0], q.get("ext", ["0"])[0], q.get("since", [None])[0])))
             if u.path == "/api/symbol":
                 return self._json(clean(schwab.search(q.get("q", [""])[0])))
+            if u.path == "/api/strategies":
+                import strategy_registry
+                import strategy_router
+                return self._json(clean(dict(strategy_registry.evidence_table(), routed_today=strategy_router.today(80))))
+            if u.path == "/api/x/targets":
+                import catalysts
+                return self._json(clean(catalysts.x_targets()))
             if u.path == "/api/catalysts":
                 import catalysts
                 return self._json(clean({"items": catalysts.feed(q.get("t", [None])[0], q.get("label", [None])[0] or None),
@@ -471,7 +488,7 @@ class H(BaseHTTPRequestHandler):
             if u.path == "/api/plan":
                 return self._json({"plan": core.exit_plan(float(q["fill"][0]), q["time"][0])})
         except Exception as e:
-            return self._json({"error": f"{type(e).__name__}: {e}"}, 500)
+            return self._fail(e, u.path)
         self._json({"error": "not found"}, 404)
 
     def do_POST(self):
@@ -510,10 +527,26 @@ class H(BaseHTTPRequestHandler):
                 import catalysts                  # also into the catalyst store: label from the URL, "via Chart"
                 cat = catalysts.ingest([{"tickers": [x for x in str(i.get("tickers", "")).replace(",", " ").split() if x],
                                          "headline": i.get("headline"), "summary": i.get("why"), "category": i.get("category"),
-                                         "published_at": i.get("published_at") or None,
+                                         "published_at": i.get("published_at") or None, "event_time": i.get("event_time") or None,
+                                         "opinion": bool(i.get("opinion")), "attention": i.get("attention"),
+                                         "sentiment": i.get("sentiment"), "claims": i.get("claims"),
                                          "sources": [{"url": i.get("url")}] + [{"url": u2} for u2 in (i.get("source_urls") or [])]}
-                                        for i in items if isinstance(i, dict)], "Chart news routine")
+                                        for i in items if isinstance(i, dict)], "Chart X scan" if b.get("via") == "x_scan" else "Chart news routine")
                 return self._json({"added": len(alerts.add_news(items)), "catalysts": cat})
+            if u.path == "/api/earnings/results":       # Chart: reported vs expected, each with its own source
+                import earnings
+                t = str(b.get("ticker", "")).upper()
+                if not watchlist.valid(t):
+                    return self._json({"error": "invalid symbol"}, 400)
+                return self._json(clean(earnings.record_results(t, str(b.get("date", ""))[:10], b.get("metrics") or {}, b.get("source_url"),
+                                                                b.get("consensus_source"), b.get("consensus_captured_at"))))
+            if u.path == "/api/earnings/call":          # Chart: attributed statements from the call
+                import earnings
+                t = str(b.get("ticker", "")).upper()
+                if not watchlist.valid(t):
+                    return self._json({"error": "invalid symbol"}, 400)
+                return self._json(clean(earnings.record_call(t, str(b.get("date", ""))[:10], b.get("statements"), b.get("source_url"),
+                                                             b.get("source_kind") or "transcript")))
             if u.path == "/api/catalysts/search":
                 import catalysts
                 t = str(b.get("ticker", "")).upper()
@@ -590,7 +623,7 @@ class H(BaseHTTPRequestHandler):
                 note = send_to_chart(str(b.get("message", "")), commands.coach_context("SPY"))
                 return self._json({"reply": note} if note else {"queued": True})
         except Exception as e:
-            return self._json({"error": f"{type(e).__name__}: {e}"}, 500)
+            return self._fail(e, u.path)
         self._json({"error": "not found"}, 404)
 
 

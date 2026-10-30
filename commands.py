@@ -189,7 +189,12 @@ def plan_text(p):
     verdict = VERDICT.get(p["state"], p["state"])
     if verdict == "ENTER" and not p.get("contract"):
         verdict = "PASS"
+    if verdict == "ENTER" and p.get("research_only"):
+        verdict = "RESEARCH ONLY (rules met, but this setup has no demonstrated edge: not an entry instruction)"
     lines = [f"{verdict}: {p['ticker']} {side} | {p.get('origin', '')}"]
+    ev = p.get("evidence") or {}
+    if ev.get("status"):
+        lines.append(f"EVIDENCE: {ev['status']}" + (f" ({ev.get('why')})" if ev.get("why") else ""))
     a = p.get("assistant") or {}
     if a.get("state"):
         lines.append(f"DESK READ {a['at']} ET: {a['state']} ({a.get('why')})")
@@ -204,7 +209,7 @@ def plan_text(p):
     c = p.get("contract")
     if c:
         ex = p["exit"]
-        lines.append(f"BUY: {c['label']} at or under ${p['premium_limit']:.2f} (bid {c['bid']:.2f} / ask {c['ask']:.2f}, delta {c['delta'] if c['delta'] is not None else 'unknown'}, "
+        lines.append(f"{'CONTRACT (research only, not an instruction)' if p.get('research_only') else 'BUY'}: {c['label']} at or under ${p['premium_limit']:.2f} (bid {c['bid']:.2f} / ask {c['ask']:.2f}, delta {c['delta'] if c['delta'] is not None else 'unknown'}, "
                      f"{'LIVE Schwab' if d.get('executable') else 'NOT executable data, check Legend'})")
         lines.append(f"SIZE: {p['qty']} (stressed loss ${p['risk_per_contract']:.2f}/contract, ceiling ${ex['ceiling_per_contract']:.2f}){' | ' + p['size_note'] if p.get('size_note') else ''}")
         lines.append(f"T1: {ex['t1_name']} {ex['t1_level']:.2f} (option ~${ex['t1']:.2f}, {ex['model']}) | R/R {ex['rr_underlying']} on the stock, {ex['rr_option']} on the option")
@@ -252,6 +257,17 @@ def _setups_brief():
             "invalidation_text", "extended", "flags", "score", "fresh")
     return {"status": b["status"], "summary": b["summary"], "coverage": b["coverage"]["limits"][0],
             "rows": [{k: r.get(k) for k in keep} for r in b["rows"] if r["qualifies"]][:6]}
+
+
+def _strategies_brief():
+    """v3.3: the evidence status of every registered strategy, compact, so Chart never calls a research-only setup an entry."""
+    try:
+        import strategy_registry
+        t = strategy_registry.evidence_table()
+    except Exception as e:
+        return {"error": f"evidence table unavailable ({type(e).__name__}): treat every desk setup as research only"}
+    return {"qualified": t["qualified"], "note": t["qualified_note"],
+            "status": {e["id"]: e["status"] for e in t["experiments"]}}
 
 
 def _alt(t):
@@ -339,6 +355,7 @@ def coach_context(selected="SPY", text=""):
         "recent_events": [e["text"] for e in store.q("SELECT text FROM events ORDER BY seq DESC LIMIT 6")],
         "desk_plans_for_ticker": True,       # v3.2: the desk plans and tracks any Schwab-supported ticker
         "setups_board": _setups_brief(),
+        "strategies": _strategies_brief(),
         "watchlist_quote": None if selected in core.policy()["instruments"] else watchlist.quote(selected),
         "alt_data": None if selected in core.policy()["instruments"] else _alt(selected),
         "cards": cards_for(text),
