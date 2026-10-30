@@ -36,6 +36,7 @@ _status = {"mode": "offline", "since": None, "last_msg": None, "last_error": Non
 _provider = None
 _frames = {}
 _ver = {}         # ticker -> change counter
+_deep_done = set()  # (ticker, day): deep history already requested
 
 
 # ---------------------------------------------------------------- provider selection
@@ -62,9 +63,21 @@ class SchwabREST(Provider):
     executable = True
 
     def bars_1m(self, ticker):
+        """Deep history once (about 30 calendar days: the noise band needs 14 full prior sessions, RVOL 10), then
+        only the last 2 days on each refresh; upsert_bars merges them."""
         import schwab
         _status["rest_calls"] += 1
-        return schwab.bars_1m(ticker)
+        with _lock:
+            have = _bars.get(ticker)
+            sessions = len(set(have.index.date)) if have is not None and len(have) else 0
+        key = (ticker, now().date())
+        if sessions < 16 and key not in _deep_done:
+            _deep_done.add(key)                      # once per ticker per day, even if Schwab has less history
+            end = now().to_pydatetime() + pd.Timedelta(minutes=1)
+            df = schwab.bars_1m_range(ticker, end - pd.Timedelta(days=30), end)
+            if df is not None and len(df):
+                return df
+        return schwab.bars_1m(ticker, days=2)
 
     def quote(self, ticker):
         import schwab
@@ -143,6 +156,7 @@ def use(provider):
         _quotes.clear()
         _frames.clear()
         _ver.clear()
+        _deep_done.clear()
 
 
 def provider():

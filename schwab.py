@@ -135,18 +135,43 @@ def _access():
         return t["access_token"]
 
 
+# Schwab's documented limit for the market-data API is about 120 requests a minute per app. The scanner adds
+# many calls, so every call goes through one shared budget (default 100/min) and waits rather than getting 429s.
+RATE_PER_MIN = 100
+_calls = []
+_rate_lock = threading.Lock()
+STATS = {"calls": 0, "waited_s": 0.0, "http_errors": 0}
+
+
+def _throttle():
+    while True:
+        with _rate_lock:
+            now = time.time()
+            while _calls and now - _calls[0] > 60:
+                _calls.pop(0)
+            if len(_calls) < RATE_PER_MIN:
+                _calls.append(now)
+                STATS["calls"] += 1
+                return
+            wait = 60 - (now - _calls[0]) + 0.05
+        STATS["waited_s"] += wait
+        time.sleep(min(wait, 5))
+
+
 def _get(path, params):
     if not (path.startswith(ALLOWED_PREFIXES[0]) or path == STREAMER_PREFS):
         raise RuntimeError("REFUSED: the desk only reads Schwab market data")
     tok = _access()
     if not tok:
         return None, "Schwab not connected"
+    _throttle()
     url = API + path + "?" + urllib.parse.urlencode(params)
     req = urllib.request.Request(url, headers={"Authorization": f"Bearer {tok}", "Accept": "application/json"})
     try:
         with urllib.request.urlopen(req, timeout=12) as r:
             return json.loads(r.read().decode()), None
     except urllib.error.HTTPError as e:
+        STATS["http_errors"] += 1
         return None, f"HTTP {e.code}"
     except Exception as e:
         return None, f"{type(e).__name__}"
@@ -229,12 +254,16 @@ def _num(v):
     return None if v <= -999 or v != v else v      # Schwab sends -999 when a greek isn't available
 
 
-def chain(ticker, side, expiry, through=None):
+def chain(ticker, side, expiry, through=None, strike_count=None):
     """Live chain for one side: [{symbol, strike, exp, bid, ask, ts, delta, iv, last, prev, volume, oi, feed}] like broker.chain.
-    expiry alone = that day only; with through = every expiry from expiry to through."""
+    expiry alone = that day only; with through = every expiry from expiry to through. strike_count limits strikes
+    around the money (smaller payloads for the scanner)."""
     typ = "CALL" if side.upper().startswith("C") else "PUT"
-    j, err = _get("/marketdata/v1/chains", {"symbol": ticker.upper(), "contractType": typ, "fromDate": expiry,
-                                            "toDate": through or expiry, "strategy": "SINGLE", "includeUnderlyingQuote": "false"})
+    params = {"symbol": ticker.upper(), "contractType": typ, "fromDate": expiry,
+              "toDate": through or expiry, "strategy": "SINGLE", "includeUnderlyingQuote": "false"}
+    if strike_count:
+        params["strikeCount"] = int(strike_count)
+    j, err = _get("/marketdata/v1/chains", params)
     if not j:
         return None, err
     m = j.get("callExpDateMap" if typ == "CALL" else "putExpDateMap") or {}
@@ -280,3 +309,40 @@ def quotes(tickers):
         if last:
             out[t] = {"last": last, "prev": prev}
     return out, err
+
+
+def quotes_full(tickers):
+    """{ticker: {last, open, prev, high, low, volume, bid, ask, quote_ms}} for up to ~100 symbols per call (scanner)."""
+    out, err = {}, None
+    for i in range(0, len(tickers), 100):
+        j, e = _get("/marketdata/v1/quotes", {"symbols": ",".join(tickers[i:i + 100]), "fields": "quote"})
+        err = err or e
+        for t, v in (j or {}).items():
+            q = (v or {}).get("quote") or {}
+            last = _num(q.get("lastPrice"))
+            if last:
+                out[t] = {"last": last, "open": _num(q.get("openPrice")), "prev": _num(q.get("closePrice")),
+                          "high": _num(q.get("highPrice")), "low": _num(q.get("lowPrice")), "volume": q.get("totalVolume"),
+                          "bid": _num(q.get("bidPrice")), "ask": _num(q.get("askPrice")), "quote_ms": q.get("quoteTime")}
+    return out, err
+
+
+def movers(index="$SPX", sort="VOLUME"):
+    """Schwab's top movers for an index ($DJI, $COMPX, $SPX, NYSE, NASDAQ, ...): [{symbol, last, change_pct, volume}].
+    Schwab returns about ten names. Market data only."""
+    j, err = _get(f"/marketdata/v1/movers/{index}", {"sort": sort})
+    rows = []
+    for m in (j or {}).get("screeners") or []:
+        rows.append({"symbol": m.get("symbol"), "last": _num(m.get("lastPrice")), "change_pct": _num(m.get("netPercentChange")),
+                     "volume": m.get("volume"), "description": m.get("description")})
+    return rows, err
+
+
+def bars_range(ticker, start, end, minutes=1, extended=False):
+    """N-minute candles (1, 5, 10, 15, 30) between two datetimes. The scanner uses 5-minute history for baselines."""
+    j, err = _get("/marketdata/v1/pricehistory", {"symbol": ticker.upper(), "periodType": "day", "frequencyType": "minute",
+                                                   "frequency": int(minutes), "startDate": int(start.timestamp() * 1000),
+                                                   "endDate": int(end.timestamp() * 1000),
+                                                   "needExtendedHoursData": "true" if extended else "false",
+                                                   "needPreviousClose": "false"})
+    return _frame((j or {}).get("candles"))

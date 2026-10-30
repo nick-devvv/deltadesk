@@ -188,13 +188,14 @@ def _wilder(x, n):
     if first is None or len(vals) - first < n:
         return out
     seed_end = first + n
+    res = np.full(len(vals), np.nan)
     prev = float(np.mean(vals[first:seed_end]))
-    out.iloc[seed_end - 1] = prev
-    for j in range(seed_end, len(vals)):
+    res[seed_end - 1] = prev
+    for j in range(seed_end, len(vals)):          # plain numpy loop (same math, ~50x faster than Series.iloc writes)
         v = vals[j]
         prev = prev if v != v else prev + (v - prev) / n
-        out.iloc[j] = prev
-    return out
+        res[j] = prev
+    return pd.Series(res, index=x.index)
 
 
 def true_range(b):
