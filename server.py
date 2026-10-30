@@ -35,7 +35,8 @@ Main endpoints:
   GET  /api/research         every paper ledger side by side: expectancy, avg win/loss, drawdown, stock move vs option
   GET  /api/diagnostics      the latest diagnostics report from backtest.py
   GET  /legacy               the old desk page (custom indicator chart)
-  GET  /api/lab[/report?by=&cond=|/signals]  v3.4 strategy lab: signal tape, lab paper ledgers, what works where
+  GET  /api/lab[/report?by=&cond=&exits=|/signals|/contracts]  v3.4 strategy lab: signal tape, lab paper ledgers, what works
+       where, and (3.4.2) which option contract converts the same signals
   Legacy: /api/read /api/bars /api/last /api/plan /api/chat
 Real money: only Nick, in Robinhood. This server sends NO orders anywhere: paper trading is simulated internally
 on Schwab quotes. Schwab access is market data only (trading/account endpoints are refused in code).
@@ -402,7 +403,11 @@ class H(BaseHTTPRequestHandler):
                 g = lambda k, d=None: (q.get(k) or [d])[0]
                 return self._json(clean(lab.what_works(by=g("by", "strategy"), cond=g("cond"), family=g("family"), ticker=g("t"),
                                                        since=(g("since") or "")[:10] or None, min_n=g("min_n"),
-                                                       include_all=g("all") == "1")))
+                                                       include_all=g("all") == "1", exits=g("exits", "shared"))))
+            if u.path == "/api/lab/contracts":
+                import contract_lab
+                g = lambda k, d=None: (q.get(k) or [d])[0]
+                return self._json(clean(contract_lab.report(family=g("family") or None, since=(g("since") or "")[:10] or None)))
             if u.path == "/api/lab/signals":
                 import lab
                 g = lambda k, d=None: (q.get(k) or [d])[0]

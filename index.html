@@ -736,9 +736,12 @@ td.n,th.n{text-align:right;white-space:nowrap}
           <label id="wwCondL" hidden>Condition <select id="wwCond"></select></label>
           <label>Strategy <select id="wwFam"><option value="">All</option></select></label>
           <label>Stock <input type="text" id="wwT" placeholder="any" style="width:70px;height:28px;border-radius:8px;border:1px solid var(--line);background:var(--glass);color:var(--ink);font:500 12px var(--sans);padding:0 6px"></label>
+          <label>Exits <select id="wwEx"><option value="shared">Same yardstick for all</option><option value="own">Each strategy's own exits</option></select></label>
           <label><input type="checkbox" id="wwAll"> Include board rows that didn't qualify</label>
         </div>
-        <div class="bd scan" id="wwTable" style="overflow:auto"></div></div>
+        <div class="bd scan" id="wwTable" style="overflow:auto"></div>
+        <div class="setf"><b style="color:var(--ink)">Which option contract</b><span>the same live signals, 12 contracts each, followed on real quotes (nothing filled)</span></div>
+        <div class="bd scan" id="ctTable" style="overflow:auto"></div></div>
     </section>
 
     <!-- RESEARCH -->
@@ -1964,6 +1967,8 @@ async function loadWhatWorks(){
   const qs = new URLSearchParams({by}); if (by === "strategy_condition") qs.set("cond", $("#wwCond").value);
   if ($("#wwFam").value) qs.set("family", $("#wwFam").value); if ($("#wwT").value.trim()) qs.set("t", $("#wwT").value.trim().toUpperCase());
   if ($("#wwAll").checked) qs.set("all", "1");
+  qs.set("exits", $("#wwEx").value);
+  loadContracts(my);
   let d; try { d = await api("api/lab/report?" + qs); } catch(e){ if (my === wwSeq) $("#wwTable").innerHTML = `<p class="d">${esc(e.message)}</p>`; return; }
   if (my !== wwSeq) return;
   const P = d.paper || {}, fams = (LABS && LABS.families) || {};
@@ -1984,6 +1989,20 @@ async function loadWhatWorks(){
       r.group_level ? `<tr style="opacity:.55"><td></td><td class="m" style="font-size:11px" colspan="${head.length + 7}">Too few on ${esc(r.ticker)} alone: its group (${esc(r.group)}) ${r.group_level.n} signals, avg ${r2(r.group_level.avg_r)}, edge ${r2(r.group_level.edge)}; all stocks ${r.all_stocks.n}, avg ${r2(r.all_stocks.avg_r)}, edge ${r2(r.all_stocks.edge)}</td></tr>` : ""}`).join("")}</tbody></table>
     <p class="m" style="font-size:11.5px;margin-top:8px">${esc(d.note)}</p>`
     : `<div class="empty">No outcomes yet. Signals get their outcome after 3:31 PM ET each day; the lab needs about ${d.min_n} per row before a row means anything.</div>`;
+}
+async function loadContracts(my){
+  const qs = new URLSearchParams(); if ($("#wwFam").value) qs.set("family", $("#wwFam").value);
+  let d; try { d = await api("api/lab/contracts?" + qs); } catch(e){ if (my === wwSeq) $("#ctTable").innerHTML = `<p class="d">${esc(e.message)}</p>`; return; }
+  if (my !== wwSeq) return;
+  const rows = d.rows || [], usd0 = v => v == null ? "—" : money(v);
+  $("#ctTable").innerHTML = rows.length ? `<table><thead><tr><th>Expiry</th><th class="n">Delta</th><th class="n">Contracts</th><th class="n">Days</th><th class="n">Avg premium</th><th class="n">Won (with 20% line)</th><th class="n">Avg with 20% line</th><th class="n">Avg held to the stock exit</th><th class="n">20% line hit first</th><th class="n">Same signals on the stock</th></tr></thead><tbody>${
+    rows.map(r => `<tr${r.too_few ? ' style="opacity:.55"' : ""}><td><b>${esc(r.bucket)}</b></td><td class="n">${r.delta.toFixed(2)}</td>
+      <td class="n">${r.n}${r.too_few ? ' <span class="m" style="font-size:11px">too few</span>' : ""}</td><td class="n">${r.days}</td><td class="n">${usd0(r.avg_premium)}</td>
+      <td class="n">${r.won_line}%</td><td class="n ${tone(r.avg_line)}">${usd0(r.avg_line)} <span class="m" style="font-size:11px">(${r.pct_line > 0 ? "+" : ""}${r.pct_line}%)</span></td>
+      <td class="n ${tone(r.avg_hold)}">${usd0(r.avg_hold)} <span class="m" style="font-size:11px">(${r.pct_hold > 0 ? "+" : ""}${r.pct_hold}%)</span></td>
+      <td class="n">${r.line_first}%</td><td class="n ${tone(r.stock_r)}">${r2(r.stock_r)}</td></tr>`).join("")}</tbody></table>
+    <p class="m" style="font-size:11.5px;margin-top:8px">${esc(d.note)}</p>`
+    : `<div class="empty">No followed contracts with an outcome yet. The lab follows 12 contracts for each live signal from 9:45 AM to 3:15 PM ET and scores them after 3:31 PM ET.</div>`;
 }
 $$("#wwCtl select, #wwCtl input").forEach(x => x.addEventListener("change", loadWhatWorks));
 async function loadStrategies(){
