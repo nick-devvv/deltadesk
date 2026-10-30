@@ -39,24 +39,53 @@ def active_plan(ticker=None):
     return store.kv_get("last_plan")
 
 
+def _known():
+    try:
+        u = set(json.loads((core.HERE / "config" / "universe.json").read_text())["tickers"])
+    except Exception:
+        u = set()
+    try:
+        u |= set(watchlist.tickers())
+    except Exception:
+        pass
+    return u | set(core.policy()["instruments"])
+
+
+def find_ticker(t):
+    """SPY/QQQ, or any ticker from the scanner universe or the watchlist written in the message (e.g. 'NVDA calls?')."""
+    m = TICK.search(t)
+    if m:
+        return m.group(1).upper()
+    known = _known()
+    for w in re.findall(r"\$?\b([A-Za-z]{1,5})\b", t):
+        if w.upper() in known and (w.isupper() or w.startswith("$") or len(w) >= 3) and w.lower() not in ("in", "out", "at", "stop", "puts", "calls", "call", "put"):
+            return w.upper()
+    return None
+
+
 def handle(text, selected="SPY"):
     t = text.strip()
     low = t.lower()
-    tk = (TICK.search(t).group(1).upper() if TICK.search(t) else selected).upper()
+    tk = (find_ticker(t) or selected).upper()
     main = core.policy()["instruments"]
 
     # ---------- IN (real fill reported by Nick) ----------
     low = re.sub(r"^(?:ok(?:ay)?|so|just|yeah)[, ]+", "", low)
-    m = re.match(rf"^(?:i'?m\s+in|i\s+(?:got\s+in|bought|entered|took)|got\s+in|entered|took|in|bought|filled)\s+(?:([a-z]{{1,5}})\s+)?(?:(\d+(?:\.\d+)?)\s*([cp])\s+)?(\d+)\s*(?:x|@|at)?\s*\$?{NUM}(?:\s+(\d{{1,2}}:\d{{2}}))?", low)
+    m = re.match(rf"^(?:i'?m\s+in|i\s+(?:got\s+in|bought|entered|took)|got\s+in|entered|took|in|bought|filled)\s+(?:([a-z]{{1,5}})\s+)?(?:(\d+(?:\.\d+)?)\s*([cp])\s+)?(?:(\d{{1,2}}/\d{{1,2}}(?:/\d{{2,4}})?|\d{{4}}-\d{{2}}-\d{{2}})\s+)?(\d+)\s*(?:x|@|at)?\s*\$?{NUM}(?:\s+(\d{{1,2}}:\d{{2}}))?", low)
     if m:
-        tk2, strike, cp, qty, fill, when = m.groups()
+        tk2, strike, cp, expiry, qty, fill, when = m.groups()
+        expiry = _expiry(expiry)
         tk2 = (tk2 if tk2 and watchlist.valid(tk2) else tk).upper()
         plan = active_plan(tk2)
         plan = plan if plan and plan.get("ticker") == tk2 else None
         contract = f"{float(strike):g}{cp.upper()}" if strike else ((plan or {}).get("contract") or {}).get("label")
         if not contract:
             return {"reply": "Which contract? Send it once like: IN SPY 765C 2 at 0.95", "handled": True}
-        pid = engine.log_real_in(tk2, contract, int(qty), float(fill), when, plan if plan and plan.get("ticker") == tk2 else None)
+        if tk2 not in main and not expiry:
+            return {"reply": f"Which expiry? {tk2} options aren't same-day by default. Send it like: IN {tk2} {contract} 11/07 {qty} at {fill}",
+                    "handled": True}
+        pid = engine.log_real_in(tk2, contract, int(qty), float(fill), when, plan if plan and plan.get("ticker") == tk2 else None,
+                                 expiry=expiry)
         p = store.pos_get(pid)
         return {"reply": store.q("SELECT text FROM events WHERE ref=? ORDER BY seq DESC LIMIT 1", (pid,))[0]["text"],
                 "handled": True, "position": p}
@@ -111,9 +140,6 @@ def handle(text, selected="SPY"):
     # ---------- check once / confirm & watch ----------
     once = bool(re.search(r"\b(check once|once|snapshot)\b", low))
     confirm = once or bool(re.search(r"\b(confirm|watch|setup|calls\?|puts\?|should i|entry|enter)\b", low)) or bool(re.search(r"\?$", t) and _side(t))
-    if confirm and tk not in main:
-        return {"reply": f"Desk plans cover SPY/QQQ 0DTE. Asking Chart about {tk} (desk read + quote + earnings date attached).",
-                "handled": False, "coach": True}
     if confirm:
         side = _side(t)
         lvl = _level(t)
@@ -135,13 +161,36 @@ def handle(text, selected="SPY"):
     return {"reply": None, "handled": False, "coach": True}
 
 
+def _expiry(s):
+    """'11/07', '11/07/26' or '2026-11-07' -> 'YYYY-MM-DD' (the next such date if the year is missing)."""
+    if not s:
+        return None
+    if "-" in s:
+        return s
+    from datetime import date
+    parts = [int(x) for x in s.split("/")]
+    today = core.now_et().date()
+    y = (parts[2] + 2000 if parts[2] < 100 else parts[2]) if len(parts) == 3 else today.year
+    d = date(y, parts[0], parts[1])
+    if len(parts) == 2 and d < today:
+        d = date(y + 1, parts[0], parts[1])
+    return d.isoformat()
+
+
+VERDICT = {"READY": "ENTER", "WAIT": "WAIT", "PASS": "PASS"}
+
+
 def plan_text(p):
     side = "CALLS" if p["side"] == "C" else "PUTS"
     if p["state"] == "DATA UNAVAILABLE":
         return f"{p['ticker']} {side}: DATA UNAVAILABLE ({p.get('reason')}). No plan until data is fresh."
     d = p.get("data") or {}
     mode = f" [{p['entry_mode']}]" if p.get("entry_mode") else ""
-    lines = [f"{p['state']} | {p['ticker']} {side} | {p.get('setup')}{mode} ({p.get('setup_note')}) | grade {p.get('grade')} | regime {p.get('regime')}"]
+    verdict = VERDICT.get(p["state"], p["state"])
+    if verdict == "ENTER" and not p.get("contract"):
+        verdict = "PASS"
+    lines = [f"{verdict}: {p['ticker']} {side} | {p.get('origin', '')}",
+             f"{p['state']} | {p.get('setup')}{mode} ({p.get('setup_note')}) | grade {p.get('grade')} | regime {p.get('regime')}"]
     lines.append(f"TRIGGER: {p.get('trigger_rule')} | STRUCTURE STOP: {p['ticker']} 1m close {'below' if p['side'] == 'C' else 'above'} {p.get('invalidation')}")
     c = p.get("contract")
     if c:
@@ -150,7 +199,7 @@ def plan_text(p):
                      f"{'LIVE Schwab' if d.get('executable') else 'NOT executable data, check Legend'})")
         lines.append(f"SIZE: {p['qty']} (stressed loss ${p['risk_per_contract']:.2f}/contract, ceiling ${ex['ceiling_per_contract']:.2f}){' | ' + p['size_note'] if p.get('size_note') else ''}")
         lines.append(f"T1: {ex['t1_name']} {ex['t1_level']:.2f} (option ~${ex['t1']:.2f}, {ex['model']}) | R/R {ex['rr_underlying']} on the stock, {ex['rr_option']} on the option")
-        lines.append(f"STOPS: structure above, or premium ${ex['stop']:.2f} (20% ceiling) | BE at ${ex['be_trigger']:.2f} -> stop ${ex['be_stop']:.2f} | "
+        lines.append(f"STOPS: structure above, or premium ${ex['stop']:.2f} (20% max planned loss; you place the order, a fast market can skip past it) | BE at ${ex['be_trigger']:.2f} -> stop ${ex['be_stop']:.2f} | "
                      f"green + no new high {ex['stall_min']} min or MACD turns -> out | if not green by {ex['flat_by']} -> out | all out {ex['all_out']}")
     else:
         lines.append(f"CONTRACT: {p.get('contract_note')}")
@@ -163,6 +212,19 @@ def plan_text(p):
     if p.get("watch"):
         lines.append(f"WATCHING until {p['watch']['until']} ET (say 'stop watching' to end)")
     return "\n".join(lines)
+
+
+def _in_play():
+    """Today's scanner ranking for Chart (ideas, not validated setups)."""
+    try:
+        import scanner
+        rows = scanner._rows(core.now_et().strftime("%Y-%m-%d"))
+    except Exception:
+        return []
+    return [{"ticker": r["ticker"], "rank": r["rank"], "rvol": r.get("rvol"), "direction": r.get("direction"), "change_pct": r.get("change_pct"),
+             "range": [r.get("or_low"), r.get("or_high")], "status": r.get("status"), "earnings": r.get("earnings"),
+             "contract": {k: (r.get("contract") or {}).get(k) for k in ("symbol", "exp", "delta", "spread_pct", "oi")} if r.get("contract") else None}
+            for r in rows if r["rank"] < 900][:8]
 
 
 def _alt(t):
@@ -252,6 +314,9 @@ def coach_context(selected="SPY", text=""):
         "watchlist_quote": None if selected in core.policy()["instruments"] else watchlist.quote(selected),
         "alt_data": None if selected in core.policy()["instruments"] else _alt(selected),
         "cards": cards_for(text),
+        "in_play": _in_play(),
+        "open_research": [{k: p[k] for k in ("ledger", "ticker", "contract", "qty_open", "fill")} for p in store.positions(status="OPEN")
+                          if p["ledger"] in ("exit31", "noise", "inplay")],
         "rules": rules_summary(),
         "training": {"library": ["Nick's Playbook", "Desk v3 rules map", "Desk knowledge pack", "Desk commands"],
                      "precedence": "desk numbers in this context > rules (this field) > Desk v3 rules map > Playbook",

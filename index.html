@@ -183,6 +183,17 @@ main{min-width:0;min-height:0;overflow:hidden;display:flex;flex-direction:column
 .pos .q{grid-column:1/4;display:flex;gap:12px;flex-wrap:wrap;font:11.5px var(--sans);color:var(--ink-3)}
 .pos .q b{font:inherit;color:var(--ink-2)} .pos .q .stall{color:var(--warn)}
 .ledgers{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:16px}
+.ledgers.one{grid-template-columns:minmax(0,520px)}
+.ledgers.five{grid-template-columns:repeat(5,1fr)}
+.pos .guide{grid-column:1/4;margin-top:6px;padding:8px 10px;border-radius:10px;background:rgba(255,255,255,.035);font:12px var(--sans);color:var(--ink-2);display:flex;flex-wrap:wrap;gap:4px 8px;align-items:baseline}
+.pos .guide .act{font:600 13px var(--disp);letter-spacing:.02em;color:var(--ink)} .pos .guide .act.d{color:var(--down)} .pos .guide .act.u{color:var(--up)} .pos .guide .act.w{color:var(--warn)} .pos .guide .act.m{color:var(--ink-3)}
+.pos .guide .gp{flex-basis:100%;color:var(--ink-3)} .pos .guide .gp i{font-style:normal;color:var(--ink-3)}
+.pos .guide .origin{font-size:11px;padding:1px 7px;border-radius:999px;background:rgba(255,255,255,.06);color:var(--ink-2)}
+.scanstat{display:flex;gap:18px;flex-wrap:wrap;font-size:12.5px;color:var(--ink-3);margin-bottom:14px} .scanstat b{color:var(--ink);font-weight:600}
+.scan table{min-width:860px} .scan td.st{font-size:12px;color:var(--ink-3);max-width:300px} .scan td.st.ok{color:var(--up)} .scan td .dir{font-weight:600} .scan td .dir.C{color:var(--up)} .scan td .dir.P{color:var(--down)}
+.cmp td,.cmp th{white-space:nowrap} .cmp td.why{white-space:normal;font-size:12px;color:var(--ink-3);min-width:220px}
+.alertlist{font-size:12.5px;display:grid;gap:12px} .alertlist b{color:var(--ink-2);font-weight:600;margin-right:6px}
+@media (max-width:1100px){.ledgers.five{grid-template-columns:1fr 1fr}}
 .ledger{padding:14px 18px;background:var(--glass);border:1px solid var(--line);border-radius:var(--r);min-width:0}
 .ledger.main{border-color:var(--line-2)}
 .ledger h2{font:600 14px var(--sans);display:flex;justify-content:space-between;gap:8px}
@@ -467,8 +478,10 @@ td.n,th.n{text-align:right;white-space:nowrap}
       <button type="button" data-t="SPY" aria-pressed="true">SPY</button><button type="button" data-t="QQQ" aria-pressed="false">QQQ</button><button type="button" class="other" id="otherPill" hidden aria-pressed="true"></button>
     </div>
     <nav aria-label="Views">
-      <a href="#trade" aria-current="page" data-v="trade">Deck</a>
-      <a href="#paper" data-v="paper">Paper</a>
+      <a href="#trade" aria-current="page" data-v="trade" title="Your trades, the chart and Chart's guidance">My trades</a>
+      <a href="#scan" data-v="scan" title="Stocks in play and live movers">Scanner</a>
+      <a href="#paper" data-v="paper" title="The main paper strategy">Paper</a>
+      <a href="#lab" data-v="lab" title="Experiments, kept apart from main paper">Research</a>
       <a href="#journal" data-v="journal">Journal<span class="badge" id="jBadge" hidden title="Trades waiting for a review"></span></a>
       <a href="#review" data-v="review">Review</a>
       <a href="#research" data-v="research">Rules</a>
@@ -563,7 +576,7 @@ td.n,th.n{text-align:right;white-space:nowrap}
           </section>
           <div class="rscroll" id="rscroll">
             <section class="sec" aria-labelledby="posTitle">
-              <h2 id="posTitle">Positions</h2>
+              <h2 id="posTitle">My trades<small id="simNote"></small></h2>
               <div id="positions"><div class="empty">No open positions.</div></div>
             </section>
             <section class="chat" id="chat" aria-label="Conversation with Chart" aria-live="polite"></section>
@@ -597,16 +610,41 @@ td.n,th.n{text-align:right;white-space:nowrap}
 
     <!-- PAPER -->
     <section class="view page" id="v-paper" hidden aria-label="Paper engine">
-      <h1>Paper engine</h1>
-      <p class="lead">Simulated trades on Schwab quotes: buys at the ask, sells at the bid, with costs. No broker and no orders. Each ledger is kept apart so one result can’t hide another.</p>
-      <div class="ledgers" id="ledgers"></div>
+      <h1>Paper trading</h1>
+      <p class="lead">The main strategy, simulated on Schwab quotes by itself: it buys at the ask and sells at the bid, with costs. No broker and no orders. Rules v3 are frozen for the forward test; experiments live on the Research page.</p>
+      <div class="ledgers one" id="ledgers"></div>
       <section class="box" style="margin-bottom:16px"><div class="ph"><h2>Equity<small>main paper, closed trades</small></h2></div><canvas id="eq" style="width:100%;height:190px;display:block" aria-label="Paper equity curve"></canvas></section>
       <div class="toolbar"><button type="button" id="pauseBtn">Pause paper entries</button><button type="button" id="killBtn" style="border-color:rgba(255,90,78,.5);color:var(--down)">Kill switch</button><span class="m" id="paperBroker"></span></div>
       <div class="grid2">
         <div class="box"><div class="ph"><h2>Open simulated trades</h2></div><div class="bd" id="paperOpen"></div></div>
-        <div class="box"><div class="ph"><h2>Today’s decisions<small>every setup and why</small></h2><div class="r"><div class="seg" role="group" aria-label="Ledger" id="candSeg"><button type="button" data-pf="paper" aria-pressed="true">Main</button><button type="button" data-pf="research" aria-pressed="false">Research</button></div></div></div><div class="bd cands" id="paperOpps" style="max-height:420px;overflow:auto"></div></div>
+        <div class="box"><div class="ph"><h2>Today’s decisions<small>every setup and why</small></h2></div><div class="bd cands" id="paperOpps" style="max-height:420px;overflow:auto"></div></div>
       </div>
       <div class="box" style="margin-top:16px"><div class="ph"><h2>History</h2></div><div class="bd" id="paperHist"></div></div>
+    </section>
+
+    <!-- SCANNER -->
+    <section class="view page" id="v-scan" hidden aria-label="Market scanner">
+      <h1>Market scanner</h1>
+      <p class="lead">At 9:35 ET the desk ranks liquid stocks by unusual opening volume and checks each one's options contract by contract. These are ideas, not validated setups. A day with nothing worth trading is a valid result.</p>
+      <div class="scanstat" id="scanStat"></div>
+      <div class="box"><div class="ph"><h2>Stocks in play<small>ranked by opening volume vs normal</small></h2></div><div class="bd scan" id="scanTable" style="overflow:auto"></div></div>
+      <div class="grid2" style="margin-top:16px">
+        <div class="box"><div class="ph"><h2>Live alerts<small>movers, quick moves, in-play triggers</small></h2></div><div class="bd alertlist" id="scanAlerts"></div></div>
+        <div class="box"><div class="ph"><h2>Not in play<small>checked and why they didn’t qualify</small></h2></div><div class="bd scan" id="scanOut" style="max-height:420px;overflow:auto"></div></div>
+      </div>
+    </section>
+
+    <!-- RESEARCH -->
+    <section class="view page" id="v-lab" hidden aria-label="Research">
+      <h1>Research</h1>
+      <p class="lead">Experiments run on paper next to the main strategy and never mix with it. Each one has its own ledger and version. Nothing gets promoted without forward results and a real sample, and win rate alone never decides.</p>
+      <div class="ledgers five" id="labCards"></div>
+      <div class="box"><div class="ph"><h2>Side by side<small id="labSince"></small></h2></div><div class="bd cmp" id="labTable" style="overflow:auto"></div></div>
+      <div class="grid2" style="margin-top:16px">
+        <div class="box"><div class="ph"><h2>Open experimental trades</h2></div><div class="bd" id="labOpen"></div></div>
+        <div class="box"><div class="ph"><h2>Research decisions today<small>v3 setups without the daily limits</small></h2></div><div class="bd cands" id="labCands" style="max-height:420px;overflow:auto"></div></div>
+      </div>
+      <div class="box" style="margin-top:16px"><div class="ph"><h2>Diagnostics<small>latest backtest, modeled option prices</small></h2></div><div class="bd" id="labDiag"></div></div>
     </section>
 
     <!-- JOURNAL -->
@@ -891,12 +929,12 @@ $$(".tab").forEach(b => b.onclick = () => {
 setInterval(() => { if (!$("#v-trade").hidden && !document.hidden) loadWatch(); }, 30000);
 
 /* ---------- views (the URL hash is the view) ---------- */
-const VIEWS = ["trade","paper","journal","review","research"];
+const VIEWS = ["trade","scan","paper","lab","journal","review","research"];
 function show(v){
   v = VIEWS.includes(v) ? v : "trade";
   $$("nav a").forEach(a => a.dataset.v === v ? a.setAttribute("aria-current","page") : a.removeAttribute("aria-current"));
   $$(".view").forEach(s => s.hidden = s.id !== "v-" + v);
-  ({paper:loadPaper, journal:()=>loadJournal(), review:loadReview, research:loadResearch}[v] || (()=>{}))();
+  ({paper:loadPaper, scan:loadScanner, lab:loadLab, journal:()=>loadJournal(), review:loadReview, research:loadResearch}[v] || (()=>{}))();
 }
 window.addEventListener("hashchange", () => show(location.hash.slice(1)));
 
@@ -1129,6 +1167,7 @@ function render(){
   Core.update(S, plan); if (window.Chain) Chain.refresh();
   Reviews.sync(S.unreviewed); DayWrap.maybe();
   if (!$("#v-paper").hidden) renderPaperLive();
+  if (!$("#v-lab").hidden) $("#labOpen").innerHTML = simList(p => LAB.includes(p.ledger), "No open experimental trades.");
 }
 function currentPlan(){
   const w = (S.watches || []).find(x => x.ticker === ticker);
@@ -1222,7 +1261,14 @@ function renderPlan(p){
     </details>`;
   keepOpen();
 }
-const LEDGER = {real:"You", paper:"Paper", research:"Research", old:"Old rules"};
+const LEDGER = {real:"You", paper:"Paper", research:"Research", old:"Old rules", exit31:"v3.1 exits", noise:"Noise band", inplay:"In play"};
+const GCLS = a => /^EXIT/.test(a) ? "d" : /^TAKE/.test(a) ? "u" : /^TIGHTEN/.test(a) ? "w" : /NO DATA/.test(a) ? "m" : "";
+function guideHtml(p, pl){
+  const g = pl.guidance, tag = `<span class="origin">${esc(pl.origin || "your idea (discretionary)")}</span>`;
+  if (!g) return `<div class="guide">${tag}<span class="m">Guidance starts with the next live quote.</span></div>`;
+  return `<div class="guide"><b class="act ${GCLS(g.action)}">${esc(g.action)}</b> <span class="gw">${esc((g.why || []).join(". "))}</span>
+    <span class="gp">Stop: ${esc(g.plan.stop)}${g.plan.t1 ? `. T1 ${esc(g.plan.t1)}` : ""}. ${esc(g.plan.take_profit)}. <i>${esc(g.plan.max_loss_rule)}</i></span>${tag}</div>`;
+}
 function posV3(p, pl, vq, upl, real){
   const up = p.side === "C", stopPx = pl.stop_px != null ? `${up ? "<" : ">"}${Number(pl.stop_px).toFixed(2)}` : "";
   const stage = pl.runner ? `Runner, trailing ${pl.trail != null ? Number(pl.trail).toFixed(2) : "the swing"}` :
@@ -1238,17 +1284,18 @@ function posV3(p, pl, vq, upl, real){
     <b>${esc(p.ticker)} ${esc(p.contract)} ×${p.qty_open}${p.qty_init > p.qty_open ? `<span class="m" style="font-weight:400"> of ${p.qty_init}</span>` : ""} <span class="m" style="font-weight:400">@ ${usd(p.fill)}</span></b>
     <span class="pl ${tone(upl)}" title="Liquidation value: sell at the bid minus costs">${upl == null ? "—" : money(upl)}</span>
     <span class="q">${q}</span>
-    <span class="next">${next}</span></div>`;
+    <span class="next">${next}</span>${real ? guideHtml(p, pl) : ""}</div>`;
 }
 function renderPositions(){
-  const ps = (S.positions || []).slice().sort((a,b) => (a.ledger === "real" ? -1 : 1) - (b.ledger === "real" ? -1 : 1));
+  const all = S.positions || [], ps = all.filter(p => p.ledger === "real"), sim = all.length - ps.length;
   const el = $("#positions");
-  if (!ps.length){ el.innerHTML = '<div class="empty">No open positions.</div>'; return; }
+  $("#simNote").innerHTML = sim ? ` <a href="#paper">${sim} simulated open</a>` : "";
+  if (!ps.length){ el.innerHTML = '<div class="empty">None open. Tell Chart what you bought, like <b>IN SPY 600C 2 at 1.20</b>. Other tickers need the expiry: <b>IN NVDA 140C 11/07 1 at 3.20</b>.</div>'; return; }
   el.innerHTML = ps.map(p => {
     const pl = p.plan || {}, vq = (p.view || {}).quote, bid = vq && vq.bid != null ? vq.bid : pl.last_bid;
     const upl = p.view && p.view.pnl_liquidation != null ? p.view.pnl_liquidation : bid != null ? (bid - p.fill) * 100 * p.qty_open : null;
     const real = p.ledger === "real";
-    if (pl.v === 3) return posV3(p, pl, vq, upl, real);
+    if (pl.v === 3 || pl.v === 31) return posV3(p, pl, vq, upl, real);
     const next = p.status === "PENDING" ? "Paper order pending at the broker" :
                  !pl.be_hit ? `Stop ${usd(pl.stop)}. <em>At ${usd(pl.be_trigger)} move it to ${usd(pl.be_stop)}</em>${pl.flat_by ? `, flat exit ${pl.flat_by}` : ""}` :
                  !pl.t1_done ? `Stop at breakeven ${usd(pl.stop)}. <em>Next: T1 ${usd(pl.t1)}</em>` :
@@ -1380,15 +1427,12 @@ const since30 = () => new Date(Date.now()-30*864e5).toISOString().slice(0,10);
 function histTable(rows, showDay=true){
   if (!rows.length) return '<div class="empty">No trades yet.</div>';
   return `<table><thead><tr>${showDay?"<th>Day</th>":""}<th>Trade</th><th>Setup</th><th class="n">Qty</th><th class="n">Fill</th><th class="n">Best / worst</th><th class="n">P/L</th></tr></thead><tbody>${
-    rows.slice(0,60).map(r=>`<tr>${showDay?`<td class="mono">${esc(String(r.date||"").slice(5))}</td>`:""}<td>${esc(r.ticker)} ${esc(r.contract)}</td><td>${esc(r.setup||"")} <span class="m">${esc(r.grade||"")}</span></td><td class="n">${r.qty_init}</td><td class="n">${usd(r.fill)}</td><td class="n">${r.mfe ?? 0}% / ${r.mae ?? 0}%</td><td class="n ${tone(r.realized)}">${r.status==="CLOSED"?money(r.realized):esc(r.status)}</td></tr>`).join("")}</tbody></table>`;
+    rows.slice(0,60).map(r=>`<tr>${showDay?`<td class="mono">${esc(String(r.date||"").slice(5))}</td>`:""}<td>${esc(r.ticker)} ${esc(r.contract)}</td><td>${esc(r.setup ? (typeof fam === "function" ? fam(r.setup) : r.setup) : "")} <span class="m">${esc(r.grade||"")}${r.policy_version ? " · " + esc(String(r.policy_version).replace(/^2026-\d\d-\d\d\./, "")) : ""}</span></td><td class="n">${r.qty_init}</td><td class="n">${usd(r.fill)}</td><td class="n">${r.mfe ?? 0}% / ${r.mae ?? 0}%</td><td class="n ${tone(r.realized)}">${r.status==="CLOSED"?money(r.realized):esc(r.status)}</td></tr>`).join("")}</tbody></table>`;
 }
 const metricRow = items => items.map(m=>`<div><small>${m[0]}</small><b class="${m[2]||""}">${m[1]}</b></div>`).join("");
 
 /* ---------- paper ---------- */
-const LEDGERS = [["paper","Main paper","The desk’s rules: 4 ideas a day, stops after the losing streak, flat by 15:25.", true],
-  ["research","Research","Same setups, keeps watching after the main limits so we learn what the limits cost or saved."],
-  ["old","Old rules","Yesterday’s 20/12/10% stops, frozen, run side by side for a fair comparison."],
-  ["real","You","Your Robinhood trades, as you report them."]];
+const LEDGERS = [["paper","Main paper","The desk’s rules: 4 ideas a day, stops after the losing streak, flat by 15:25.", true]];
 let candPf = "paper", CANDS = [], PF = null;
 const FAM = {ORB_BREAK:"ORB break", ORB_RETEST:"ORB retest", FAILED_BREAK:"Failed break", PDH_RETEST:"PDH retest", PDL_RETEST:"PDL retest",
              VWAP_RECLAIM:"VWAP reclaim", VWAP_MACD:"VWAP + MACD", LEVEL:"Your level"};
@@ -1411,16 +1455,16 @@ function renderLedgers(pf){
 }
 function renderCands(){
   const rows = CANDS.filter(x => x.portfolio === candPf);
-  $$("#candSeg button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.pf === candPf)));
+
   if (!rows.length){ $("#paperOpps").innerHTML = '<div class="empty">No setups yet today. The desk records every one it sees, taken or not.</div>'; return; }
   $("#paperOpps").innerHTML = `<table><thead><tr><th>Bar</th><th>Setup</th><th>Decision</th><th>Why</th></tr></thead><tbody>${rows.slice(0, 80).map(x => {
     const pl = x.plan || {}, why = [...(x.reasons || []), ...(x.limit_blocked ? [x.limit_blocked] : [])];
     const ok = x.decision === "ORDER" && pl.rr_option ? `R/R ${pl.rr_underlying} stock, ${pl.rr_option} option${pl.qty ? `, ${pl.qty} ct` : ""}` : "";
-    return `<tr><td class="mono">${esc(hhmm(x.decision_t || x.ts))}</td><td>${esc(x.ticker)} ${esc(fam(x.family))} ${x.side === "C" ? "calls" : "puts"}${pl.grade ? ` <span class="m">${esc(pl.grade)}</span>` : ""}${pl.entry_mode ? `<span class="tagm">${esc(pl.entry_mode)}</span>` : ""}</td>
+    return `<tr><td class="mono">${esc(hhmm(x.decision_t || x.ts))}</td><td>${esc(x.ticker)} ${esc(fam(x.family))} ${x.side === "C" ? "calls" : "puts"}${pl.grade ? ` <span class="m">grade ${esc(pl.grade)}</span>` : ""}${pl.entry_mode ? `<span class="tagm">${esc(pl.entry_mode)}</span>` : ""}</td>
       <td><span class="dec ${esc(x.decision)}">${esc({ORDER:"Taken", SKIP:"Skipped", "BLOCKED-LIMIT":"Limit", "SKIP-CONFLICT":"Conflict"}[x.decision] || x.decision)}</span></td>
       <td class="m" style="font-size:12px">${esc(ok || why.slice(0, 2).join("; "))}</td></tr>`; }).join("")}</tbody></table>`;
 }
-$$("#candSeg button").forEach(b => b.onclick = () => { candPf = b.dataset.pf; renderCands(); });
+
 async function loadPaper(){
   renderPaperLive();
   try{
@@ -1429,15 +1473,19 @@ async function loadPaper(){
     $("#paperHist").innerHTML = histTable(h); drawEquity(h);
   }catch(e){ $("#paperHist").innerHTML = `<div class="d">Couldn’t load history: ${esc(e.message)}</div>`; }
 }
+function simList(f, empty){
+  const ps = (S.positions || []).filter(f);
+  return ps.length ? ps.map(p => { const pl = p.plan || {}, vq = (p.view||{}).quote;
+    const u = p.view && p.view.pnl_liquidation != null ? p.view.pnl_liquidation : null;
+    return (pl.v === 3 || pl.v === 31) ? posV3(p, pl, vq, u, false) : `<div class="pos"><span class="who2 paper">${LEDGER[p.ledger] || p.ledger}</span><b>${esc(p.ticker)} ${esc(p.contract)} ×${p.qty_open} @ ${usd(p.fill)}</b><span class="pl ${tone(u)}">${money(u)}</span><span class="next">stop ${usd(pl.stop)}, T1 ${usd(pl.t1)}</span></div>`; }).join("")
+    : `<div class="empty">${empty}</div>`;
+}
 function renderPaperLive(){
   if (!S) return;
   $("#pauseBtn").textContent = S.paper.enabled ? "Pause paper entries" : "Resume paper entries";
   $("#paperBroker").textContent = `${S.paper.status === "RUNNING" ? "Running" : S.paper.status}. Open simulated trades keep being managed while entries are paused.`;
-  const ps = (S.positions||[]).filter(p => p.ledger !== "real");
-  $("#paperOpen").innerHTML = ps.length ? ps.map(p => { const pl = p.plan || {}, vq = (p.view||{}).quote;
-    const u = p.view && p.view.pnl_liquidation != null ? p.view.pnl_liquidation : null;
-    return pl.v === 3 ? posV3(p, pl, vq, u, false) : `<div class="pos"><span class="who2 paper">${LEDGER[p.ledger] || p.ledger}</span><b>${esc(p.ticker)} ${esc(p.contract)} ×${p.qty_open} @ ${usd(p.fill)}</b><span class="pl ${tone(u)}">${money(u)}</span><span class="next">stop ${usd(pl.stop)}, T1 ${usd(pl.t1)}</span></div>`; }).join("")
-    : '<div class="empty">No open simulated trades.</div>';
+  $("#paperOpen").innerHTML = simList(p => p.ledger === "paper", "No open main-paper trades.");
+  if (!$("#v-lab").hidden) $("#labOpen").innerHTML = simList(p => LAB.includes(p.ledger), "No open experimental trades.");
   if (PF) renderLedgers(PF);
 }
 $("#killBtn").onclick = async () => {
@@ -1446,6 +1494,60 @@ $("#killBtn").onclick = async () => {
   b.dataset.arm = ""; b.textContent = "Kill switch"; await send("kill switch", false); loadPaper();
 };
 $("#pauseBtn").onclick = async () => { await send(S && S.paper.enabled ? "pause paper" : "resume paper", false); loadPaper(); };
+
+/* ---------- scanner ---------- */
+const pct = (v, d=1) => v == null ? "—" : (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v).toFixed(d) + "%";
+async function loadScanner(){
+  let d; try { d = await api("api/scanner"); } catch(e){ $("#scanTable").innerHTML = `<div class="d">${esc(e.message)}</div>`; return; }
+  const st = d.status || {}, rows = d.rows || [];
+  $("#scanStat").innerHTML = [["Status", st.state || "—"], ["Scanned", st.scanned_at ? hhmm(st.scanned_at) : "not yet"], ["Watching", st.watching ?? 0],
+    ["Paper trades", st.traded ?? 0], ["Universe", `${st.universe ?? 0} tickers + movers`], ["Schwab calls", (st.api || {}).calls ?? 0]]
+    .map(x => `<span>${x[0]} <b>${esc(x[1])}</b></span>`).join("");
+  const top = rows.filter(r => r.rank < 900), out = rows.filter(r => r.rank >= 900);
+  const ct = c => c ? `${esc(c.exp ? c.exp.slice(5) : "")} ${c.strike != null ? Number(c.strike).toFixed(0) : ""} Δ${c.delta != null ? Math.abs(c.delta).toFixed(2) : "—"}, spread ${c.spread_pct != null ? (c.spread_pct * 100).toFixed(1) + "%" : "—"}, OI ${c.oi ?? "—"}` : "—";
+  $("#scanTable").innerHTML = top.length ? `<table><thead><tr><th>#</th><th>Ticker</th><th class="n">Price</th><th class="n">Today</th><th class="n">Gap</th><th class="n">Volume vs normal</th><th>First 5 min</th><th>Range</th><th>Contract</th><th>Status</th></tr></thead><tbody>${
+    top.map(r => `<tr><td class="mono">${r.rank}</td><td><b>${esc(r.ticker)}</b>${r.mover ? ' <span class="m">mover</span>' : ""}${r.earnings ? ` <span class="m" title="${esc(r.earnings_src || "")}">ER ${esc(r.earnings.slice(5))}</span>` : ""}</td>
+      <td class="n">${r.price != null ? Number(r.price).toFixed(2) : "—"}</td><td class="n ${tone(r.change_pct)}">${pct(r.change_pct)}</td><td class="n">${pct(r.gap_pct)}</td>
+      <td class="n"><b>${r.rvol != null ? r.rvol.toFixed(1) + "x" : "—"}</b></td><td><span class="dir ${r.direction}">${r.direction === "C" ? "up" : r.direction === "P" ? "down" : "—"}</span></td>
+      <td class="mono">${r.or_low != null ? `${Number(r.or_low).toFixed(2)}–${Number(r.or_high).toFixed(2)}` : "—"}</td><td style="font-size:12px">${ct(r.contract)}</td>
+      <td class="st ${/^traded/.test(r.status) ? "ok" : ""}">${esc(r.status)}</td></tr>`).join("")}</tbody></table>`
+    : `<div class="empty">${st.scanned_at ? "Nothing passed the filters today. Passing is a valid result." : "The scan runs at 9:35 ET once Schwab is connected. Before that it prepares each ticker’s normal volume and range."}</div>`;
+  $("#scanOut").innerHTML = out.length ? `<table><tbody>${out.map(r => `<tr><td><b>${esc(r.ticker)}</b></td><td class="n">${r.rvol != null ? r.rvol.toFixed(1) + "x" : "—"}</td><td class="st">${esc(r.status.replace(/^not in play: /, ""))}</td></tr>`).join("")}</tbody></table>` : '<div class="empty">Nothing yet.</div>';
+  const al = d.alerts || [];
+  $("#scanAlerts").innerHTML = al.length ? al.map(a => `<div><b>${esc(hhmm(a.ts))}</b>${esc(a.text)}</div>`).join("") : '<div class="m">No scanner alerts yet today.</div>';
+}
+
+/* ---------- research ---------- */
+const LAB = ["research","exit31","noise","inplay","old"];
+async function loadLab(){
+  let d; try { d = await api("api/research"); } catch(e){ $("#labTable").innerHTML = `<div class="d">${esc(e.message)}</div>`; return; }
+  const L = d.ledgers || {}, v = d.variants || {};
+  $("#labSince").textContent = "since " + d.since;
+  $("#labCards").innerHTML = LAB.map(k => { const r = L[k] || {};
+    return `<section class="ledger"><h2>${esc(r.name || k)}<span>${esc(((v[k] || {}).version || (k === "research" ? "v3" : k === "old" ? "frozen" : "")).replace(/^\d{4}-\d\d-\d\d\./, ""))}</span></h2><p>${esc(r.what || "")}</p>
+      <b class="big ${tone(r.net)}">${r.n ? money(r.net) : "—"}</b>
+      <dl><dt>Trades</dt><dd>${r.n || 0}</dd><dt>Per trade</dt><dd>${r.expectancy != null ? money(r.expectancy) : "—"}</dd>
+      <dt>Avg win / loss</dt><dd>${r.avg_win != null ? money(r.avg_win) : "—"} / ${r.avg_loss != null ? money(r.avg_loss) : "—"}</dd>
+      <dt>Max drawdown</dt><dd>${r.max_drawdown != null ? money(-r.max_drawdown) : "—"}</dd></dl>
+      ${r.n && r.small_sample ? '<p class="m" style="margin:8px 0 0;min-height:0;font-size:11.5px">Under 30 trades: not evidence yet.</p>' : ""}</section>`; }).join("");
+  const order = ["paper", ...LAB, "real"];
+  $("#labTable").innerHTML = `<table><thead><tr><th>Ledger</th><th class="n">Trades</th><th class="n">Won</th><th class="n">Avg win</th><th class="n">Avg loss</th><th class="n">Per trade</th><th class="n">95% range</th><th class="n">Profit factor</th><th class="n">Max DD</th><th class="n">Stock went right</th><th>How trades ended</th></tr></thead><tbody>${
+    order.map(k => { const r = L[k] || {}; const ex = Object.entries(r.exits || {}).sort((a, b) => b[1].n - a[1].n).slice(0, 3).map(([w, g]) => `${w} ${g.n} (${money(g.net)})`).join(", ");
+      return `<tr><td><b>${esc(r.name || k)}</b>${k === "paper" ? ' <span class="m">main</span>' : ""}</td><td class="n">${r.n || 0}</td><td class="n">${r.win_rate != null ? r.win_rate + "%" : "—"}</td>
+        <td class="n">${r.avg_win != null ? money(r.avg_win) : "—"}</td><td class="n">${r.avg_loss != null ? money(r.avg_loss) : "—"}</td><td class="n ${tone(r.expectancy)}">${r.expectancy != null ? money(r.expectancy) : "—"}</td>
+        <td class="n">${r.ci95 ? `${money(r.ci95[0])} to ${money(r.ci95[1])}` : "—"}</td><td class="n">${r.profit_factor ?? "—"}</td><td class="n">${r.max_drawdown != null ? money(-r.max_drawdown) : "—"}</td>
+        <td class="n">${r.stock_move_positive_pct != null ? r.stock_move_positive_pct + "%" : "—"}</td><td class="why">${esc(ex || "—")}</td></tr>`; }).join("")}</tbody></table>
+    <p class="m" style="margin-top:8px;font-size:11.5px">${esc(d.note || "")}</p>`;
+  $("#labOpen").innerHTML = S ? simList(p => LAB.includes(p.ledger), "No open experimental trades.") : "";
+  try { const cd = await api("api/candidates?portfolio=research"); const keep = CANDS; CANDS = cd || []; const pf = candPf; candPf = "research"; const html = (renderCands(), $("#paperOpps").innerHTML); $("#labCands").innerHTML = html; CANDS = keep; candPf = pf; renderCands(); } catch(e){}
+  try { const g = await api("api/diagnostics");
+    if (g.none) { $("#labDiag").innerHTML = `<div class="empty">No backtest yet. Chart runs: <span class="mono">python3 backtest.py --from 2026-09-22 --to 2026-10-29</span></div>`; }
+    else { const P = g.policies || {}, cf = (g.baselines || {}).coin_flip_v3_approx || {}, s = x => x && x.n ? `${x.n} trades, ${x.win_rate}% won, ${money(x.expectancy)} per trade, PF ${x.profit_factor ?? "—"}` : "—";
+      $("#labDiag").innerHTML = `<p class="m">${g.candidates} setups, ${g.from} to ${g.to}. Option prices modeled.</p><table><tbody>
+        <tr><td>Signals, v3 exits</td><td>${s((P.v3_approx || {}).option_modeled)}</td></tr><tr><td>Coin flip, same exits</td><td>${cf.win_rate_mean ?? "—"}% won, ${money(cf.expectancy_mean)} per trade</td></tr>
+        <tr><td>Same entries, hold to the stop or 15:25</td><td>${s((P.hold || {}).option_modeled)}</td></tr><tr><td>Same entries, v3.1 runner exits</td><td>${s((P.v31_approx || {}).option_modeled)}</td></tr></tbody></table>`; }
+  } catch(e){ $("#labDiag").innerHTML = ""; }
+}
 
 /* ---------- journal ---------- */
 let jt = null;
@@ -1937,8 +2039,11 @@ async function loadAlerts(){
   let a = {}; try { a = await api("api/alerts"); } catch(e){ return; }
   const row = (k, t, d) => `<label class="tag" style="margin:0 8px 8px 0"><input type="checkbox" data-al="${k}" ${a[k] ? "checked" : ""}>${t}</label><span class="m" style="font-size:11.5px">${d}</span><br>`;
   $("#alertBox").innerHTML = row("setups", "Setups", "A/B setups on SPY/QQQ the moment the desk spots them (free, in code)") +
-    row("moves", "Move alerts", "2 heavy 5-minute candles in a row on big volume (free, in code)") +
+    row("moves", "Move alerts", "SPY/QQQ: 2 heavy 5-minute candles on big volume. Any scanned stock: a sharp 5-minute move on heavy volume (free, in code)") +
     row("news", "News", "market-moving headlines from Chart's X/web scan every 20 min (about 20 AI runs a day)") +
+    row("mytrades", "My trades", "when the desk's guidance on a trade you logged changes: exit, take profit, tighten the stop (free, in code)") +
+    row("movers", "Movers", "stocks in play at 9:35 and a top-movers digest through the day, with a possible play (free, in code)") +
+    row("scanner", "Scanner trades", "when the scanner's research ledger takes a stocks-in-play trade on paper (free, in code)") +
     `<p class="m" style="margin-top:6px">On this computer: press <b>Alerts</b> in the top bar to allow pop-ups. On your phone: ${a.phone ? '<span class="u">phone alerts are on (ntfy)</span>' : 'install the free <b>ntfy</b> app, subscribe to a private topic name you make up (e.g. nick-desk-7h3k2q), and have Chart add <span class="mono">NTFY_TOPIC</span> with that name to the desk server'}.</p>`;
   $("#alertBox").querySelectorAll("[data-al]").forEach(c => c.onchange = () => api("api/alerts", {[c.dataset.al]: c.checked}));
 }
@@ -1995,6 +2100,7 @@ setTicker(ticker);
 loadWatch();
 show(location.hash.slice(1));
 poll(); setInterval(poll, 2000); DeskChart.start();
+setInterval(() => { if (document.hidden) return; if (!$("#v-scan").hidden) loadScanner(); }, 30000);
 </script>
 </body>
 </html>

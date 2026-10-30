@@ -27,6 +27,9 @@ Main endpoints:
   GET  /api/candidates       every candidate with evidence, decision, rejection reasons, limit blocks (per portfolio)
   GET  /api/portfolios       real / main paper / research / old-policy results kept apart
   GET  /api/evaluation       the forward paper test scored against the criteria fixed in policy.json beforehand
+  GET  /api/scanner          today's stocks-in-play ranking with every number and reason, scanner status, movers alerts
+  GET  /api/research         every paper ledger side by side: expectancy, avg win/loss, drawdown, stock move vs option
+  GET  /api/diagnostics      the latest diagnostics report from backtest.py
   GET  /legacy               the old desk page (custom indicator chart)
   Legacy: /api/read /api/bars /api/last /api/plan /api/chat
 Real money: only Nick, in Robinhood. This server sends NO orders anywhere: paper trading is simulated internally
@@ -306,7 +309,7 @@ class H(BaseHTTPRequestHandler):
                                   {"Content-Disposition": f'attachment; filename="desk-{led}-trades.csv"'})
             if u.path == "/api/history":
                 led = q.get("ledger", ["paper"])[0]
-                rows = store.q("SELECT id,date,ticker,contract,qty_init,fill,realized,status,setup,grade,mfe,mae,opened,closed,verified,notes "
+                rows = store.q("SELECT id,ledger,date,ticker,contract,qty_init,fill,realized,status,setup,grade,mfe,mae,opened,closed,verified,notes,policy_version "
                                "FROM positions WHERE ledger=? ORDER BY opened DESC LIMIT 200", (led,))
                 return self._json(rows)
             if u.path == "/api/read":
@@ -341,6 +344,24 @@ class H(BaseHTTPRequestHandler):
                         except ValueError:
                             pass
                 return self._json(clean(rows))
+            if u.path == "/api/scanner":
+                import scanner
+                day = q.get("date", [core.now_et().strftime("%Y-%m-%d")])[0][:10]
+                ev = store.q("SELECT ts, text FROM events WHERE kind='alert' AND substr(ts,1,10)=? AND "
+                             "(text LIKE 'IN PLAY%' OR text LIKE 'TOP MOVERS%' OR text LIKE 'QUICK MOVE%') ORDER BY seq DESC LIMIT 40", (day,))
+                return self._json(clean({"status": scanner.status(), "rows": scanner._rows(day), "alerts": ev,
+                                         "config": core.policy().get("scanner")}))
+            if u.path == "/api/research":
+                import evaluation
+                since = q.get("since", ["2026-10-30"])[0][:10]
+                return self._json(clean({"since": since, "ledgers": {led: evaluation.ledger_report(led, since) for led in
+                                                                      ("paper", "research", "exit31", "noise", "inplay", "old", "real")},
+                                         "variants": core.policy().get("research_variants"),
+                                         "note": "Each ledger is separate. Under 30 trades is not evidence. Option results of the variants are "
+                                                 "simulated fills on live Schwab quotes; replays and backtests use MODELED option prices."}))
+            if u.path == "/api/diagnostics":
+                files = sorted((core.HERE / "reports").glob("diagnostics_*.json")) if (core.HERE / "reports").exists() else []
+                return self._json(json.loads(files[-1].read_text()) if files else {"none": "no diagnostics run yet: python3 backtest.py --from ... --to ..."})
             if u.path == "/api/evaluation":
                 import evaluation
                 return self._json(clean(evaluation.report()))
@@ -491,6 +512,11 @@ if __name__ == "__main__":
         print("Schwab stream:", "starting" if schwab_stream.start() else "not available (install websockets) - Schwab REST polling", flush=True)
     except Exception as e:
         print("Schwab stream not started:", e, flush=True)
+    try:
+        import scanner
+        print("Scanner:", "started" if scanner.start() else "off", flush=True)
+    except Exception as e:
+        print("Scanner not started:", e, flush=True)
     start_kronos()
     print(f"DeltaDesk running: http://localhost:{PORT}  policy {core.policy()['version']}", flush=True)
     ThreadingHTTPServer(("127.0.0.1", PORT), H).serve_forever()
