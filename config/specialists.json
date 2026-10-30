@@ -1,0 +1,528 @@
+{
+  "version": "2026-10-30.registry1",
+  "note": "Append-only experiment register. A spec can't be edited once registered (its hash is checked); a change is a NEW id. Statuses: DRAFT, RESEARCH ONLY, PAPER QUALIFIED, PAUSED, RETIRED. No status enables real orders. PAPER QUALIFIED needs later, unseen forward evidence: positive net expectancy after costs, a useful margin over a matched random-entry control, acceptable drawdown and no rule violations. The qualified list starts EMPTY.",
+  "promotion_rule": {
+    "min_paper_outcomes": 100,
+    "min_sessions": 30,
+    "primary": "net expectancy per trade after costs, session-clustered 95% interval above 0",
+    "vs_control": "paired session-level difference vs the matched random-entry control, Holm-adjusted across every attempted mapping",
+    "secondary": [
+      "win rate with interval",
+      "max drawdown",
+      "top-5 trade share"
+    ],
+    "note": "an operational review point, not proof"
+  },
+  "experiments": [
+    {
+      "id": "LEGACY-V3-ORB_BREAK",
+      "kind": "executable",
+      "status": "RESEARCH ONLY",
+      "spec": {
+        "family": "ORB_BREAK",
+        "assets": {
+          "symbols": [
+            "SPY",
+            "QQQ"
+          ]
+        },
+        "direction": "both",
+        "timeframe": "5m decisions / 2m momentum",
+        "windows": [
+          [
+            "09:45",
+            "15:15"
+          ]
+        ],
+        "policy": "2026-10-29.v3 (frozen)",
+        "entry": "strategy.py detector, finished bars",
+        "invalidation": "strategy.py structural level",
+        "target": "next opposing level (optionmath.pick_t1)",
+        "max_hold": "all out 15:25",
+        "contract": "0DTE delta 0.40-0.55",
+        "costs": "exec1"
+      },
+      "evidence": [
+        {
+          "source": "DeltaDesk diagnostics 2026-09-22..2026-10-29 (in-sample, modeled options)",
+          "result": "calls 50 trades -$7.62, puts 51 trades -$15.49 per trade"
+        }
+      ],
+      "why_status": "no demonstrated edge: kept for the frozen forward test and as research; never shown as an entry instruction"
+    },
+    {
+      "id": "LEGACY-V3-ORB_RETEST",
+      "kind": "executable",
+      "status": "RESEARCH ONLY",
+      "spec": {
+        "family": "ORB_RETEST",
+        "assets": {
+          "symbols": [
+            "SPY",
+            "QQQ"
+          ]
+        },
+        "direction": "both",
+        "timeframe": "5m decisions / 2m momentum",
+        "windows": [
+          [
+            "09:45",
+            "15:15"
+          ]
+        ],
+        "policy": "2026-10-29.v3 (frozen)",
+        "entry": "strategy.py detector, finished bars",
+        "invalidation": "strategy.py structural level",
+        "target": "next opposing level (optionmath.pick_t1)",
+        "max_hold": "all out 15:25",
+        "contract": "0DTE delta 0.40-0.55",
+        "costs": "exec1"
+      },
+      "evidence": [
+        {
+          "source": "DeltaDesk diagnostics 2026-09-22..2026-10-29 (in-sample, modeled options)",
+          "result": "calls 12 trades -$3.94, puts 8 trades -$22.37 (tiny)"
+        }
+      ],
+      "why_status": "no demonstrated edge: kept for the frozen forward test and as research; never shown as an entry instruction"
+    },
+    {
+      "id": "LEGACY-V3-FAILED_BREAK",
+      "kind": "executable",
+      "status": "RESEARCH ONLY",
+      "spec": {
+        "family": "FAILED_BREAK",
+        "assets": {
+          "symbols": [
+            "SPY",
+            "QQQ"
+          ]
+        },
+        "direction": "both",
+        "timeframe": "5m decisions / 2m momentum",
+        "windows": [
+          [
+            "09:45",
+            "15:15"
+          ]
+        ],
+        "policy": "2026-10-29.v3 (frozen)",
+        "entry": "strategy.py detector, finished bars",
+        "invalidation": "strategy.py structural level",
+        "target": "next opposing level (optionmath.pick_t1)",
+        "max_hold": "all out 15:25",
+        "contract": "0DTE delta 0.40-0.55",
+        "costs": "exec1"
+      },
+      "evidence": [
+        {
+          "source": "DeltaDesk diagnostics 2026-09-22..2026-10-29 (in-sample, modeled options)",
+          "result": "calls 79 trades -$5.88, puts 66 trades -$14.92"
+        }
+      ],
+      "why_status": "no demonstrated edge: kept for the frozen forward test and as research; never shown as an entry instruction"
+    },
+    {
+      "id": "LEGACY-V3-PDH_RETEST",
+      "kind": "executable",
+      "status": "RESEARCH ONLY",
+      "spec": {
+        "family": "PDH_RETEST",
+        "assets": {
+          "symbols": [
+            "SPY",
+            "QQQ"
+          ]
+        },
+        "direction": "C",
+        "timeframe": "5m decisions / 2m momentum",
+        "windows": [
+          [
+            "09:45",
+            "15:15"
+          ]
+        ],
+        "policy": "2026-10-29.v3 (frozen)",
+        "entry": "strategy.py detector, finished bars",
+        "invalidation": "strategy.py structural level",
+        "target": "next opposing level (optionmath.pick_t1)",
+        "max_hold": "all out 15:25",
+        "contract": "0DTE delta 0.40-0.55",
+        "costs": "exec1"
+      },
+      "evidence": [
+        {
+          "source": "DeltaDesk diagnostics 2026-09-22..2026-10-29 (in-sample, modeled options)",
+          "result": "3 trades +$8.65 (far too few)"
+        }
+      ],
+      "why_status": "no demonstrated edge: kept for the frozen forward test and as research; never shown as an entry instruction"
+    },
+    {
+      "id": "LEGACY-V3-PDL_RETEST",
+      "kind": "executable",
+      "status": "RESEARCH ONLY",
+      "spec": {
+        "family": "PDL_RETEST",
+        "assets": {
+          "symbols": [
+            "SPY",
+            "QQQ"
+          ]
+        },
+        "direction": "P",
+        "timeframe": "5m decisions / 2m momentum",
+        "windows": [
+          [
+            "09:45",
+            "15:15"
+          ]
+        ],
+        "policy": "2026-10-29.v3 (frozen)",
+        "entry": "strategy.py detector, finished bars",
+        "invalidation": "strategy.py structural level",
+        "target": "next opposing level (optionmath.pick_t1)",
+        "max_hold": "all out 15:25",
+        "contract": "0DTE delta 0.40-0.55",
+        "costs": "exec1"
+      },
+      "evidence": [
+        {
+          "source": "DeltaDesk diagnostics 2026-09-22..2026-10-29 (in-sample, modeled options)",
+          "result": "10 trades +$5.70 (too few)"
+        }
+      ],
+      "why_status": "no demonstrated edge: kept for the frozen forward test and as research; never shown as an entry instruction"
+    },
+    {
+      "id": "LEGACY-V3-VWAP_RECLAIM",
+      "kind": "executable",
+      "status": "RESEARCH ONLY",
+      "spec": {
+        "family": "VWAP_RECLAIM",
+        "assets": {
+          "symbols": [
+            "SPY",
+            "QQQ"
+          ]
+        },
+        "direction": "both",
+        "timeframe": "5m decisions / 2m momentum",
+        "windows": [
+          [
+            "09:45",
+            "15:15"
+          ]
+        ],
+        "policy": "2026-10-29.v3 (frozen)",
+        "entry": "strategy.py detector, finished bars",
+        "invalidation": "strategy.py structural level",
+        "target": "next opposing level (optionmath.pick_t1)",
+        "max_hold": "all out 15:25",
+        "contract": "0DTE delta 0.40-0.55",
+        "costs": "exec1"
+      },
+      "evidence": [
+        {
+          "source": "DeltaDesk diagnostics 2026-09-22..2026-10-29 (in-sample, modeled options)",
+          "result": "calls 27 trades -$6.16, puts 33 trades -$16.21"
+        }
+      ],
+      "why_status": "no demonstrated edge: kept for the frozen forward test and as research; never shown as an entry instruction"
+    },
+    {
+      "id": "LEGACY-V3-VWAP_MACD",
+      "kind": "executable",
+      "status": "RESEARCH ONLY",
+      "spec": {
+        "family": "VWAP_MACD",
+        "assets": {
+          "symbols": [
+            "SPY",
+            "QQQ"
+          ]
+        },
+        "direction": "both",
+        "timeframe": "5m decisions / 2m momentum",
+        "windows": [
+          [
+            "09:45",
+            "15:15"
+          ]
+        ],
+        "policy": "2026-10-29.v3 (frozen)",
+        "entry": "strategy.py detector, finished bars",
+        "invalidation": "strategy.py structural level",
+        "target": "next opposing level (optionmath.pick_t1)",
+        "max_hold": "all out 15:25",
+        "contract": "0DTE delta 0.40-0.55",
+        "costs": "exec1"
+      },
+      "evidence": [
+        {
+          "source": "DeltaDesk diagnostics 2026-09-22..2026-10-29 (in-sample, modeled options)",
+          "result": "calls 42 trades -$3.22, puts 52 trades -$5.74"
+        }
+      ],
+      "why_status": "no demonstrated edge: kept for the frozen forward test and as research; never shown as an entry instruction"
+    },
+    {
+      "id": "LEGACY-V3-ALL",
+      "kind": "executable",
+      "status": "RESEARCH ONLY",
+      "spec": {
+        "family": "*",
+        "assets": {
+          "symbols": [
+            "SPY",
+            "QQQ"
+          ]
+        },
+        "policy": "2026-10-29.v3 (frozen)"
+      },
+      "evidence": [
+        {
+          "source": "DeltaDesk diagnostics 2026-09-22..2026-10-29 (in-sample, modeled options)",
+          "result": "433 setups -$9.00/trade vs coin flip -$6.73 and opposite direction -$4.43: worse than random"
+        }
+      ],
+      "why_status": "the frozen main paper test keeps running; its setups are not entry instructions"
+    },
+    {
+      "id": "NOISE-BAND-V31",
+      "kind": "executable",
+      "status": "RESEARCH ONLY",
+      "spec": {
+        "family": "NOISE",
+        "assets": {
+          "symbols": [
+            "SPY",
+            "QQQ"
+          ]
+        },
+        "windows": [
+          [
+            "10:00",
+            "15:00"
+          ]
+        ],
+        "policy": "2026-10-30.v3.1-noise"
+      },
+      "evidence": [
+        {
+          "source": "DeltaDesk diagnostics 2026-09-22..2026-10-29 (in-sample, modeled options)",
+          "result": "61 trades +$22.48/trade PF 1.67, 23% won, a few all-day winners carry it; in-sample"
+        }
+      ],
+      "why_status": "in-sample and concentrated; needs unseen forward evidence"
+    },
+    {
+      "id": "INPLAY-ORB5-V31",
+      "kind": "executable",
+      "status": "RESEARCH ONLY",
+      "spec": {
+        "family": "INPLAY_ORB5",
+        "assets": {
+          "group": "stocks in play (universe file, 9:35 ranking)"
+        },
+        "policy": "2026-10-30.v3.1-inplay"
+      },
+      "evidence": [
+        {
+          "source": "DeltaDesk diagnostics 2026-09-22..2026-10-29 (in-sample, modeled options)",
+          "result": "425 trades: stock -0.03R, options modeled -$19.49/trade"
+        },
+        {
+          "source": "outside audit, rounds 2-3 (not reproduced in this repo; their data files were not supplied)",
+          "result": "286 reproduced trades -$12.42/trade modeled; 185 decided before 09:45 (bt1 defect); later block 47 trades 12.8% won -$42.54"
+        }
+      ],
+      "why_status": "negative; bt1 had look-ahead fills (fixed in bt2)"
+    },
+    {
+      "id": "FILTER-RVOL2",
+      "kind": "signal",
+      "status": "RETIRED",
+      "spec": {
+        "family": "INPLAY_ORB5",
+        "filter": "RVOL >= 2"
+      },
+      "evidence": [
+        {
+          "source": "outside audit, rounds 2-3 (not reproduced in this repo; their data files were not supplied)",
+          "result": "later block 20 trades 15% won -$42.56/trade"
+        }
+      ],
+      "why_status": "failed in the later block"
+    },
+    {
+      "id": "FILTER-SPY-ALIGN",
+      "kind": "signal",
+      "status": "RESEARCH ONLY",
+      "spec": {
+        "family": "INPLAY_ORB5",
+        "filter": "SPY above/below its open and VWAP at decision time"
+      },
+      "evidence": [
+        {
+          "source": "outside audit, rounds 2-3 (not reproduced in this repo; their data files were not supplied)",
+          "result": "later block 27 trades 11.1% won -$44.47/trade"
+        }
+      ],
+      "why_status": "no improvement; context only"
+    },
+    {
+      "id": "FILTER-TREND-ADX25",
+      "kind": "signal",
+      "status": "RETIRED",
+      "spec": {
+        "family": "INPLAY_ORB5",
+        "filter": "5m ADX14 >= 25, efficiency(12) >= 0.4, DI aligned"
+      },
+      "evidence": [
+        {
+          "source": "outside audit, rounds 2-3 (not reproduced in this repo; their data files were not supplied)",
+          "result": "selected in development, then later block 19 trades 10.5% won -$53.49"
+        }
+      ],
+      "why_status": "failed after selection"
+    },
+    {
+      "id": "WINDOW-MORNING",
+      "kind": "signal",
+      "status": "RETIRED",
+      "spec": {
+        "family": "INPLAY_ORB5",
+        "windows": [
+          [
+            "09:45",
+            "11:30"
+          ]
+        ]
+      },
+      "evidence": [
+        {
+          "source": "outside audit, rounds 2-3 (not reproduced in this repo; their data files were not supplied)",
+          "result": "later block 34 trades 11.8% won -$46.13"
+        }
+      ],
+      "why_status": "no viable subset"
+    },
+    {
+      "id": "MACD-VIDEO-5M-2R",
+      "kind": "signal",
+      "status": "RETIRED",
+      "spec": {
+        "family": "MACD_200EMA",
+        "timeframe": "5m",
+        "rule": "completed MACD cross below zero, price above 200-EMA, 2R",
+        "costs": "$0.04/share"
+      },
+      "evidence": [
+        {
+          "source": "outside audit, rounds 2-3 (not reproduced in this repo; their data files were not supplied)",
+          "result": "90 outcomes 24.4% positive -0.416R; with prior-pivot filter 12 outcomes -0.936R"
+        }
+      ],
+      "why_status": "negative before and after costs; the video's 86% is not reproduced"
+    },
+    {
+      "id": "EXP-001-GATED-BASELINE",
+      "kind": "executable",
+      "status": "RESEARCH ONLY",
+      "spec": {
+        "family": "v3 research candidates",
+        "assets": {
+          "symbols": [
+            "SPY",
+            "QQQ"
+          ]
+        },
+        "windows": [
+          [
+            "09:45",
+            "15:15"
+          ]
+        ],
+        "policy": "2026-10-30.v3.3-gated2",
+        "entry": "gate2: confirmed close, both zone bounds, remaining R/R >= 2 after costs",
+        "costs": "exec2",
+        "ledger": "gated"
+      },
+      "evidence": [],
+      "why_status": "the corrected baseline; collecting forward paper outcomes"
+    },
+    {
+      "id": "INPLAY-ORB15-BASE-SIGNAL",
+      "kind": "signal",
+      "status": "DRAFT",
+      "spec": {
+        "family": "ORB15_COMPLETED_BREAK",
+        "assets": {
+          "group": "liquid stocks (prior 14-day avg volume >= 1M, price >= $20, known at the open)"
+        },
+        "timeframe": "1m bars",
+        "windows": [
+          [
+            "09:45",
+            "15:15"
+          ]
+        ],
+        "entry": "first finished 1m close beyond the 09:30-09:44 range edge, decided at that bar's close (>= 09:45), entered at the next bar open",
+        "invalidation": "the edge -/+ 0.05 x ATR14",
+        "target": "2R (signal study only; a live plan needs a real level)",
+        "horizons_min": [
+          5,
+          15,
+          30
+        ],
+        "costs": "$0.02/share each way",
+        "registered_before_evaluation": true
+      },
+      "evidence": [
+        {
+          "source": "outside audit, rounds 2-3 (not reproduced in this repo; their data files were not supplied)",
+          "result": "an earlier 15m breakout definition: 75 later signals, 45.3% positive at 15 min, negative after costs"
+        }
+      ],
+      "why_status": "the common baseline the retest variant must beat; run research.py on the stocks bars"
+    },
+    {
+      "id": "EXP-002-FIRST-RETEST",
+      "kind": "signal",
+      "status": "DRAFT",
+      "spec": {
+        "family": "ORB15_FIRST_RETEST",
+        "assets": {
+          "group": "liquid optionable stocks/ETFs on the setups board"
+        },
+        "timeframe": "1m bars",
+        "windows": [
+          [
+            "09:45",
+            "15:15"
+          ]
+        ],
+        "entry": "after a completed 1m close beyond the ORB15 edge, the FIRST return within 0.05 ATR of the edge and a 1m close back beyond it; enter at the next bar open + 1 min",
+        "invalidation": "1m close back inside the range by more than 0.05 ATR",
+        "target": "the next prior-day / pre-market level beyond, else none (no trade)",
+        "horizons_min": [
+          5,
+          15,
+          30
+        ],
+        "costs": "$0.02/share each way",
+        "registered_before_evaluation": true
+      },
+      "evidence": [
+        {
+          "source": "outside audit, rounds 2-3 (not reproduced in this repo; their data files were not supplied)",
+          "result": "an earlier 15m retest definition: 60 later signals, 36.7% positive at 15 min, negative after costs"
+        }
+      ],
+      "why_status": "preregistered candidate; must beat its matched random control in a later block"
+    }
+  ],
+  "qualified": [],
+  "assignments": []
+}
