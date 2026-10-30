@@ -30,8 +30,25 @@ EQ_FIELDS = "0,1,2,3,4,5,8,9,34,35"
 OPT_FIELDS = "0,2,3,4,8,9,10,13,16,17,28,29,30,31,35,37,38,39"
 CHART_FIELDS = "0,1,2,3,4,5,6,7,8"
 
-_state = {"thread": None, "healthy": False, "want_opts": set(), "subscribed_opts": set(), "stop": False}
+_state = {"thread": None, "healthy": False, "want_opts": set(), "subscribed_opts": set(), "want_eq": set(), "subscribed_eq": set(),
+          "stop": False, "gen": 0, "phase": "off", "detail": None, "since": None, "auth_failures": 0, "sessions": 0,
+          "last_msg": None}
 _ops = queue.Queue()
+_life = threading.Lock()
+MAX_AUTH_FAILURES = 3        # after this many refusals in a row the stream stops retrying until Nick reconnects
+
+
+def _phase(p, detail=None):
+    if _state["phase"] != p or detail != _state["detail"]:
+        _state.update(phase=p, detail=detail, since=time.time())
+
+
+def state():
+    """Stream lifecycle for the UI: off / waiting / connecting / live / reconnecting / stopped (+ detail)."""
+    return {"phase": _state["phase"], "detail": _state["detail"], "since": _state["since"], "healthy": healthy(),
+            "sessions": _state["sessions"], "auth_failures": _state["auth_failures"], "generation": _state["gen"],
+            "running": bool(_state["thread"] and _state["thread"].is_alive()),
+            "equities": sorted(_state["subscribed_eq"]), "options": len(_state["subscribed_opts"])}
 
 
 def available():
@@ -58,6 +75,33 @@ def want_options(symbols):
     if add:
         _state["want_opts"] |= add
         _ops.put(("ADD", "LEVELONE_OPTIONS", sorted(add)))
+
+
+def want_equities(symbols, base=True):
+    """Extra stocks/ETFs to stream (Nick's open trades = base; the chart ticker goes through focus_equity)."""
+    new = {s.upper() for s in symbols if s}
+    if base:
+        _state.setdefault("base_eq", set()).update(new)
+    add = new - _state["want_eq"]
+    if add:
+        _state["want_eq"] |= add
+        _ops.put(("ADD", "EQ", sorted(add)))
+
+
+def focus_equity(symbol):
+    """The chart's ticker. Switching charts unsubscribes the previous one unless something else still needs it
+    (SPY/QQQ, an open trade, another want_equities caller)."""
+    sym = (symbol or "").upper()
+    prev = _state.get("chart_eq")
+    if sym == prev:
+        return
+    _state["chart_eq"] = sym
+    keep = set(core.policy()["instruments"]) | _state.setdefault("base_eq", set())
+    if prev and prev not in keep and prev in _state["want_eq"]:
+        _state["want_eq"].discard(prev)
+        _ops.put(("UNSUBS", "EQ", [prev]))
+    if sym:
+        want_equities([sym], base=False)
 
 
 def handle(msg):
@@ -102,9 +146,14 @@ def _req(info, rid, service, command, params):
             "parameters": params}
 
 
-async def _session(info, tickers):
+def _ws_connect(url):
+    """The websocket opener (tests swap in a fake server; nothing else ever changes it)."""
     import websockets
-    async with websockets.connect(info["streamerSocketUrl"], ping_interval=20, max_size=2 ** 22) as ws:
+    return websockets.connect(url, ping_interval=20, max_size=2 ** 22)
+
+
+async def _session(info, tickers, gen):
+    async with _ws_connect(info["streamerSocketUrl"]) as ws:
         rid = 0
         tok = schwab.access_token()
         await ws.send(json.dumps({"requests": [_req(info, rid, "ADMIN", "LOGIN", {
@@ -113,20 +162,42 @@ async def _session(info, tickers):
         resp = json.loads(await asyncio.wait_for(ws.recv(), 20))
         code = (((resp.get("response") or [{}])[0]).get("content") or {}).get("code")
         if code not in (0, "0"):
-            raise RuntimeError(f"stream LOGIN refused (code {code})")
-        subs = [("CHART_EQUITY", ",".join(tickers), CHART_FIELDS), ("LEVELONE_EQUITIES", ",".join(tickers), EQ_FIELDS)]
+            raise PermissionError(f"Schwab refused the stream login (code {code})")
+        eq = sorted(set(tickers) | _state["want_eq"])
+        subs = [("CHART_EQUITY", ",".join(eq), CHART_FIELDS), ("LEVELONE_EQUITIES", ",".join(eq), EQ_FIELDS)]
         if _state["want_opts"]:
             subs.append(("LEVELONE_OPTIONS", ",".join(stream_symbol(s) for s in sorted(_state["want_opts"])), OPT_FIELDS))
         for svc, keys, fields in subs:
             rid += 1
             await ws.send(json.dumps({"requests": [_req(info, rid, svc, "SUBS", {"keys": keys, "fields": fields})]}))
         _state["subscribed_opts"] = set(_state["want_opts"])
+        _state["subscribed_eq"] = set(eq)
         _state["healthy"] = True
+        _state["auth_failures"] = 0
+        _state["sessions"] += 1
+        _state["last_msg"] = time.time()
+        _phase("live")
         marketdata.set_mode("stream")
-        _backfill(tickers)
-        while not _state["stop"]:
+        _backfill(eq)
+        while not _state["stop"] and gen == _state["gen"]:
             while not _ops.empty():
                 cmd, svc, syms = _ops.get_nowait()
+                if svc == "EQ" and cmd == "UNSUBS":
+                    syms = [s for s in syms if s in _state["subscribed_eq"]]
+                    for s2 in ("CHART_EQUITY", "LEVELONE_EQUITIES"):
+                        if syms:
+                            rid += 1
+                            await ws.send(json.dumps({"requests": [_req(info, rid, s2, "UNSUBS", {"keys": ",".join(syms)})]}))
+                    _state["subscribed_eq"] -= set(syms)
+                    continue
+                if svc == "EQ":
+                    syms = [s for s in syms if s not in _state["subscribed_eq"]]
+                    for s2, f2 in (("CHART_EQUITY", CHART_FIELDS), ("LEVELONE_EQUITIES", EQ_FIELDS)):
+                        if syms:
+                            rid += 1
+                            await ws.send(json.dumps({"requests": [_req(info, rid, s2, cmd, {"keys": ",".join(syms), "fields": f2})]}))
+                    _state["subscribed_eq"] |= set(syms)
+                    continue
                 syms = [s for s in syms if s not in _state["subscribed_opts"]]
                 if syms:
                     rid += 1
@@ -134,13 +205,21 @@ async def _session(info, tickers):
                         "keys": ",".join(stream_symbol(s) for s in syms), "fields": OPT_FIELDS})]}))
                     _state["subscribed_opts"] |= set(syms)
             try:
-                raw = await asyncio.wait_for(ws.recv(), 30)
+                raw = await asyncio.wait_for(ws.recv(), 1)      # short waits so Disconnect/Reconnect close this socket within ~1 s
             except asyncio.TimeoutError:
-                raise RuntimeError("no stream message for 30 s")
+                if time.time() - (_state["last_msg"] or 0) > 30:
+                    raise RuntimeError("no stream message (not even a heartbeat) for 30 s")
+                continue
+            _state["last_msg"] = time.time()
             try:
                 handle(json.loads(raw))
             except ValueError:
                 continue
+        try:                                                   # retired (Disconnect / Reconnect): log out politely
+            rid += 1
+            await ws.send(json.dumps({"requests": [_req(info, rid, "ADMIN", "LOGOUT", {})]}))
+        except Exception:
+            pass
 
 
 def _backfill(tickers):
@@ -156,32 +235,95 @@ def _backfill(tickers):
             pass
 
 
-def _run(tickers):
+def _sleep(seconds, gen):
+    end = time.time() + seconds
+    while time.time() < end and not _state["stop"] and gen == _state["gen"]:
+        time.sleep(0.5)
+
+
+def _run(tickers, gen):
+    """One worker per generation. A newer generation (restart) or stop() ends this one cleanly, so there is never more
+    than one stream. Auth refusals (HTTP 401/403, LOGIN refused) are counted; after MAX_AUTH_FAILURES the worker stops
+    retrying and asks for a reconnect instead of hammering Schwab."""
     delay = 1
-    while not _state["stop"]:
-        if not schwab.ready():
+    while not _state["stop"] and gen == _state["gen"]:
+        st = schwab.status()
+        if st["state"] in ("disconnected", "expired") or (st["state"] == "connecting" and st.get("days_left") is None):
             _state["healthy"] = False
-            time.sleep(15)
+            _phase("waiting", f"waiting for a Schwab login ({st['state']})")
+            _sleep(5, gen)
             continue
+        _phase("connecting" if _state["sessions"] == 0 else "reconnecting", None)
         info, err = schwab.streamer_info()
         try:
             if not info:
+                if err and err.startswith(("HTTP 401", "HTTP 403")):
+                    raise PermissionError(f"Schwab refused the streaming preferences call ({err})")
                 raise RuntimeError(err or "no streamer info")
-            asyncio.run(_session(info, tickers))
+            asyncio.run(_session(info, tickers, gen))
             delay = 1
+        except PermissionError as e:
+            _state["healthy"] = False
+            _state["auth_failures"] += 1
+            marketdata._status["reconnects"] += 1
+            if _state["auth_failures"] >= MAX_AUTH_FAILURES:
+                why = (f"{e}. Market data keeps working through REST polling. Fix: the Schwab app needs Accounts and "
+                       "Trading Production, then press Reconnect Schwab on the Rules page (a login made before the product "
+                       "was added can't open the stream).")
+                _phase("stopped", why)
+                marketdata.set_mode("rest", "stream stopped: " + str(e)[:120])
+                return
+            _phase("reconnecting", str(e))
+            marketdata.set_mode("rest", f"stream: {str(e)[:120]}")
+            _sleep(delay, gen)
+            delay = min(60, delay * 2)
         except Exception as e:
             _state["healthy"] = False
             marketdata.set_mode("rest", f"stream: {type(e).__name__}: {str(e)[:120]}")
             marketdata._status["reconnects"] += 1
-            time.sleep(delay)
+            _phase("reconnecting", f"{type(e).__name__}: {str(e)[:120]}")
+            _sleep(delay, gen)
             delay = min(60, delay * 2)
+    if gen == _state["gen"]:
+        _state["healthy"] = False
 
 
 def start(tickers=None):
-    if _state["thread"] or not available():
-        return False
-    tickers = tickers or core.policy()["instruments"]
-    th = threading.Thread(target=_run, args=(tickers,), daemon=True, name="schwab-stream")
-    _state["thread"] = th
-    th.start()
+    """Start the stream worker if it isn't running. Safe to call repeatedly (never two workers)."""
+    with _life:
+        if not available():
+            _phase("off", "websockets package not installed: Schwab REST polling")
+            return False
+        if _state["thread"] and _state["thread"].is_alive() and not _state["stop"]:
+            return False
+        _state["stop"] = False
+        _state["gen"] += 1
+        tickers = tickers or core.policy()["instruments"]
+        th = threading.Thread(target=_run, args=(tickers, _state["gen"]), daemon=True, name=f"schwab-stream-{_state['gen']}")
+        _state["thread"] = th
+        th.start()
+        return True
+
+
+def stop(reason="stopped"):
+    """Stop streaming and cancel reconnect attempts. The worker notices within a second and exits."""
+    with _life:
+        _state["stop"] = True
+        _state["gen"] += 1                       # any sleeping/running worker sees a stale generation and quits
+        _state["healthy"] = False
+        _state["subscribed_opts"], _state["subscribed_eq"] = set(), set()
+        old_thread, _state["thread"] = _state["thread"], None
+        _phase("off", reason)
+        while not _ops.empty():
+            _ops.get_nowait()
+    if old_thread and old_thread.is_alive() and old_thread is not threading.current_thread():
+        old_thread.join(timeout=3)              # the old socket closes before a new one opens (no two streams)
+    marketdata.set_mode("rest" if schwab.status()["state"] == "connected" else "offline")
     return True
+
+
+def restart(reason="reconnect"):
+    """A clean new worker (used after Connect / Reconnect). Counters reset; old subscriptions are re-sent once."""
+    stop(reason)
+    _state["auth_failures"], _state["sessions"] = 0, 0
+    return start()

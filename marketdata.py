@@ -37,6 +37,9 @@ _provider = None
 _frames = {}
 _ver = {}         # ticker -> change counter
 _deep_done = set()  # (ticker, day): deep history already requested
+_rest_at = {}      # ticker -> time.time() of the last REST bar refresh (live Schwab only: keeps the call budget)
+_prov = {}         # ticker -> provisional current-minute candle built from streamed TRADE prices (chart only, no volume)
+REST_MIN_REFRESH_S = 4
 
 
 # ---------------------------------------------------------------- provider selection
@@ -157,6 +160,8 @@ def use(provider):
         _frames.clear()
         _ver.clear()
         _deep_done.clear()
+        _rest_at.clear()
+        _prov.clear()
 
 
 def provider():
@@ -270,7 +275,7 @@ def upsert_stream_bar(ticker, open_ms, o, h, l, c, v, seq=None):
 def bars(ticker, refresh=True):
     """(final_1m_df, forming_bar_dict_or_None, meta). Pulls from the provider on demand (REST/fallback/fake)."""
     p = provider()
-    if refresh and not getattr(p, "streaming", False):
+    if refresh and _needs_rest(ticker, p):
         try:
             df = p.bars_1m(ticker)
             if df is not None and len(df):
@@ -298,6 +303,63 @@ def bars(ticker, refresh=True):
     return df, forming, meta
 
 
+def _needs_rest(ticker, p):
+    """REST refresh unless the stream already carries this ticker with fresh bars. Any ticker the stream doesn't
+    carry (a scanner name, a searched symbol) still gets REST bars, at most every REST_MIN_REFRESH_S seconds."""
+    if _provider is not None:                        # tests / replay: the injected provider decides
+        return not getattr(p, "streaming", False)
+    if getattr(p, "streaming", False):
+        try:
+            import schwab_stream
+            carried = ticker in schwab_stream._state["subscribed_eq"]
+        except Exception:
+            carried = False
+        with _lock:
+            have = _bars.get(ticker)
+        fresh = have is not None and len(have) and (now() - have.index[-1]).total_seconds() < 180
+        if carried and fresh:
+            return False
+        if carried and time.time() - _rest_at.get(ticker, 0) < 30:     # streamed but quiet (thin name): check now and then
+            return False
+    last = _rest_at.get(ticker, 0)
+    if time.time() - last < REST_MIN_REFRESH_S:
+        return False
+    _rest_at[ticker] = time.time()
+    return True
+
+
+def _prov_update(symbol, price, trade_time):
+    """Provisional candle for the minute in progress, from trade prices the stream reported. High/low can miss
+    trades between updates, and there is NO volume (level-one data can't give per-minute volume honestly)."""
+    if price is None or trade_time is None or any(ch.isdigit() for ch in symbol):
+        return
+    b = pd.Timestamp(trade_time).floor("1min")
+    with _lock:
+        c = _prov.get(symbol)
+        if c is None or c["open_time"] != b:
+            if c is not None and b < c["open_time"]:
+                return                                     # an out-of-order older trade never rewinds the candle
+            _prov[symbol] = {"open_time": b, "Open": price, "High": price, "Low": price, "Close": price, "updates": 1,
+                             "last_trade": trade_time}
+        else:
+            c.update(High=max(c["High"], price), Low=min(c["Low"], price), Close=price, updates=c["updates"] + 1,
+                     last_trade=trade_time)
+
+
+def provisional(ticker):
+    """The provisional candle if no provider bar exists yet for that minute (and it is recent), else None."""
+    with _lock:
+        c = dict(_prov.get(ticker) or {})
+        have = _bars.get(ticker)
+    if not c:
+        return None
+    if have is not None and len(have) and have.index[-1] >= c["open_time"]:
+        return None                                    # the real bar has arrived: it replaces the provisional one
+    if (now() - c["open_time"]).total_seconds() > 150:
+        return None
+    return c
+
+
 def gaps(df):
     """Missing minutes inside today's regular session so far (never silently filled)."""
     if df is None or not len(df):
@@ -319,6 +381,8 @@ def merge_quote(symbol, fields, src):
         q = _quotes.setdefault(symbol, {})
         q.update({k: v for k, v in fields.items() if v is not None})
         q["src"], q["recv"] = src, t
+    if "stream" in str(src) and fields.get("last") is not None and fields.get("trade_time") is not None:
+        _prov_update(symbol, fields["last"], fields["trade_time"])
     qt = fields.get("quote_time")
     if qt is not None:
         record_latency("quote", (t - qt).total_seconds())
@@ -401,6 +465,7 @@ def status():
     import schwab
     st = dict(_status)
     st.update(provider=p.name, executable=p.executable, schwab=schwab.status() if _provider is None else {"state": "test"},
+              stream=__import__("schwab_stream").state() if _provider is None else {"phase": "test"},
               latency=latency_stats())
     if st.get("last_msg") is not None:
         st["last_msg_age_s"] = round((now() - st["last_msg"]).total_seconds(), 1)

@@ -33,6 +33,7 @@ TOKEN_FILE = core.HERE / "journal" / "schwab_token.json"
 REFRESH_LIFE_S = 7 * 24 * 3600
 _lock = threading.Lock()
 _cache = {}
+_urlopen = urllib.request.urlopen      # the only network opener (tests replace it, so they can never reach Schwab)
 
 
 def _keys():
@@ -64,26 +65,116 @@ def _save(tok):
         pass
 
 
-def status():
-    """What the desk shows on the Rules page (never the tokens themselves)."""
+# Connection lifecycle (server side only; tokens never leave this file's process).
+#   disconnected  no keys, or no saved login (or Nick pressed Disconnect)
+#   connecting    a login was started (login_url) and the desk is waiting for the pasted ?code= address
+#   connected     a saved login AND a Schwab market-data call succeeded recently (a saved token alone isn't enough)
+#   reconnecting  the saved login looks fine but the last data call failed for a transient reason (network, 5xx)
+#   expired       Schwab's 7-day login ran out, or Schwab rejected the refresh (needs a new login)
+#   error         keys or app problem Schwab reported (e.g. 401 on data calls) - with the next step
+_conn = {"login_started": None, "used_codes": set(), "last_ok": None, "last_err": None, "last_err_at": None,
+         "last_err_path": None, "refresh_rejected": None}
+VERIFY_FRESH_S = 180
+
+
+def _record(ok, path, err=None):
+    if ok:
+        _conn["last_ok"] = time.time()
+    else:
+        _conn.update(last_err=err, last_err_at=time.time(), last_err_path=path)
+
+
+def status(verify=True):
+    """Honest connection state for the UI (never the tokens). verify=True runs ONE cheap market-data call when the
+    desk hasn't made one recently, so 'connected' always means data is actually flowing."""
+    base = {"callback": callback()}
     if not configured():
-        return {"state": "off", "why": "add SCHWAB_APP_KEY and SCHWAB_APP_SECRET to Chart's Secrets"}
+        return dict(base, state="disconnected", why="Schwab keys are missing", action="Chart adds SCHWAB_APP_KEY and SCHWAB_APP_SECRET to its Secrets (you enter the values yourself)")
     t = _load()
+    now = time.time()
     if not t or not t.get("refresh_token"):
-        return {"state": "not connected", "why": "press Connect Schwab on the Rules page"}
-    left = t.get("refresh_issued", 0) + REFRESH_LIFE_S - time.time()
+        if _conn["login_started"] and now - _conn["login_started"] < 600:
+            return dict(base, state="connecting", why="waiting for the address from Schwab's login page", action="paste the https://127.0.0.1/?code=... address and press Connect within 30 seconds")
+        return dict(base, state="disconnected", why="no Schwab login saved on this desk", action="press Connect Schwab")
+    left = t.get("refresh_issued", 0) + REFRESH_LIFE_S - now
+    info = dict(base, days_left=round(max(left, 0) / 86400, 1), connected_at=t.get("refresh_issued"))
     if left <= 0:
-        return {"state": "expired", "why": "Schwab's 7-day login ran out: press Connect Schwab again"}
-    return {"state": "connected", "days_left": round(left / 86400, 1), "last_error": t.get("last_error")}
+        return dict(info, state="expired", why="Schwab's 7-day login ran out", action="press Reconnect Schwab and log in again")
+    if t.get("refresh_rejected"):
+        return dict(info, state="expired", why=f"Schwab rejected the saved login ({t['refresh_rejected']})", action="press Reconnect Schwab and log in again")
+    if verify and not (_conn["last_ok"] and now - _conn["last_ok"] < VERIFY_FRESH_S - 30) and not (_conn["last_err_at"] and now - _conn["last_err_at"] < 30):
+        _verify_async()                     # one cheap market-data call in the background, never on the request path
+    ok_age = now - _conn["last_ok"] if _conn["last_ok"] else None
+    err_newer = _conn["last_err_at"] and (not _conn["last_ok"] or _conn["last_err_at"] > _conn["last_ok"])
+    if err_newer and _conn["last_err_path"] and _conn["last_err_path"].startswith("/marketdata/"):
+        e = _conn["last_err"] or "error"
+        if e.startswith(("HTTP 401", "HTTP 403")):
+            return dict(info, state="error", why=f"Schwab refused market data ({e})", action="press Reconnect Schwab; if it repeats, check the app has Market Data Production and is Ready For Use")
+        return dict(info, state="reconnecting", why=f"last Schwab data call failed ({e}); retrying", action="nothing yet: the desk retries; if it lasts, check Chart's internet")
+    if ok_age is not None and ok_age < VERIFY_FRESH_S:
+        return dict(info, state="connected", verified_s_ago=round(ok_age), why=None, action=None)
+    return dict(info, state="connecting", why="saved login found, checking it with a Schwab data call", action="wait a few seconds")
+
+
+_verify = {"thread": None}
+
+
+def reset_state():
+    """Forget in-memory connection history (tests; also used by disconnect)."""
+    _conn.update(login_started=None, last_ok=None, last_err=None, last_err_at=None, last_err_path=None, refresh_rejected=None)
+    _cache.clear()
+
+
+def _verify_async():
+    th = _verify["thread"]
+    if th and th.is_alive():
+        return
+
+    def go():
+        _get("/marketdata/v1/quotes", {"symbols": "SPY", "fields": "quote"})
+    _verify["thread"] = threading.Thread(target=go, daemon=True, name="schwab-verify")
+    _verify["thread"].start()
+
+
+def verify_now(timeout=15):
+    """Synchronous check (used right after Connect): one market-data call, then the honest state."""
+    _get("/marketdata/v1/quotes", {"symbols": "SPY", "fields": "quote"})
+    return status(verify=False)
 
 
 def ready():
-    return status()["state"] == "connected"
+    """Cheap check used on every data request: a saved, unexpired, not-rejected login (no network call)."""
+    if not configured():
+        return False
+    t = _load()
+    return bool(t and t.get("refresh_token") and not t.get("refresh_rejected")
+                and t.get("refresh_issued", 0) + REFRESH_LIFE_S > time.time())
 
 
 def login_url():
     k, _ = _keys()
+    _conn["login_started"] = time.time()
     return AUTH_URL + "?" + urllib.parse.urlencode({"client_id": k, "redirect_uri": callback()})
+
+
+def disconnect():
+    """Disconnect THIS DESK: stop the stream and its reconnect attempts and delete the saved login on this computer.
+    It does NOT revoke the authorization at Schwab (the desk has no revoke call). The refresh token Schwab issued
+    stops working on its own after 7 days; resetting the app secret on developer.schwab.com stops it sooner."""
+    try:
+        import schwab_stream
+        schwab_stream.stop("disconnected by Nick")
+    except Exception:
+        pass
+    with _lock:
+        try:
+            TOKEN_FILE.unlink()
+        except FileNotFoundError:
+            pass
+    _cache.clear()
+    _conn.update(login_started=None, last_ok=None, last_err=None, last_err_at=None, last_err_path=None)
+    return ("Disconnected this desk from Schwab: streaming stopped and the saved login was deleted here. Schwab itself "
+            "isn't told (no revoke): the old login simply can't be used by the desk any more.")
 
 
 def _token_request(form):
@@ -92,16 +183,22 @@ def _token_request(form):
     req = urllib.request.Request(TOKEN_URL, data=urllib.parse.urlencode(form).encode(), method="POST",
                                  headers={"Authorization": f"Basic {basic}",
                                           "Content-Type": "application/x-www-form-urlencoded"})
-    with urllib.request.urlopen(req, timeout=20) as r:
+    with _urlopen(req, timeout=20) as r:
         return json.loads(r.read().decode())
 
 
 def connect(redirected_url):
-    """Nick pastes the address Schwab sent him to (https://127.0.0.1/?code=...). Exchange the code for tokens."""
+    """Nick pastes the address Schwab sent him to (https://127.0.0.1/?code=...). Exchange the code for tokens, then
+    start ONE clean stream. A code can only be used once: pasting the same address twice does nothing harmful."""
     q = urllib.parse.parse_qs(urllib.parse.urlparse(redirected_url.strip()).query)
     code = (q.get("code") or [""])[0]
     if not code:
         return False, "That address has no ?code= in it. Copy the whole address after logging in."
+    import hashlib
+    h = hashlib.sha256(code.encode()).hexdigest()
+    if h in _conn["used_codes"]:
+        return (ready(), "That login address was already used. " + ("The desk is connected." if ready() else "Press Connect Schwab to log in again."))
+    _conn["used_codes"].add(h)
     try:
         tok = _token_request({"grant_type": "authorization_code", "code": code, "redirect_uri": callback()})
     except urllib.error.HTTPError as e:
@@ -109,9 +206,19 @@ def connect(redirected_url):
     except Exception as e:
         return False, f"{type(e).__name__}: {e}"
     now = time.time()
-    _save({"access_token": tok.get("access_token"), "refresh_token": tok.get("refresh_token"),
-           "expires_at": now + int(tok.get("expires_in", 1800)) - 60, "refresh_issued": now})
-    return True, "connected"
+    with _lock:
+        _save({"access_token": tok.get("access_token"), "refresh_token": tok.get("refresh_token"),
+               "expires_at": now + int(tok.get("expires_in", 1800)) - 60, "refresh_issued": now})
+    _cache.clear()
+    _conn.update(login_started=None, last_ok=None, last_err=None, last_err_at=None, last_err_path=None)
+    st = verify_now()
+    try:
+        import schwab_stream
+        schwab_stream.restart("new Schwab login")
+    except Exception:
+        pass
+    return st["state"] == "connected", ("Connected: Schwab market data verified." if st["state"] == "connected"
+                                        else f"Login saved, but {st.get('why')}. {st.get('action') or ''}")
 
 
 def _access():
@@ -121,11 +228,20 @@ def _access():
             return None
         if time.time() < t.get("expires_at", 0) and t.get("access_token"):
             return t["access_token"]
+        if t.get("refresh_rejected"):
+            return None
         try:
             new = _token_request({"grant_type": "refresh_token", "refresh_token": t["refresh_token"]})
+        except urllib.error.HTTPError as e:
+            if e.code in (400, 401):                 # invalid_grant / revoked / expired: only a new login helps
+                t["refresh_rejected"] = f"HTTP {e.code}"
+            t["last_error"] = f"refresh failed: HTTP {e.code}"
+            _save(t)
+            return None
         except Exception as e:
             t["last_error"] = f"refresh failed: {type(e).__name__}"
             _save(t)
+            _record(False, "/v1/oauth/token", t["last_error"])
             return None
         t.update(access_token=new.get("access_token"), expires_at=time.time() + int(new.get("expires_in", 1800)) - 60,
                  last_error=None)
@@ -168,12 +284,21 @@ def _get(path, params):
     url = API + path + "?" + urllib.parse.urlencode(params)
     req = urllib.request.Request(url, headers={"Authorization": f"Bearer {tok}", "Accept": "application/json"})
     try:
-        with urllib.request.urlopen(req, timeout=12) as r:
-            return json.loads(r.read().decode()), None
+        with _urlopen(req, timeout=12) as r:
+            out = json.loads(r.read().decode()), None
+        if path.startswith("/marketdata/"):
+            _record(True, path)
+        return out
     except urllib.error.HTTPError as e:
         STATS["http_errors"] += 1
+        STATS.setdefault("errors_by_path", {})
+        key = path.split("?")[0][:40]
+        STATS["errors_by_path"][key] = STATS["errors_by_path"].get(key, 0) + 1
+        STATS["last_error"] = f"{key}: HTTP {e.code}"
+        _record(False, path, f"HTTP {e.code}")
         return None, f"HTTP {e.code}"
     except Exception as e:
+        _record(False, path, type(e).__name__)
         return None, f"{type(e).__name__}"
 
 
@@ -346,3 +471,47 @@ def bars_range(ticker, start, end, minutes=1, extended=False):
                                                    "needExtendedHoursData": "true" if extended else "false",
                                                    "needPreviousClose": "false"})
     return _frame((j or {}).get("candles"))
+
+
+# ---------------- symbol search (any supported ticker; separate from the scanner's universe)
+_search_cache = {}
+
+
+def search(q):
+    """Find stocks/ETFs by symbol or name. Schwab instruments search when connected; otherwise the desk's own lists,
+    labeled as such. Returns {"results": [{symbol, description, exchange, type}], "source": ..., "note": ...}."""
+    q = (q or "").strip().upper()[:24]
+    if not q:
+        return {"results": [], "source": None}
+    hit = _search_cache.get(q)
+    if hit and time.time() - hit[0] < 300:
+        return hit[1]
+    res, src, note = [], None, None
+    if ready():
+        seen = set()
+        for proj, sym in (("symbol-search", q), ("symbol-regex", q + ".*"), ("desc-search", q)):
+            j, err = _get("/marketdata/v1/instruments", {"symbol": sym, "projection": proj})
+            for it in (j or {}).get("instruments") or []:
+                s = it.get("symbol")
+                if not s or s in seen or it.get("assetType") not in ("EQUITY", "ETF", None):
+                    continue
+                seen.add(s)
+                res.append({"symbol": s, "description": it.get("description"), "exchange": it.get("exchange"),
+                            "type": it.get("assetType")})
+            if len(res) >= 12:
+                break
+        src = "Schwab instruments"
+        res.sort(key=lambda r: (r["symbol"] != q, not r["symbol"].startswith(q), len(r["symbol"])))
+    if not res:
+        import scanner
+        import watchlist
+        pool = list(dict.fromkeys(list(core.policy()["instruments"]) + scanner.universe() + list(watchlist.tickers())))
+        res = [{"symbol": s, "description": None, "exchange": None, "type": None} for s in pool if s.startswith(q)][:12]
+        if watchlist.valid(q) and q not in [r["symbol"] for r in res]:
+            res.append({"symbol": q, "description": "not verified", "exchange": None, "type": None})
+        src = "desk lists" if not ready() else "desk lists (Schwab found nothing)"
+        note = ("Schwab isn't connected, so this only searches the desk's own lists; any valid symbol can still be "
+                "opened, and the chart says if Schwab has no data for it." if not ready() else None)
+    out = {"results": res[:12], "source": src, "note": note}
+    _search_cache[q] = (time.time(), out)
+    return out
