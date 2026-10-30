@@ -14,7 +14,7 @@ import urllib.request
 import core
 import store
 
-KINDS = ("setups", "moves", "news")
+KINDS = ("setups", "moves", "news", "scanner", "movers", "mytrades")
 NEWS_SCHEMA = """CREATE TABLE IF NOT EXISTS news(id TEXT PRIMARY KEY, ts TEXT, at TEXT, headline TEXT, source TEXT,
   url TEXT, tickers TEXT, impact TEXT, direction TEXT, why TEXT)"""
 
