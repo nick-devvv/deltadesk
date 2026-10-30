@@ -22,8 +22,12 @@ import core
 import marketdata
 import store
 
-PORTFOLIOS = ("paper", "research", "old", "exit31", "noise", "inplay", "gated", "earn_post", "earn_pre", "board")
-RESEARCH = ("research", "exit31", "noise", "inplay", "old", "gated", "earn_post", "earn_pre", "board")   # experimental ledgers, never mixed into main paper
+# v3.4 strategy lab: one paper ledger per strategy family (lab.py FAMILIES maps each family to one of these)
+LAB_LEDGERS = ("lab_orb_break", "lab_orb_retest", "lab_orb_failed", "lab_lvl_break", "lab_lvl_retest", "lab_vwap_reclaim",
+               "lab_vwap_reject", "lab_momo", "lab_pullback", "lab_v3", "lab_vwap_macd", "lab_orb15", "lab_orb15_rt",
+               "lab_macd_video", "lab_noise")
+PORTFOLIOS = ("paper", "research", "old", "exit31", "noise", "inplay", "gated", "earn_post", "earn_pre", "board") + LAB_LEDGERS
+RESEARCH = ("research", "exit31", "noise", "inplay", "old", "gated", "earn_post", "earn_pre", "board") + LAB_LEDGERS   # experimental ledgers, never mixed into main paper
 
 
 def underlying_px(ticker):
@@ -47,7 +51,12 @@ EXEC_MODEL = {"strict": "2026-10-30.exec2 (ask+0.01 in, bid-0.01 out, $0.02/side
 
 
 def is_strict(portfolio):
-    return portfolio in STRICT or str(portfolio).startswith("spec_")
+    return portfolio in STRICT or str(portfolio).startswith(("spec_", "lab_"))
+
+
+def _ev_kind(portfolio, main_kind):
+    """Lab ledgers log as one 'lab' kind (shown in the Markets lab box, kept out of the trade feed)."""
+    return main_kind if portfolio == "paper" else ("lab" if str(portfolio).startswith("lab_") else portfolio)
 
 
 def strict_costs():
@@ -184,7 +193,7 @@ def buy(portfolio, idea, ticker, side, plan, qty, signal_t):
     store.x("INSERT OR IGNORE INTO orders(client_id,position_id,ts,side,qty,status,broker_id,filled_qty,filled_price,reason) "
             "VALUES(?,?,?,?,?,?,?,?,?,?)", (f"{pid}-B", pid, store.ts(), "buy", qty, "FILLED", "sim", qty, fill, plan.get("family")))
     store.x("UPDATE ideas SET status='FILLED', position_id=? WHERE portfolio=? AND idea=?", (pid, portfolio, idea))
-    store.event("paper_open" if portfolio == "paper" else portfolio,
+    store.event(_ev_kind(portfolio, "paper_open"),
                 f"{_name(portfolio)} BUY {qty} {ticker} {plan['label']} sim fill ${fill:.2f} (ask {q['ask']:.2f} + {slip:.2f} slip) | "
                 f"stop {_px(plan.get('stop_px'))} underlying / ${plan['premium_stop']:.2f} premium | T1 {plan.get('t1') or 'none'} {_px(plan.get('t1_level'))}",
                 portfolio, pid, {"quote_age_s": q.get("age_s"), "provider": q.get("provider")})
@@ -237,7 +246,7 @@ def sell(p, qty, reason):
     n = len(store.q("SELECT client_id FROM orders WHERE position_id=?", (p["id"],)))
     store.x("INSERT INTO orders(client_id,position_id,ts,side,qty,status,broker_id,filled_qty,filled_price,reason) VALUES(?,?,?,?,?,?,?,?,?,?)",
             (f"{p['id']}-S{n}", p["id"], store.ts(), "sell", qty, "FILLED", "sim", qty, px, reason))
-    store.event("paper_exit" if p["ledger"] == "paper" else p["ledger"],
+    store.event(_ev_kind(p["ledger"], "paper_exit"),
                 f"{_name(p['ledger'])} SELL {qty} {p['contract']} sim ${px:.2f} (bid {q['bid']:.2f} - {slip:.2f}): {reason} | "
                 f"trade P/L ${p['realized']:+.2f} net", p["ledger"], p["id"])
     return qty, px

@@ -945,7 +945,7 @@ def kill_paper(reason="Nick pressed KILL"):
     at the simulated bid (pending if no valid quote). Real trades are Nick's: the desk only reminds him."""
     store.kv_set("paper_enabled", False)
     closed = 0
-    for led in ("paper", "research", "exit31", "noise", "inplay"):
+    for led in ("paper",) + paper.RESEARCH:            # v3.4: every simulated ledger, the lab included
         for p in store.positions(ledger=led, status="OPEN"):
             n, _ = paper.sell(p, p["qty_open"], "KILL SWITCH")
             closed += 1 if n else 0
@@ -1035,6 +1035,8 @@ def tick():
             want = []
             for p in store.positions(status="OPEN"):
                 want.append(p["symbol"])
+                if str(p["ledger"]).startswith("lab_"):
+                    continue                          # v3.4: the lab manages its own trades with one batched quote call
                 if p["ledger"] in ("earn_post", "earn_pre", "board"):
                     import autopilot
                     autopilot.manage(p)

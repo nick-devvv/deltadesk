@@ -56,6 +56,16 @@ class Provider:
     def option_quote(self, symbol):
         return None, "no provider"
 
+    def option_quotes(self, symbols):
+        """{symbol: fields} for many contracts. Providers with a batch call override this (one request)."""
+        out, err = {}, None
+        for s in symbols:
+            q, e = self.option_quote(s)
+            if q:
+                out[s] = q
+            err = err or e
+        return out, err
+
     def chain(self, ticker, side, first, through=None):
         return None, "no provider"
 
@@ -101,12 +111,33 @@ class SchwabREST(Provider):
         q = ((j or {}).get(padded) or (j or {}).get(symbol) or {}).get("quote") or {}
         if not q:
             return None, err or "no quote"
+        return self._opt_fields(q), None
+
+    def option_quotes(self, symbols):
+        """v3.4: up to 100 contracts per request (the lab's open trades in one call instead of one call each)."""
+        import schwab
+        out, err = {}, None
+        syms = list(dict.fromkeys(symbols))
+        for i in range(0, len(syms), 100):
+            part = syms[i:i + 100]
+            padded = {s[:-15].ljust(6) + s[-15:]: s for s in part}
+            j, e = schwab._get("/marketdata/v1/quotes", {"symbols": ",".join(padded), "fields": "quote"})
+            err = err or e
+            for k, v in (j or {}).items():
+                s = padded.get(k) or (k if k in part else None)
+                q = (v or {}).get("quote") or {}
+                if s and q:
+                    out[s] = self._opt_fields(q)
+        return out, err
+
+    def _opt_fields(self, q):
+        import schwab
         return {"bid": schwab._num(q.get("bidPrice")), "ask": schwab._num(q.get("askPrice")),
                 "last": schwab._num(q.get("lastPrice")), "bid_size": q.get("bidSize"), "ask_size": q.get("askSize"),
                 "delta": schwab._num(q.get("delta")), "gamma": schwab._num(q.get("gamma")),
                 "theta": schwab._num(q.get("theta")), "iv": _iv(schwab._num(q.get("volatility"))),
                 "quote_time": _ms(q.get("quoteTime")), "trade_time": _ms(q.get("tradeTime")),
-                "multiplier": 100, "src": self.name}, None
+                "multiplier": 100, "src": self.name}
 
     def chain(self, ticker, side, first, through=None):
         import schwab
@@ -423,6 +454,37 @@ def option_quote(symbol):
         elif not q:
             return None, err
     return _label(q, MAX_OPT_QUOTE_AGE_S, p), None
+
+
+def option_quotes(symbols, max_age_s=5):
+    """v3.4: refresh every listed contract whose cached quote is older than max_age_s with ONE provider call, then
+    return {symbol: labeled quote}. Streamed quotes that are fresh are used as they are."""
+    p = provider()
+    t = now()
+    with _lock:
+        stale = [s for s in symbols if (t - _quotes.get(s, {}).get("recv", t - timedelta(days=1))).total_seconds() > max_age_s]
+    err = None
+    if stale:
+        try:
+            got, err = p.option_quotes(stale)
+        except Exception as e:
+            got, err = {}, type(e).__name__
+        for s, fq in (got or {}).items():
+            merge_quote(s, fq, fq.get("src", p.name))
+    out = {}
+    with _lock:
+        snap = {s: dict(_quotes[s]) for s in symbols if s in _quotes}
+    for s, q in snap.items():
+        out[s] = _label(q, MAX_OPT_QUOTE_AGE_S, p)
+    return out, err
+
+
+def option_quote_cached(symbol):
+    """The last known quote, labeled, with no provider request (for page views of many paper trades)."""
+    p = provider()
+    with _lock:
+        q = dict(_quotes.get(symbol, {}))
+    return (_label(q, MAX_OPT_QUOTE_AGE_S, p), None) if q else (None, "no quote yet")
 
 
 def _label(q, max_age, p):

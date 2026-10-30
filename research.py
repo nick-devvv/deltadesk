@@ -83,8 +83,10 @@ def _idx(m1d, hm):
     return next((i for i, t in enumerate(m1d.index) if t.strftime("%H:%M") >= hm), None)
 
 
-def signals_for_day(m1d, atr):
-    """BASE and RETEST signals for one ticker-day. Each: {kind, side, signal_i, entry_i, stop_dist, edge}."""
+def signals_for_day(m1d, atr, live=False):
+    """BASE and RETEST signals for one ticker-day. Each: {kind, side, signal_i, entry_i, stop_dist, edge}.
+    live=True (v3.4 lab, finished bars up to now): a signal on the newest bar is reported too, with entry_i None
+    (its entry bar doesn't exist yet) and stop_dist measured from that bar's close."""
     rng = m1d[(m1d.index.strftime("%H:%M") >= "09:30") & (m1d.index.strftime("%H:%M") <= "09:44")]
     if len(rng) < 12:
         return [], "incomplete opening range (fewer than 12 of 15 minutes)"
@@ -92,11 +94,14 @@ def signals_for_day(m1d, atr):
     tol = ZONE_ATR * atr
     first = _idx(m1d, "09:44")                        # the 09:44 bar closes at 09:45: the first allowed decision
     last = _idx(m1d, "15:14")
+    if live and last is None and first is not None:
+        last = len(m1d) - 1                            # mid-session: scan up to the newest finished bar
     if first is None or last is None:
         return [], "no bars in the entry window"
     out = []
     brk = None
-    for i in range(first, min(last + 1, len(m1d) - 1)):
+    n_scan = len(m1d) if live else len(m1d) - 1
+    for i in range(first, min(last + 1, n_scan)):
         c = float(m1d["Close"].iloc[i])
         if c > hi or c < lo:
             side = "C" if c > hi else "P"
@@ -107,21 +112,25 @@ def signals_for_day(m1d, atr):
     i, side = brk
     edge = hi if side == "C" else lo
     stop = edge - tol if side == "C" else edge + tol
-    e = float(m1d["Open"].iloc[i + 1])
+    has_next = i + 1 < len(m1d)
+    e = float(m1d["Open"].iloc[i + 1]) if has_next else float(m1d["Close"].iloc[i])
     sd = (e - stop) if side == "C" else (stop - e)
     if sd > 0:
-        out.append({"kind": "BASE", "side": side, "signal_i": i, "entry_i": i + 1, "stop_dist": sd, "edge": edge})
-    for j in range(i + 1, min(last + 1, len(m1d) - 1)):
+        out.append({"kind": "BASE", "side": side, "signal_i": i, "entry_i": i + 1 if has_next else None, "stop_dist": sd, "edge": edge,
+                    "stop": stop})
+    for j in range(i + 1, min(last + 1, n_scan)):
         row = m1d.iloc[j]
         back = (row["Low"] <= edge + tol) if side == "C" else (row["High"] >= edge - tol)
         inside = (row["Close"] < edge - tol) if side == "C" else (row["Close"] > edge + tol)
         if inside:
             break                                      # failed first: no retest of a broken break
         if back and ((row["Close"] > edge) if side == "C" else (row["Close"] < edge)):
-            e2 = float(m1d["Open"].iloc[j + 1])
+            nxt = j + 1 < len(m1d)
+            e2 = float(m1d["Open"].iloc[j + 1]) if nxt else float(row["Close"])
             sd2 = (e2 - stop) if side == "C" else (stop - e2)
             if sd2 > 0:
-                out.append({"kind": "RETEST", "side": side, "signal_i": j, "entry_i": j + 1, "stop_dist": sd2, "edge": edge})
+                out.append({"kind": "RETEST", "side": side, "signal_i": j, "entry_i": j + 1 if nxt else None, "stop_dist": sd2,
+                            "edge": edge, "stop": stop})
             break
     return out, None
 

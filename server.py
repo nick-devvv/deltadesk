@@ -35,6 +35,7 @@ Main endpoints:
   GET  /api/research         every paper ledger side by side: expectancy, avg win/loss, drawdown, stock move vs option
   GET  /api/diagnostics      the latest diagnostics report from backtest.py
   GET  /legacy               the old desk page (custom indicator chart)
+  GET  /api/lab[/report?by=&cond=|/signals]  v3.4 strategy lab: signal tape, lab paper ledgers, what works where
   Legacy: /api/read /api/bars /api/last /api/plan /api/chat
 Real money: only Nick, in Robinhood. This server sends NO orders anywhere: paper trading is simulated internally
 on Schwab quotes. Schwab access is market data only (trading/account endpoints are refused in code).
@@ -214,7 +215,8 @@ def markets_settings(b=None):
 
 def state(since):
     sess = core.session_info()
-    pos = store.positions(status="OPEN") + store.positions(status="PENDING")
+    pos = [p for p in store.positions(status="OPEN") + store.positions(status="PENDING")
+           if not str(p["ledger"]).startswith("lab_")]           # v3.4: lab trades are on /api/lab (Markets)
     for p in pos:
         try:
             p["view"] = position_view(p)
@@ -392,6 +394,20 @@ class H(BaseHTTPRequestHandler):
                 return self._json(clean(chartfeed.build(t, q.get("tf", ["2"])[0], q.get("ext", ["0"])[0], q.get("since", [None])[0])))
             if u.path == "/api/symbol":
                 return self._json(clean(schwab.search(q.get("q", [""])[0])))
+            if u.path == "/api/lab":
+                import lab
+                return self._json(clean(lab.status()))
+            if u.path == "/api/lab/report":
+                import lab
+                g = lambda k, d=None: (q.get(k) or [d])[0]
+                return self._json(clean(lab.what_works(by=g("by", "strategy"), cond=g("cond"), family=g("family"), ticker=g("t"),
+                                                       since=(g("since") or "")[:10] or None, min_n=g("min_n"),
+                                                       include_all=g("all") == "1")))
+            if u.path == "/api/lab/signals":
+                import lab
+                g = lambda k, d=None: (q.get(k) or [d])[0]
+                return self._json(clean({"rows": lab.signals(day=g("day"), ticker=g("t"), family=g("family"),
+                                                             limit=min(500, int(g("limit", "200") or 200)))}))
             if u.path == "/api/strategies":
                 import strategy_registry
                 import strategy_router
@@ -670,6 +686,8 @@ if __name__ == "__main__":
         import earnings
         print("Catalysts:", "started" if catalysts.start() else "off", "| Autopilot (paper):", "started" if autopilot.start() else "off", flush=True)
         threading.Thread(target=earnings.refresh_calendar, daemon=True, name="earnings-calendar").start()
+        import lab
+        print("Strategy lab (signal tape + lab paper ledgers):", "started" if lab.start() else "off", flush=True)
     except Exception as e:
         print("Scanner not started:", e, flush=True)
     start_kronos()

@@ -143,6 +143,12 @@ LEDGER_INFO = {
     "earn_pre": ("Earnings: held through", "research only: an ATM straddle held through the report, sized by the full premium"),
     "real": ("You", "your reported trades"),
 }
+try:                                              # v3.4: one lab ledger per strategy family
+    import lab as _lab
+    for _f, _v in _lab.FAMILIES.items():
+        LEDGER_INFO[_v["ledger"]] = ("Lab: " + _v["label"], f"v3.4 strategy lab, {_v['source']}: 1 contract, strict fills, research only")
+except Exception:
+    pass
 
 
 def ledger_report(led, since="2000-01-01"):

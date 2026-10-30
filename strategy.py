@@ -29,8 +29,9 @@ def cfg():
 
 
 # ================================================================ snapshot
-def build_snapshot(ticker, m1=None, meta=None):
-    """Everything a decision needs, from finalized bars only. Returns dict with ok=False + reason when unusable."""
+def build_snapshot(ticker, m1=None, meta=None, quote=True):
+    """Everything a decision needs, from finalized bars only. Returns dict with ok=False + reason when unusable.
+    quote=False (v3.4 lab): price = the last finished close, no quote request (used when replaying finished bars)."""
     if m1 is None:
         m1, _forming, meta = marketdata.bars(ticker)
     meta = meta or {}
@@ -66,7 +67,7 @@ def build_snapshot(ticker, m1=None, meta=None):
     lv = levels(m1, r1, prof, vw_now)
     zone = max(c["zone"]["ticks"] * c["zone"]["tick"], c["zone"]["atr_frac"] * (atr5 or 0))
     buf = max(c["stop_buffer"]["ticks"] * c["zone"]["tick"], c["stop_buffer"]["atr_frac"] * (atr5 or 0))
-    q = marketdata.quote(ticker)
+    q = marketdata.quote(ticker) if quote else None
     px = (q or {}).get("last") or float(r1["Close"].iloc[-1])
     snap.update(ok=True, t=t, last_open=last_open, m1=m1, r1=r1, b5=b5, b5m=b5m, b2=b2, b2m=b2m, vwap1=vw1, vwap=vw_now,
                 atr5=atr5, adx=I.last(adx) if adx is not None else None, pdi=I.last(pdi) if pdi is not None else None,
@@ -365,7 +366,7 @@ def detect_vwap_macd(snap):
     cross = I.macd_cross(M, S)
     state = I.macd_state(M, S)
     out = []
-    key = f"vwmacd:{tk}:{t.date()}"
+    key = f"{snap.get('kv_ns', '')}vwmacd:{tk}:{t.date()}"     # v3.4: the lab replays bars in its own namespace
     done = store.kv_get(f"{key}:last") or {}
     if done.get("t") == t.isoformat():   # this bar was already processed (plan request, retry): same answer, no state change
         return done.get("out", [])
@@ -382,7 +383,8 @@ def detect_vwap_macd(snap):
         elif a["bars_left"] <= 0:
             why = f"no VWAP retest within {vc['retest_window_bars']} bars"
         if why:
-            store.event("research", f"VWAP+MACD {tk} {'calls' if up else 'puts'} armed at {a['armed_at'][11:16]} cancelled: {why}", "research", a["idea"])
+            if not snap.get("quiet"):
+                store.event("research", f"VWAP+MACD {tk} {'calls' if up else 'puts'} armed at {a['armed_at'][11:16]} cancelled: {why}", "research", a["idea"])
             del armed[side]
         else:
             a["bars_left"] -= 1
@@ -402,7 +404,8 @@ def detect_vwap_macd(snap):
                                  "MACD cross with the 2m close beyond VWAP; strong trend -> early entry on the cross close",
                                  ev, "continuation", entry_mode="early: strong trend"))
                 out[-1]["idea_hint"] = idea
-            store.event("research", f"VWAP+MACD {tk} {'calls' if up else 'puts'} ARMED at {t.strftime('%H:%M')}: "
+            if not snap.get("quiet"):
+                store.event("research", f"VWAP+MACD {tk} {'calls' if up else 'puts'} ARMED at {t.strftime('%H:%M')}: "
                         + ("strong trend, early entry offered; " if strong else "trend not strong enough for early entry; ")
                         + f"VWAP retest window {vc['retest_window_bars']} bars", "research", idea)
     # retest entry for an armed side (not on the arming bar itself)

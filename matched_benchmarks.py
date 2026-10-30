@@ -39,6 +39,59 @@ def stock_outcome(m1_day, entry_i, side, stop_dist, target_r=2.0, horizon_min=No
     return None
 
 
+def arrays(m1_day):
+    """The day's bars as plain arrays for the fast path (v3.4 lab: thousands of outcomes a day)."""
+    idx = m1_day.index
+    return {"o": m1_day["Open"].to_numpy(float), "h": m1_day["High"].to_numpy(float), "l": m1_day["Low"].to_numpy(float),
+            "mins": (idx.hour * 60 + idx.minute).to_numpy(), "n": len(m1_day)}
+
+
+def outcome_arrays(a, entry_i, side, stop_dist, target_r=2.0, horizon_min=None, flat="15:25", cost_per_share=0.04):
+    """Same rules and result as stock_outcome, on arrays from arrays(). Bar timestamps are minutes since midnight."""
+    n = a["n"]
+    if entry_i is None or entry_i >= n or not stop_dist or stop_dist <= 0:
+        return None
+    o, h, l, mins = a["o"], a["h"], a["l"], a["mins"]
+    up = side == "C"
+    e = float(o[entry_i])
+    stop = e - stop_dist if up else e + stop_dist
+    tgt = e + target_r * stop_dist if up else e - target_r * stop_dist
+    fm = int(flat[:2]) * 60 + int(flat[3:5])
+    t0 = int(mins[entry_i])
+    cr = cost_per_share / stop_dist
+    for j in range(entry_i, n):
+        mj = int(mins[j])
+        if mj >= fm or (horizon_min is not None and mj - t0 >= horizon_min):
+            x = float(o[j])
+            return {"r": round(((x - e) if up else (e - x)) / stop_dist - cr, 4), "why": "time", "exit_i": j}
+        oj = float(o[j])
+        if j > entry_i and ((oj <= stop) if up else (oj >= stop)):
+            return {"r": round(((oj - e) if up else (e - oj)) / stop_dist - cr, 4), "why": "stop gap", "exit_i": j}
+        hs = (l[j] <= stop) if up else (h[j] >= stop)
+        ht = (h[j] >= tgt) if up else (l[j] <= tgt)
+        if hs:
+            return {"r": round(-1 - cr, 4), "why": "stop" + (" (ambiguous bar)" if ht else ""), "exit_i": j}
+        if ht:
+            return {"r": round(target_r - cr, 4), "why": "target", "exit_i": j}
+    return None
+
+
+def control_mean(a, side, stop_dist, paths=20, seed=11, window=("09:45", "15:15"), **kw):
+    """Mean R of `paths` random admissible entries on the same day/ticker/side/stop distance (fast path), and how many
+    had an outcome. Decided at a random bar close inside the window, entered at the next bar's open."""
+    lo, hi = int(window[0][:2]) * 60 + int(window[0][3:]), int(window[1][:2]) * 60 + int(window[1][3:])
+    idx = [i for i in range(a["n"] - 1) if lo <= int(a["mins"][i]) <= hi]
+    if not idx:
+        return None, 0
+    rnd = random.Random(seed)
+    rs = []
+    for _ in range(paths):
+        o = outcome_arrays(a, rnd.choice(idx) + 1, side, stop_dist, **kw)
+        if o:
+            rs.append(o["r"])
+    return (round(sum(rs) / len(rs), 4) if rs else None), len(rs)
+
+
 def random_controls(signals, days, paths=50, seed=11, window=("09:45", "15:15"), **outcome_kw):
     """signals: [{session, ticker, side, stop_dist, entry_i}]; days: {(ticker, session): m1_day}. For each path, one
     control per signal at a uniformly random admissible minute of the same day/ticker/side. Returns a list of paths,
