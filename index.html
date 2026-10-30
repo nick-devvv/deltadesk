@@ -1997,7 +1997,7 @@ async function loadContracts(my){
   const rows = d.rows || [], usd0 = v => v == null ? "—" : money(v);
   $("#ctTable").innerHTML = rows.length ? `<table><thead><tr><th>Expiry</th><th class="n">Delta</th><th class="n">Contracts</th><th class="n">Days</th><th class="n">Avg premium</th><th class="n">Won (with 20% line)</th><th class="n">Avg with 20% line</th><th class="n">Avg held to the stock exit</th><th class="n">20% line hit first</th><th class="n">Same signals on the stock</th></tr></thead><tbody>${
     rows.map(r => `<tr${r.too_few ? ' style="opacity:.55"' : ""}><td><b>${esc(r.bucket)}</b></td><td class="n">${r.delta.toFixed(2)}</td>
-      <td class="n">${r.n}${r.too_few ? ' <span class="m" style="font-size:11px">too few</span>' : ""}</td><td class="n">${r.days}</td><td class="n">${usd0(r.avg_premium)}</td>
+      <td class="n">${r.n}${r.too_few ? ' <span class="m" style="font-size:11px">too few</span>' : ""}</td><td class="n">${r.days}</td><td class="n">${r.avg_premium != null ? "$" + r.avg_premium.toFixed(2) : "—"}</td>
       <td class="n">${r.won_line}%</td><td class="n ${tone(r.avg_line)}">${usd0(r.avg_line)} <span class="m" style="font-size:11px">(${r.pct_line > 0 ? "+" : ""}${r.pct_line}%)</span></td>
       <td class="n ${tone(r.avg_hold)}">${usd0(r.avg_hold)} <span class="m" style="font-size:11px">(${r.pct_hold > 0 ? "+" : ""}${r.pct_hold}%)</span></td>
       <td class="n">${r.line_first}%</td><td class="n ${tone(r.stock_r)}">${r2(r.stock_r)}</td></tr>`).join("")}</tbody></table>

@@ -259,9 +259,9 @@ def report(family=None, since=None, min_n=30, min_days=10):
     for (b, tg), rs in sorted(groups.items(), key=lambda kv: (order.get(kv[0][0], 9), kv[0][1])):
         n = len(rs)
         days = len({r["day"] for r in rs})
-        mean = lambda k: round(sum(r[k] for r in rs) / n, 2)
+        mean = lambda k, d=2: round(sum(r[k] for r in rs) / n, d)
         out.append({"bucket": b, "delta": tg, "n": n, "days": days, "won_line": round(100 * sum(1 for r in rs if r["pnl_line"] > 0) / n, 1),
-                    "avg_line": mean("pnl_line"), "avg_hold": mean("pnl_hold"), "pct_line": mean("pct_line"), "pct_hold": mean("pct_hold"),
+                    "avg_line": mean("pnl_line"), "avg_hold": mean("pnl_hold"), "pct_line": mean("pct_line", 1), "pct_hold": mean("pct_hold", 1),
                     "line_first": round(100 * sum(r["line_first"] for r in rs) / n, 1),
                     "avg_premium": round(sum(r["entry"] for r in rs) / n * 100, 2),
                     "stock_r": round(sum(r["stock_r"] for r in rs if r["stock_r"] is not None) / max(1, sum(1 for r in rs if r["stock_r"] is not None)), 3),
