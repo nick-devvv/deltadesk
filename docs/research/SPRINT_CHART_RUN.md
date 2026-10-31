@@ -28,7 +28,7 @@ Estimates come from timing all five runs on synthetic data of the same shape: th
 ## Message for Chart (one paste)
 
 ```
-Sprint backtests (research only, about 1-2 hours in total). Show me every output.
+Sprint backtests (research only, about 1.5 hours in total, at most about 2.5). Show me every output.
 Rules: you never place trades, never click buy/sell/order buttons, never enter passwords or keys, never print a key.
 Never touch ~/desk: don't cd into it, don't edit, copy, restart or run anything there. Never pass --locked or --frozen to any command.
 If a step fails, show the error and stop. Don't change any code; re-running the same command once is fine (the pull resumes).
@@ -42,7 +42,7 @@ If a step fails, show the error and stop. Don't change any code; re-running the 
    [ -n "$ALPACA_KEY" ] && [ -n "$ALPACA_SECRET" ] && echo "alpaca keys present" || echo "ALPACA KEYS MISSING: stop and tell Nick"
 4. Pull the data (30-60 min, 0.5-1.5 GB; safe to re-run; VIXY stock bars come along by default):
    cd ~/sprint && .venv/bin/python tools/sprint_pull.py --symbols SPY,QQQ,IWM --from 2024-08-01 --to 2026-06-30 2>&1 | tail -25 ; du -sh ~/sprint/data/alpaca
-5. Run the five backtests, one after the other (30-65 min in total):
+5. Run the five backtests, one after the other (35-75 min in total):
    cd ~/sprint && mkdir -p data/sprint/logs && for a in "sprint/specs/orb_exits_v1.json" "sprint/specs/orb_exits_v1.json --spread-pct 0.05" "sprint/specs/oa_crosscheck_v1.json" "sprint/specs/oa_crosscheck_v1.json --spread-pct 0.05" "sprint/specs/setups_v1.json"; do L="data/sprint/logs/$(echo "$a" | tr ' /.' '___').log"; echo "=== $a"; .venv/bin/python tools/sprint_run.py $a > "$L" 2>&1 && grep -E "^sprint |pass [12] done|^report:" "$L" || { echo "FAILED: $a"; tail -30 "$L"; }; done
 6. Show the results so Nick can paste them back, and pack them in one zip (about 1 MB of text in total):
    cd ~/sprint && ls -la data/sprint/ && .venv/bin/python -m zipfile -c ~/sprint_results.zip data/sprint/report_*.md data/sprint/runs_*.csv data/sprint/gaps_*.json && ls -la ~/sprint_results.zip
