@@ -231,6 +231,133 @@ Option Alpha's Top Backtests list is the best of about 1.5 million saved user ba
 
 The cost floor ($0.005 half-spread) binds on these cheap options. The same robustness checks apply, and "positive without the best 5 trades" is expected to be the hard one, since these payoffs come from a few big days. As a book sleeve, this family's value may be its correlation with the call setups rather than its own profit factor, which the combined-book tool measures.
 
+## Amendment 5, 2026-10-31: the free 2016-2023 history check (written before any HIST pull, calibration or run)
+
+Nick approved a free long-history check (no paid data). Alpaca has stock 1-minute bars from 2016 but no option prices before February 2024. So the sprint's surviving ideas are tested in two layers on **HIST = 2016-01-04 to 2024-01-31**.
+- HIST ends the day before L2 (2024-02-01 to 2024-07-31) starts. L1 and L2 stay locked: never pulled for this, never run. The period guard refuses any range that touches them.
+- Every rule below was chosen on DEV (Aug 2024 to Jun 2026). HIST is eight years those rules were never tuned on.
+- Nothing here can promote a strategy. Layer 2 is modeled; promotion still needs real option prices and 40 forward paper trades (CLAUDE.md step 5).
+
+### The six runs
+
+The exact rules of the DEV runs, run by the same code. A test checks that each HIST config equals its DEV run's config.
+
+| name | DEV run | rules (SPY, QQQ, IWM pooled) |
+| --- | --- | --- |
+| `fb` (reference) | setups_v2-001 | `failed_break` calls; delta 0.40-0.55 nearest 0.45; premium ceiling of the entry window (20/12/10%) held for the trade (time rule b); no target; all out 15:25 |
+| `fb_or` | setups_v2-012 | the same with `failed_break_or` (opening-range lows only) |
+| `otm_put_base` (twin) | otm_v1-010 | `time_1030` puts; delta 0.06-0.15 nearest 0.10; -95% stop; +9900% target (never reached in practice); all out 15:25; no filter |
+| `otm_put` | otm_v1-011 | `otm_put_base` + vixy_pctl_le40, vixy_not_rising, day_up, wed_fri, skip_opex |
+| `otm_bounce_base` (twin) | otm_v1-040 | `time_1100` calls; delta 0.03-0.12 nearest 0.07; exit as `otm_put_base` |
+| `otm_bounce` | otm_v1-042 | `otm_bounce_base` + vixy_pctl_ge60, day_down, skip_opex |
+
+### Data (pulled on Chart's computer)
+
+- Stock 1-minute bars, 04:00-20:00 ET, for SPY, QQQ, IWM and VIXY, from 2015-11-01 (warm-up for prior-day levels, ATRs and the IV proxy) to 2024-01-31.
+- These bars are **split-adjusted**. SPY, QQQ and IWM had no splits in these years, so nothing changes for them. VIXY had reverse splits; raw bars would turn each split day into a false "VIXY up 300%" day for `vixy_not_rising`.
+- VIXY split-adjusted daily bars from 2014-11-01 to 2026-06-30 with L2 cut out, in one file. So the 252-close percentile has a full year before 2016-01-04, and the DEV validation reads the same file.
+- No option request is ever made for a date before 2024-02-01.
+- NYSE holidays and 1:00 PM early closes for 2015-2023 are added to `sprint/periods.py`. Early-close days use the 12:50 all-out, as in DEV.
+- The proxies are DEV's: VIXY for VIX (`vixy_not_rising`), the VIXY percentile for IV rank.
+
+### Layer 1: the stock signal (no option model)
+
+Code: `sprint/underlying.py`, run by `tools/sprint_hist.py`, output `data/sprint/hist_layer1_<date>.md/.json`.
+- The same entry and filter code as the engine (`sprint.entries.signals`, `engine._filters_ok` with the VIXY data), on stock-only day contexts with history from 2015-11-01.
+- One position at a time per strategy and symbol, as in the engine.
+
+**fb and fb_or** (calls, so a long stock position stands in):
+- Entry: the open of the first bar after the signal bar (within 3 minutes, else skipped) + $0.01 half-spread.
+- Stop: the signal's `invalid` level (the lowest low since the break) minus max($0.02, 0.05 x ATR(14, 1m) at the signal bar). Judged on finished 1-minute closes from the entry bar on. A close below it exits at the next bar's open - $0.01.
+- Otherwise out at the close of the bar finishing at 15:25 (12:50 on early-close days) - $0.01.
+- R = entry fill - stop. A signal with R <= 0 (it opened at or below the stop) is skipped and counted.
+- Recorded: P/L in R and in %, and the max favorable excursion in R (highest high from the entry bar through the exit decision bar, minus the entry fill, over R).
+
+**otm_put, otm_bounce and their twins** (no stop):
+- Reference price: the close of the signal bar (10:30 or 11:00).
+- Measured: the move to (a) the close at 15:25 and (b) the lowest low (puts) or highest high (calls) of the bars after the signal bar through 15:25. In % and in units of the **remaining-day sigma**.
+- Remaining-day sigma = sigma_1m x sqrt(minutes from the end of the signal bar to 15:25). sigma_1m = realized volatility of regular-hours 1-minute log returns over the prior 20 sessions (at least 10 needed). Each return is between consecutive bars and is divided by the minutes between them. Prior sessions only. Moves are log moves.
+- A **large drop** (puts) = the 15:25 close at least 1.5 remaining-day sigma below the reference. A **large rise** (calls) = at least 1.5 sigma above. The lowest-low / highest-high version is shown beside it, not used for the reading. (The close-to-15:25 move is what a held option is paid on.)
+
+**Comparisons:**
+- Matched random entries, 5 seeds (101-105). Each taken signal gets a random signal bar in the setup's window (finished bars 09:45-15:14, as the engine's random entries), same symbol, day and side. fb and fb_or keep the signal's stop distance (signal price - invalid), as the engine does.
+- Random day-skips (filtered runs only): from the twin's days, 2,000 random subsets with as many days as the filtered run. p = share of subsets whose large-move rate is at or above the filtered run's.
+- Reported overall; by year 2016-2023 (January 2024 shown apart); by stretch: 2018 Q1 volatility spike (2018-01-01 to 2018-03-31), 2020 Feb-May (2020-02-01 to 2020-05-31), 2022 bear market (2022-01-03 to 2022-10-12, the S&P 500's peak-to-trough); and by symbol.
+- Metrics in R: trades, win rate, average win, average loss, expectancy, profit factor, max drawdown in R (time order), and a 95% interval of the expectancy (bootstrap by session, 2,000 draws).
+
+**Pre-registered Layer-1 reading:**
+- **fb, fb_or: "signal holds"** if expectancy in R is above 0 overall, above 0 in at least 6 of the 8 years 2016-2023, and above the expectancy of every one of the 5 matched-random seeds.
+- **otm_put: "tail holds"** if the filtered days' large-drop rate beats random day-skips (p < 0.10), and is above that year's rate on all the twin's days in at least 5 of the 8 years. A year without filtered days counts as a miss.
+- **otm_bounce: "bounce holds"** (added here, same shape, because its filter fires only in stressed years): the large-rise rate beats random day-skips (p < 0.10), and is above that year's all-day rate in at least half of the years with 5 or more filtered days. At least 3 such years are needed.
+- The twins (`otm_put_base`, `otm_bounce_base`) are context: their large-move rate against matched random minutes. No pass/fail.
+
+### Layer 2: modeled option P/L
+
+Every Layer-2 number carries the label **MODELED (BS, calibrated IV)**.
+
+**Modeled 0DTE tapes** (`sprint/modeled.py`, a generalization of `tests/sprint_synth.option_bars`):
+- One implied vol per symbol, session, contract rule and side, for every strike, all day: IV = IV proxy x multiplier(rule, side).
+- IV proxy, known at the open = sigma_1m (as in Layer 1, prior sessions only) x sqrt(525,600). That is the engine's calendar-minute year, so the proxy and the BS-EST IVs solved from real prices are on the same scale.
+- Strikes: every $1 strike within ±6% of the underlying's close at the decision bar, built when the contract picker asks (point-in-time).
+- Bars:
+  - open = Black-Scholes at the stock's open, with the minutes to the close at the bar's start;
+  - close = BS at the stock's close, with the minutes left at the bar's end;
+  - high / low = BS at the stock's high / low (calls; low / high for puts) at the bar's end, widened to include the open and close;
+  - rounded to $0.01 with a $0.01 floor; no bar where the stock has none.
+- Expiry at 16:00 (13:00 on early-close days). r = 0, no dividends.
+- Then the engine runs exactly as on real tapes: the contract picker (BS-EST delta from the modeled price), entry at the next bar's open + half-spread, the same exits. Bars only, so a stop fills at the stop price inside the bar, or at the open when the bar gapped through it.
+
+**Costs:** the sprint's. Half-spread 2% of premium with a $0.005 floor, $0.65 per contract per side, PF at 2x slippage, and one 5% stress rerun of `hist_v1` (run ids end in `@s5`). The desk's logged chains (2026 spreads) are never used for modeled runs.
+
+**Calibration on DEV** (`tools/sprint_calibrate.py`):
+- Input: the real-tape DEV trade files of runs 1-3 on Chart's computer (`data/sprint/trades_*.csv.gz`; files of modeled specs are excluded), deduplicated by symbol, day, contract and signal bar.
+- Ratio per trade = `iv_est` (BS-EST IV solved from the real option's price at the decision) / the IV proxy for that symbol and day.
+- Multiplier = the median ratio **per contract rule and side**. Far out-of-the-money puts and calls sit on opposite sides of the volatility smile, so a pooled d06-15t10 number would price the puts too cheap.
+- Quartiles and counts are reported, plus medians by symbol and by setup (information only).
+- A rule-and-side key with fewer than 30 trades gets no multiplier, and a run that needs it is refused.
+- Saved to `data/sprint/calib_modeled.json`.
+
+**Validation on DEV** (`sprint/specs/hist_val_v1.json`: the same six runs on DEV with `"tapes": "modeled"`), against the real-tape runs in `docs/research/sprint_runs.csv`:
+- **Pre-registered bar, per strategy:** the same sign of expectancy as the real run, AND the modeled PF within ±35% of the real PF (0.65 x real <= modeled <= 1.35 x real).
+- A strategy that fails keeps its HIST Layer-2 numbers in the report, labeled **UNRELIABLE**, with no verdict.
+- Known weak spots, stated now:
+  - otm_bounce_base's real expectancy is +$0.08 (PF 1.009), so its sign test is close to a coin flip;
+  - the multiplier is fitted on the same DEV data, so the validation checks the model's shape, not a prediction;
+  - the first ~10 DEV sessions (Aug 2024) have no IV proxy (July 2024 is locked) and are skipped.
+
+**HIST run** (`sprint/specs/hist_v1.json`: period HIST, history from 2015-11-01, six runs):
+- Plus the runner's robustness pass: matched random entries (5 paths), one-step nudges, and random day-skips for the two filtered runs against their twins.
+
+**Pre-registered Layer-2 reading** (validated strategies only). **"Holds on HIST (MODELED)"** needs all of:
+- at least 60 trades;
+- expectancy > 0 and PF >= 1.25 at base cost;
+- PF > 1.0 at 2x slippage;
+- profitable in at least 6 of the 8 years 2016-2023;
+- positive without its best 5 trades;
+- otm_put and otm_bounce: the filter beats random day-skips of its twin (p <= 0.05).
+
+Also reported, not pass/fail: the 5% stress, the 95% interval, the deflated Sharpe with the full trial count, matched random entries, by stretch, by symbol, and Mon/Wed/Fri vs Tue/Thu.
+
+**Idealizations, stated plainly:**
+- Before November 2022, SPY, QQQ and IWM did not list an expiry every weekday. Layer 2 prices a 0DTE contract every session as if it existed. Results split into Mon/Wed/Fri vs Tue/Thu are an extra line.
+- One flat IV per day: no smile across strikes and no intraday IV change. Real puts gain extra value when IV jumps in a selloff; real calls lose some when IV falls in a rally.
+- Every minute has a price; real far-out-of-the-money contracts skip minutes.
+- A 2% half-spread may be optimistic for 2016-2019, when 0DTE markets were thinner. The 5% stress is the check.
+
+### What each outcome means (written before any result)
+
+- **Layer 1 holds and Layer 2 holds:** the idea survives eight unseen years in the model. Next: keep the forward paper ledger, look for real option history. Nothing is promoted.
+- **Layer 1 holds, Layer 2 fails:** the stock signal is real, but 0DTE options eat it (spread, decay). Next: test longer-dated options or shares.
+- **Layer 1 fails:** the DEV result was most likely luck or one regime. The paper ledger keeps running for its 40 trades, with a "failed HIST" note.
+- **Validation fails:** Layer 2 says nothing for that strategy; only Layer 1 counts.
+
+### Trials and run budget
+
+- Layer 2 adds 18 rows to the run log: 6 validation, 6 HIST, 6 HIST at 5%.
+- Layer 1 adds 6 measurements, in its own report.
+- All of them count as trials.
+- Nothing else runs on HIST. No rule or number changes after seeing HIST results; any change would be a new amendment, labeled in-sample.
+
 ## Limits
 
 - Backtests only.
