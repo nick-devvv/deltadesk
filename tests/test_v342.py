@@ -143,8 +143,11 @@ def test_contracts_are_followed_and_scored_at_the_stock_exit(tmp_path, monkeypat
     assert "same stock" in CL.start(dict(sig, id="x2"), now, f)          # no double-following of one move
     q = {r["symbol"]: r for r in rows}
 
-    def quotes(syms, max_age_s=5):
-        return {s: {"bid": bids.get(s, q[s]["bid"]), "ask": q[s]["ask"], "executable": True} for s in syms}, None
+    clk = {"t": now}
+
+    def quotes(syms, max_age_s=5):                      # v3.5: real quotes carry the provider time and the receipt time
+        return {s: {"bid": bids.get(s, q[s]["bid"]), "ask": q[s]["ask"], "executable": True,
+                    "quote_time": pd.Timestamp(clk["t"]), "recv": pd.Timestamp(clk["t"])} for s in syms}, None
     monkeypatch.setattr(marketdata, "option_quotes", quotes)
     tracked = store.q("SELECT * FROM lab_contracts WHERE status='TRACKING'")
     zero = next(r for r in tracked if r["bucket"] == "0DTE" and r["target_delta"] == 0.45)
@@ -155,6 +158,7 @@ def test_contracts_are_followed_and_scored_at_the_stock_exit(tmp_path, monkeypat
     bids = {zero["symbol"]: zero["bid0"] + 0.30, week["symbol"]: week["bid0"] + 0.40}   # then both recover and gain
     later = now + timedelta(minutes=12)
     CL._state["last_sample"] = {}
+    clk["t"] = later
     CL.poll(later)
     store.x("UPDATE lab_tape SET status='DONE', exit_at=? WHERE id='x1'", ((later - timedelta(seconds=30)).isoformat(),))
     CL.poll(later.replace(hour=15, minute=27))                          # stops following after 3:26 PM

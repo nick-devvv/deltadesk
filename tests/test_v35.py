@@ -4,6 +4,7 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -309,3 +310,136 @@ def test_pre_v35_catalysts_are_backfilled_as_reconstructed_revisions(env):
     early = C.as_of("N-OLD", DAY.replace(hour=10, minute=5))
     assert early["label"] == "unverified" and early["_reconstructed"] and "sentiment" not in early
     assert C.as_of("N-OLD", DAY.replace(hour=10, minute=25))["label"] == "attributed"
+
+
+# ================================================================ C3 contract lab timing and comparability
+def _cl_env(env, tmp_path=None):
+    import contract_lab as CL
+    import lab
+    store.conn()
+    lab._schema()
+    CL._schema()
+    CL._state.update(tracked=None, last_sample={}, recent={}, rejects={})
+    return CL, lab
+
+
+def _cl_chain(now, ts=None, same_strike=False):
+    rows = []
+    spot = 140.0
+    for dte in (0, 1, 3, 6):
+        exp = (now.date() + __import__("datetime").timedelta(days=dte)).isoformat()
+        for k in range(-6, 7):
+            strike = spot + k
+            d = 0.40 if same_strike else max(0.05, min(0.95, 0.5 - k * 0.07))
+            if same_strike and k != 0:
+                d = 0.05
+            mid = 1.0 + 0.2 * dte + max(0, -k) * 0.5
+            rows.append({"symbol": f"NVDA{exp.replace('-', '')[2:]}C{int(strike * 1000):08d}", "exp": exp, "strike": strike,
+                         "bid": round(mid - 0.02, 2), "ask": round(mid + 0.02, 2), "delta": d, "ts": (ts or now).isoformat()})
+    return rows
+
+
+class _F:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def chain(self, *a):
+        return self.rows, None
+
+
+def _tape(i, day, be, exit_at=None, status="OPEN"):
+    store.x("INSERT INTO lab_tape(id, day, ticker, family, setup, side, signal_bar, bar_end, observed_at, live, level, invalidation, "
+            "use_level, price, atr, conditions, status, r, exit_at, version) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (i, day, "NVDA", "board_orb_break", "s", "C", be, be, be, 1, 1, 0.9, 1, 1, 1, "{}", status, 1.0, exit_at, "t"))
+
+
+def test_future_dated_quotes_are_rejected_and_skew_is_recorded(env):
+    CL, lab = _cl_env(env)
+    now = DAY.replace(hour=10, minute=40)
+    fut = CL.pick(_cl_chain(now, ts=now + timedelta(seconds=30)), "C", now.date(), now)
+    assert all(r is None for _, _, r, _ in fut) and "future-dated" in fut[0][3]
+    skew = CL.pick(_cl_chain(now, ts=now + timedelta(seconds=3)), "C", now.date(), now)
+    got = [r for _, _, r, _ in skew if r]
+    assert got and all(r["skew_s"] == -3.0 for r in got)                       # small clock skew: kept, recorded
+    utc = CL.pick(_cl_chain(now, ts=now.astimezone(__import__("datetime").timezone.utc).replace(tzinfo=None)), "C", now.date(), now)
+    assert all(r is None for _, _, r, _ in utc)                                  # a naive UTC time read as ET is 4 h stale, never fresh
+
+
+def test_exit_needs_a_quote_inside_the_window_and_never_uses_an_earlier_one(env):
+    CL, lab = _cl_env(env)
+    q = [{"recv_t": "2026-10-28T10:50:00-04:00", "quote_t": "2026-10-28T10:50:00-04:00", "bid": 2.0, "ask": 2.1},
+         {"recv_t": "2026-10-28T10:55:00-04:00", "quote_t": "2026-10-28T10:55:00-04:00", "bid": 2.5, "ask": 2.6}]
+    x, gap = CL.exit_quote(q, "2026-10-28T10:51:00-04:00")
+    assert x is None and gap == 240                                               # 4 min late: UNFILLED, gap kept
+    x, gap = CL.exit_quote(q, "2026-10-28T10:54:00-04:00")
+    assert x["bid"] == 2.5 and gap == 60
+    stale = [dict(q[1], recv_t="2026-10-28T10:56:00-04:00")]                      # received 60 s after its quote time
+    assert CL.exit_quote(stale, "2026-10-28T10:54:30-04:00")[0] is None
+    assert CL.exit_quote(q, "2026-10-28T14:00:00Z")[0] is None                     # a UTC exit time is normalized (10:00 ET... before 10:50, gap > window)
+
+
+def _follow(CL, now, sig_id="s1", bar_end=None, rows=None):
+    sig = {"id": sig_id, "ticker": "NVDA", "side": "C", "family": "board_orb_break", "bar_end": (bar_end or now).isoformat()}
+    return CL.start(sig, now, _F(rows or _cl_chain(now)))
+
+
+def test_duplicate_contracts_are_marked_and_not_counted_twice_and_unfilled_rows_are_missing(env):
+    import marketdata
+    CL, lab = _cl_env(env)
+    now = DAY.replace(hour=10, minute=40)
+    _tape("s1", "2026-10-28", now.isoformat())
+    assert _follow(CL, now, rows=_cl_chain(now, same_strike=True)) >= 3
+    rows = store.q("SELECT * FROM lab_contracts WHERE tape_id='s1' AND symbol IS NOT NULL")
+    by_sym = {}
+    for r in rows:
+        by_sym.setdefault((r["bucket"], r["symbol"]), []).append(r)
+    dups = [r for r in rows if r["dup_of"]]
+    assert dups and all(len(v) == 1 + sum(1 for x in v if x["dup_of"]) for v in by_sym.values())
+    clk = {"t": now + timedelta(minutes=5)}
+    env.setattr(marketdata, "option_quotes", lambda syms, max_age_s=5: ({s: {"bid": 1.5, "ask": 1.6, "executable": True,
+                "quote_time": pd.Timestamp(clk["t"]), "recv": pd.Timestamp(clk["t"])} for s in syms}, None))
+    CL.poll(clk["t"])
+    store.x("UPDATE lab_tape SET status='DONE', exit_at=? WHERE id='s1'", ((now + timedelta(minutes=4, seconds=30)).isoformat(),))
+    CL.resolve("2026-10-28")
+    rep = CL.report()
+    cells = {(r["bucket"], r["delta"]): r for r in rep["rows"]}
+    dcell = next(r for r in rep["rows"] if r["duplicates"])
+    assert dcell["n"] == 0 and dcell["duplicates"] == 1
+    store.x("UPDATE lab_contracts SET status='TRACKED', resolved_at=NULL WHERE tape_id='s1' AND symbol IS NOT NULL")
+    store.x("UPDATE lab_tape SET exit_at=? WHERE id='s1'", ((now + timedelta(minutes=10)).isoformat(),))
+    CL.resolve("2026-10-28")
+    un = store.q("SELECT status, exit_gap_s FROM lab_contracts WHERE tape_id='s1' AND symbol IS NOT NULL")
+    assert all(u["status"].startswith("UNFILLED") for u in un)                    # no quote after 10:50: never an earlier one
+    rep = CL.report()
+    assert rep["signals"] == 0 and any(r["missing"].get("UNFILLED") for r in rep["rows"])
+    assert pd is not None and cells
+
+
+def test_report_reads_one_scorer_version(env):
+    CL, lab = _cl_env(env)
+    now = DAY.replace(hour=10, minute=40)
+    _tape("old1", "2026-10-28", now.isoformat(), status="DONE")
+    store.x("INSERT INTO lab_contracts(id, tape_id, day, ticker, family, side, bucket, target_delta, symbol, entry, status, pnl_line, "
+            "pnl_hold, pct_line, pct_hold, line_first, version) VALUES('o|0DTE|0.45','old1','2026-10-28','NVDA','board_orb_break','C',"
+            "'0DTE',0.45,'X',1.0,'DONE',50,50,50,50,0,?)", (CL.OLD_SCORERS[0],))
+    rep = CL.report()
+    assert rep["signals"] == 0 and rep["version"] == CL.SCORER and rep["other_versions"][0]["version"] == CL.OLD_SCORERS[0]
+    assert "kept apart" in rep["note"]
+    old = CL.report(scorer=CL.OLD_SCORERS[0])
+    assert old["signals"] == 1
+
+
+def test_contract_dedupe_and_budget_survive_a_restart_and_the_day_rollover(env):
+    CL, lab = _cl_env(env)
+    now = DAY.replace(hour=10, minute=40)
+    assert _follow(CL, now) > 0
+    CL._state.update(tracked=None, last_sample={}, recent={}, tokens=99.0)          # a restart forgets memory
+    assert "same stock" in str(_follow(CL, now + timedelta(minutes=2), "s2"))
+    assert "already followed" in str(CL.start({"id": "s1", "ticker": "AMD", "side": "C", "family": "f"}, now + timedelta(minutes=20), _F(_cl_chain(now))))
+    c = dict(CL.cfg(), starts_per_min=1)
+    assert "budget" in str(CL.start({"id": "s3", "ticker": "AMD", "side": "C", "family": "f"}, now + timedelta(seconds=30), _F(_cl_chain(now)), c))
+    assert CL._tracked("2026-10-28")                                                 # today's cache filled
+    nxt = DAY + timedelta(days=1)
+    CL.poll(nxt.replace(hour=9, minute=50))                                          # next morning
+    assert CL._tracked(str(nxt.date())) == []
+    assert not store.q("SELECT 1 FROM lab_contracts WHERE day='2026-10-28' AND status='TRACKING'")

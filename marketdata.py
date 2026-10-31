@@ -487,6 +487,10 @@ def option_quote_cached(symbol):
     return (_label(q, MAX_OPT_QUOTE_AGE_S, p), None) if q else (None, "no quote yet")
 
 
+FUTURE_TOL_S = 5            # v3.5: clock skew tolerated before a quote counts as future-dated
+CLOCK = {"future_quotes": 0, "last_future_s": None}
+
+
 def _label(q, max_age, p):
     t = now()
     qt = q.get("quote_time")
@@ -501,6 +505,10 @@ def _label(q, max_age, p):
         problems.append("crossed (bid > ask)")
     if age is None:
         problems.append("no provider timestamp")
+    elif age < -FUTURE_TOL_S:                      # v3.5: a quote from the future is bad data (or our clock is behind)
+        problems.append(f"future-dated ({-age:.0f}s ahead of this computer's clock)")
+        CLOCK["future_quotes"] += 1
+        CLOCK["last_future_s"] = round(-age, 1)
     elif age > max_age and core.session_info()["state"] in ("OPEN", "ORB FORMING", "NO NEW ENTRIES", "ALL OUT"):
         problems.append(f"stale ({age:.0f}s old)")
     out = dict(q)
