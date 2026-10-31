@@ -21,7 +21,7 @@ import store  # noqa: E402
 
 ET = core.ET
 DAY = datetime(2026, 10, 28, tzinfo=ET)
-RETIRED = ["paper", "research", "exit31", "gated", "orbx_swing", "orbx_atr", "orbx_2r", "orbx_ormid", "old", "news_mom",
+RETIRED = ["paper", "research", "exit31", "gated", "orbx_swing", "orbx_atr", "orbx_2r", "orbx_ormid", "news_mom",
            "inplay", "board", "earn_post", "earn_pre", "lab_orb_break", "lab_noise", "lab_v3", "spec_x_family"]
 
 
@@ -46,7 +46,7 @@ def test_production_config_retires_exactly_the_planned_ledgers():
     for led in RETIRED:
         assert retire.is_retired(led), led
     for led in ("noise", "noise_v2", "noise_trend", "orb_credit", "ic_20d", "sip_orb5", "sip_orb5_x", "sip_orb15", "earn_day",
-                "sip_orb5_opt", "earn_day_opt", "real"):
+                "sip_orb5_opt", "earn_day_opt", "real", "old"):
         assert not retire.is_retired(led), led
     assert retire.kronos_enabled() is False
 
@@ -55,6 +55,7 @@ def test_missing_config_never_unretires(monkeypatch, tmp_path):
     monkeypatch.setattr(retire, "FILE", tmp_path / "nope.json")
     monkeypatch.setattr(retire, "_cache", {"mtime": None, "cfg": None})
     assert retire.is_retired("paper") and retire.is_retired("lab_momo") and not retire.is_retired("noise")
+    assert not retire.is_retired("old") and retire.legacy_label("old")
 
 
 @pytest.mark.parametrize("led", RETIRED)
@@ -75,14 +76,11 @@ def test_noise_reference_ledger_still_fills(env):
     assert pid == "noise:N1", why
 
 
-def test_old_policy_shadow_and_scanner_and_news_refuse(env):
+def test_scanner_and_news_refuse(env):
     import news_momentum
-    import policy_old
     import scanner
     clock, fk = fakes.install(env, lambda ts: 600.0, DAY, s0=600.0)
     clock.t = DAY.replace(hour=10, minute=0)
-    assert policy_old._open("I", "SPY", {"side": "C", "invalidation": 599.0, "family": "X", "note": ""}, "A",
-                            {"symbol": "SPY261028C00600000"}) is None
     assert news_momentum.live_step(clock()) == []
 
     class NoChain:

@@ -1,0 +1,338 @@
+{
+ "candidates": [
+  {
+   "date": "2026-10-28",
+   "decision": "SKIP",
+   "decision_t": "2026-10-28T09:50:00-04:00",
+   "family": "FAILED_BREAK",
+   "id": "old-2026-10-28-QQQ-FAILED_BREAK-C-09:50",
+   "policy_version": "2026-10-28.3",
+   "reasons": "[\"grade C (old rule)\"]",
+   "side": "C",
+   "ticker": "QQQ"
+  },
+  {
+   "date": "2026-10-28",
+   "decision": "SKIP",
+   "decision_t": "2026-10-28T10:15:00-04:00",
+   "family": "FAILED_BREAK",
+   "id": "old-2026-10-28-QQQ-FAILED_BREAK-C-10:15",
+   "policy_version": "2026-10-28.3",
+   "reasons": "[\"grade C (old rule)\"]",
+   "side": "C",
+   "ticker": "QQQ"
+  },
+  {
+   "date": "2026-10-28",
+   "decision": "SKIP",
+   "decision_t": "2026-10-28T10:35:00-04:00",
+   "family": "ORB_BREAK",
+   "id": "old-2026-10-28-QQQ-ORB_BREAK-C-10:35",
+   "policy_version": "2026-10-28.3",
+   "reasons": "[\"STOP FOR TODAY (old streak rule)\"]",
+   "side": "C",
+   "ticker": "QQQ"
+  },
+  {
+   "date": "2026-10-28",
+   "decision": "ORDER",
+   "decision_t": "2026-10-28T09:45:00-04:00",
+   "family": "ORB_BREAK",
+   "id": "old-2026-10-28-QQQ-ORB_BREAK-P-09:45",
+   "policy_version": "2026-10-28.3",
+   "reasons": "[]",
+   "side": "P",
+   "ticker": "QQQ"
+  },
+  {
+   "date": "2026-10-28",
+   "decision": "ORDER",
+   "decision_t": "2026-10-28T10:10:00-04:00",
+   "family": "ORB_BREAK",
+   "id": "old-2026-10-28-QQQ-ORB_BREAK-P-10:10",
+   "policy_version": "2026-10-28.3",
+   "reasons": "[]",
+   "side": "P",
+   "ticker": "QQQ"
+  },
+  {
+   "date": "2026-10-28",
+   "decision": "SKIP",
+   "decision_t": "2026-10-28T09:40:00-04:00",
+   "family": "VWAP_RECLAIM",
+   "id": "old-2026-10-28-QQQ-VWAP_RECLAIM-P-09:40",
+   "policy_version": "2026-10-28.3",
+   "reasons": "[\"grade C (old rule)\"]",
+   "side": "P",
+   "ticker": "QQQ"
+  },
+  {
+   "date": "2026-10-28",
+   "decision": "SKIP",
+   "decision_t": "2026-10-28T09:50:00-04:00",
+   "family": "FAILED_BREAK",
+   "id": "old-2026-10-28-SPY-FAILED_BREAK-C-09:50",
+   "policy_version": "2026-10-28.3",
+   "reasons": "[\"grade C (old rule)\"]",
+   "side": "C",
+   "ticker": "SPY"
+  },
+  {
+   "date": "2026-10-28",
+   "decision": "SKIP",
+   "decision_t": "2026-10-28T10:15:00-04:00",
+   "family": "FAILED_BREAK",
+   "id": "old-2026-10-28-SPY-FAILED_BREAK-C-10:15",
+   "policy_version": "2026-10-28.3",
+   "reasons": "[\"grade C (old rule)\"]",
+   "side": "C",
+   "ticker": "SPY"
+  },
+  {
+   "date": "2026-10-28",
+   "decision": "SKIP",
+   "decision_t": "2026-10-28T10:35:00-04:00",
+   "family": "ORB_BREAK",
+   "id": "old-2026-10-28-SPY-ORB_BREAK-C-10:35",
+   "policy_version": "2026-10-28.3",
+   "reasons": "[\"STOP FOR TODAY (old streak rule)\"]",
+   "side": "C",
+   "ticker": "SPY"
+  },
+  {
+   "date": "2026-10-28",
+   "decision": "ORDER",
+   "decision_t": "2026-10-28T09:45:00-04:00",
+   "family": "ORB_BREAK",
+   "id": "old-2026-10-28-SPY-ORB_BREAK-P-09:45",
+   "policy_version": "2026-10-28.3",
+   "reasons": "[]",
+   "side": "P",
+   "ticker": "SPY"
+  },
+  {
+   "date": "2026-10-28",
+   "decision": "ORDER",
+   "decision_t": "2026-10-28T10:10:00-04:00",
+   "family": "ORB_BREAK",
+   "id": "old-2026-10-28-SPY-ORB_BREAK-P-10:10",
+   "policy_version": "2026-10-28.3",
+   "reasons": "[]",
+   "side": "P",
+   "ticker": "SPY"
+  },
+  {
+   "date": "2026-10-28",
+   "decision": "SKIP",
+   "decision_t": "2026-10-28T09:40:00-04:00",
+   "family": "VWAP_RECLAIM",
+   "id": "old-2026-10-28-SPY-VWAP_RECLAIM-P-09:40",
+   "policy_version": "2026-10-28.3",
+   "reasons": "[\"grade C (old rule)\"]",
+   "side": "P",
+   "ticker": "SPY"
+  }
+ ],
+ "ideas": [
+  {
+   "created": "2026-10-28T09:51:00-04:00",
+   "idea": "2026-10-28-QQQ-ORB_BREAK-P-09:45",
+   "position_id": "OL-2026-10-28-QQQ-ORB_BREAK-P-09:45",
+   "side": "P",
+   "status": "FILLED",
+   "ticker": "QQQ"
+  },
+  {
+   "created": "2026-10-28T10:16:00-04:00",
+   "idea": "2026-10-28-QQQ-ORB_BREAK-P-10:10",
+   "position_id": "OL-2026-10-28-QQQ-ORB_BREAK-P-10:10",
+   "side": "P",
+   "status": "FILLED",
+   "ticker": "QQQ"
+  },
+  {
+   "created": "2026-10-28T09:51:00-04:00",
+   "idea": "2026-10-28-SPY-ORB_BREAK-P-09:45",
+   "position_id": "OL-2026-10-28-SPY-ORB_BREAK-P-09:45",
+   "side": "P",
+   "status": "FILLED",
+   "ticker": "SPY"
+  },
+  {
+   "created": "2026-10-28T10:16:00-04:00",
+   "idea": "2026-10-28-SPY-ORB_BREAK-P-10:10",
+   "position_id": "OL-2026-10-28-SPY-ORB_BREAK-P-10:10",
+   "side": "P",
+   "status": "FILLED",
+   "ticker": "SPY"
+  }
+ ],
+ "orders": [
+  {
+   "client_id": "OL-2026-10-28-QQQ-ORB_BREAK-P-09:45-S0",
+   "filled_price": 2.05,
+   "filled_qty": 1,
+   "position_id": "OL-2026-10-28-QQQ-ORB_BREAK-P-09:45",
+   "qty": 1,
+   "reason": "IF FLAT: not at breakeven by 09:56",
+   "side": "sell",
+   "status": "FILLED",
+   "ts": "2026-10-28T09:56:00-04:00"
+  },
+  {
+   "client_id": "OL-2026-10-28-QQQ-ORB_BREAK-P-10:10-S0",
+   "filled_price": 2.06,
+   "filled_qty": 1,
+   "position_id": "OL-2026-10-28-QQQ-ORB_BREAK-P-10:10",
+   "qty": 1,
+   "reason": "IF FLAT: not at breakeven by 10:21",
+   "side": "sell",
+   "status": "FILLED",
+   "ts": "2026-10-28T10:21:00-04:00"
+  },
+  {
+   "client_id": "OL-2026-10-28-SPY-ORB_BREAK-P-09:45-S0",
+   "filled_price": 2.05,
+   "filled_qty": 1,
+   "position_id": "OL-2026-10-28-SPY-ORB_BREAK-P-09:45",
+   "qty": 1,
+   "reason": "IF FLAT: not at breakeven by 09:56",
+   "side": "sell",
+   "status": "FILLED",
+   "ts": "2026-10-28T09:56:00-04:00"
+  },
+  {
+   "client_id": "OL-2026-10-28-SPY-ORB_BREAK-P-10:10-S0",
+   "filled_price": 2.06,
+   "filled_qty": 1,
+   "position_id": "OL-2026-10-28-SPY-ORB_BREAK-P-10:10",
+   "qty": 1,
+   "reason": "IF FLAT: not at breakeven by 10:21",
+   "side": "sell",
+   "status": "FILLED",
+   "ts": "2026-10-28T10:21:00-04:00"
+  }
+ ],
+ "positions": [
+  {
+   "closed": "2026-10-28T09:56:00-04:00",
+   "contract": "600P",
+   "date": "2026-10-28",
+   "fill": 2.24,
+   "grade": "B",
+   "id": "OL-2026-10-28-SPY-ORB_BREAK-P-09:45",
+   "ledger": "old",
+   "notes": "5m close below ORB low",
+   "opened": "2026-10-28T09:51:00-04:00",
+   "plan": {
+    "be_hit": false,
+    "entry_px": 599.56,
+    "exit_reason": "IF FLAT: not at breakeven by 09:56",
+    "invalidation": 599.86,
+    "stop": 1.82,
+    "t1_done": false,
+    "window": "MORNING"
+   },
+   "policy_version": "2026-10-28.3",
+   "qty_init": 1,
+   "qty_open": 0,
+   "realized": -19.04,
+   "setup": "ORB_BREAK",
+   "setup_id": "2026-10-28-SPY-ORB_BREAK-P-09:45",
+   "side": "P",
+   "status": "CLOSED",
+   "symbol": "SPY261028P00600000",
+   "ticker": "SPY"
+  },
+  {
+   "closed": "2026-10-28T09:56:00-04:00",
+   "contract": "600P",
+   "date": "2026-10-28",
+   "fill": 2.24,
+   "grade": "B",
+   "id": "OL-2026-10-28-QQQ-ORB_BREAK-P-09:45",
+   "ledger": "old",
+   "notes": "5m close below ORB low",
+   "opened": "2026-10-28T09:51:00-04:00",
+   "plan": {
+    "be_hit": false,
+    "entry_px": 599.56,
+    "exit_reason": "IF FLAT: not at breakeven by 09:56",
+    "invalidation": 599.86,
+    "stop": 1.82,
+    "t1_done": false,
+    "window": "MORNING"
+   },
+   "policy_version": "2026-10-28.3",
+   "qty_init": 1,
+   "qty_open": 0,
+   "realized": -19.04,
+   "setup": "ORB_BREAK",
+   "setup_id": "2026-10-28-QQQ-ORB_BREAK-P-09:45",
+   "side": "P",
+   "status": "CLOSED",
+   "symbol": "QQQ261028P00600000",
+   "ticker": "QQQ"
+  },
+  {
+   "closed": "2026-10-28T10:21:00-04:00",
+   "contract": "600P",
+   "date": "2026-10-28",
+   "fill": 2.24,
+   "grade": "B",
+   "id": "OL-2026-10-28-SPY-ORB_BREAK-P-10:10",
+   "ledger": "old",
+   "notes": "5m close below ORB low",
+   "opened": "2026-10-28T10:16:00-04:00",
+   "plan": {
+    "be_hit": false,
+    "entry_px": 599.56,
+    "exit_reason": "IF FLAT: not at breakeven by 10:21",
+    "invalidation": 599.86,
+    "stop": 1.82,
+    "t1_done": false,
+    "window": "MORNING"
+   },
+   "policy_version": "2026-10-28.3",
+   "qty_init": 1,
+   "qty_open": 0,
+   "realized": -18.04,
+   "setup": "ORB_BREAK",
+   "setup_id": "2026-10-28-SPY-ORB_BREAK-P-10:10",
+   "side": "P",
+   "status": "CLOSED",
+   "symbol": "SPY261028P00600000",
+   "ticker": "SPY"
+  },
+  {
+   "closed": "2026-10-28T10:21:00-04:00",
+   "contract": "600P",
+   "date": "2026-10-28",
+   "fill": 2.24,
+   "grade": "B",
+   "id": "OL-2026-10-28-QQQ-ORB_BREAK-P-10:10",
+   "ledger": "old",
+   "notes": "5m close below ORB low",
+   "opened": "2026-10-28T10:16:00-04:00",
+   "plan": {
+    "be_hit": false,
+    "entry_px": 599.56,
+    "exit_reason": "IF FLAT: not at breakeven by 10:21",
+    "invalidation": 599.86,
+    "stop": 1.82,
+    "t1_done": false,
+    "window": "MORNING"
+   },
+   "policy_version": "2026-10-28.3",
+   "qty_init": 1,
+   "qty_open": 0,
+   "realized": -18.04,
+   "setup": "ORB_BREAK",
+   "setup_id": "2026-10-28-QQQ-ORB_BREAK-P-10:10",
+   "side": "P",
+   "status": "CLOSED",
+   "symbol": "QQQ261028P00600000",
+   "ticker": "QQQ"
+  }
+ ]
+}

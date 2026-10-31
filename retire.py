@@ -1,8 +1,11 @@
 """retire.py - v4: which paper ledgers take no NEW entries, and the Kronos switch. Pure code, no network, no AI.
 
+The `old` ledger (policy_old.py, frozen 2026-10-28.3 rules) is NOT retired: Nick kept it as a legacy forward test
+(not from a published source); it opens paper trades exactly as before (tests/test_v4_old_regression.py).
+
 A retired ledger keeps its code, its database rows and its open trades: open positions are still managed to their exit
-by the same code as before. Only new entries are refused, at every entry point (paper.buy, the old-policy shadow, the
-lab, the scanner, autopilot, news momentum, ORBX, the router). The list lives in config/v4.json; if that file is
+by the same code as before. Only new entries are refused, at every entry point (paper.buy, the lab, the scanner,
+autopilot, news momentum, ORBX, the router; the old-policy guard stays in place, inactive while `old` is off the list). The list lives in config/v4.json; if that file is
 missing or unreadable the defaults below apply, so a broken file can never silently un-retire a ledger.
 
 Tests: legacy suites exercise the retired code paths with retirement switched off (`_override = False`, set in
@@ -16,9 +19,10 @@ FILE = core.HERE / "config" / "v4.json"
 VERSION = "2026-10-31.v4-retire1"
 REASON = "retired in v4: no new entries (code and history kept; open trades are still managed to their exit)"
 DEFAULTS = {"retire_active": True,
-            "retired": ["paper", "research", "exit31", "gated", "orbx_swing", "orbx_atr", "orbx_2r", "orbx_ormid", "old",
+            "retired": ["paper", "research", "exit31", "gated", "orbx_swing", "orbx_atr", "orbx_2r", "orbx_ormid",
                         "news_mom", "inplay", "board", "earn_post", "earn_pre"],
             "retired_prefixes": ["lab_", "spec_"],
+            "legacy_forward_tests": {"old": "legacy forward test (not from a published source)"},
             "kronos_enabled": False}
 _override = None                       # tests only: None = production setting from config/v4.json
 _cache = {"mtime": None, "cfg": None}
@@ -54,6 +58,11 @@ def retired_list():
     c = cfg()
     return {"active": active(), "ledgers": list(c.get("retired") or []), "prefixes": list(c.get("retired_prefixes") or []),
             "why": c.get("retired_why"), "version": VERSION}
+
+
+def legacy_label(ledger):
+    """The label of a ledger kept active as a legacy forward test (e.g. `old`), or None."""
+    return (cfg().get("legacy_forward_tests") or {}).get(str(ledger))
 
 
 def kronos_enabled():

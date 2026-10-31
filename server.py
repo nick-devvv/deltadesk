@@ -543,7 +543,8 @@ class H(BaseHTTPRequestHandler):
                 import evaluation
                 since = q.get("since", ["2026-10-30"])[0][:10]
                 import retire
-                return self._json(clean({"since": since, "ledgers": {led: dict(evaluation.ledger_report(led, since), retired=retire.is_retired(led))
+                return self._json(clean({"since": since, "ledgers": {led: dict(evaluation.ledger_report(led, since), retired=retire.is_retired(led),
+                                                                               label=retire.legacy_label(led))
                                                                       for led in ("paper", "research", "exit31", "noise", "inplay", "old", "real")},
                                          "retired": retire.retired_list(),
                                          "variants": core.policy().get("research_variants"),

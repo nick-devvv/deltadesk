@@ -1084,7 +1084,7 @@ def tick():
                     v4index.tick(t, s, chain_rows)
                 except Exception as e:
                     _state["last_error"] = f"v4 index: {type(e).__name__}: {e}"[:200]
-                if sess["entries_allowed"] and not retire.is_retired("old"):    # v4: old shadow retired (saves 4 chain calls a tick)
+                if sess["entries_allowed"] and not retire.is_retired("old"):    # v4: `old` stays active (legacy forward test)
                     if core.policy()["v3"]["old_policy_shadow"]["enabled"]:
                         try:
                             policy_old.scan(t, s, {"C": chain_rows(t, "C")[0], "P": chain_rows(t, "P")[0]})
