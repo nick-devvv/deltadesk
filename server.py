@@ -73,6 +73,13 @@ PORT = int(os.environ.get("PORT", "8765"))
 CHAT_WEBHOOK = os.environ.get("CHAT_WEBHOOK", "")
 CHAT_WEBHOOK_KEY = os.environ.get("CHAT_WEBHOOK_KEY", "")
 DESK_TOKEN = os.environ.get("DESK_TOKEN", "")
+if not DESK_TOKEN and os.environ.get("CREDENTIALS_DIRECTORY"):      # v3.5: systemd LoadCredential=deltadesk-token
+    try:
+        with open(os.path.join(os.environ["CREDENTIALS_DIRECTORY"], "deltadesk-token")) as _f:
+            DESK_TOKEN = _f.read().strip()
+    except OSError:
+        pass
+_FAILS = {}                                                          # v3.5: failed-auth rate limit per client
 STARTED = store.ts()
 
 
@@ -275,15 +282,35 @@ class H(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
 
+    def _client(self):
+        xff = (self.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
+        return xff or self.client_address[0]
+
+    def _proxied(self):
+        return any(self.headers.get(h) for h in ("X-Forwarded-For", "X-Forwarded-Host", "Cf-Connecting-Ip", "Tailscale-Funnel-Request",
+                                                  "Forwarded"))
+
     def _ok(self, q):
         if not DESK_TOKEN:
-            return True
+            # v3.5: with no token set, only direct local requests are served. Anything that came through a tunnel or
+            # proxy (Funnel, cloudflared, ngrok all connect from 127.0.0.1) is refused, so a missing token can never
+            # publish the desk to the internet.
+            return not self._proxied()
+        k = self._client()
+        f = _FAILS.get(k)
+        if f and f[0] >= 20 and time.time() - f[1] < 600:
+            return False                                             # too many bad tries from this client: 10 min pause
         if hmac.compare_digest(q.get("k", [""])[0].encode(), DESK_TOKEN.encode()):
             return True
         for part in (self.headers.get("Cookie") or "").split(";"):          # v3.5: a real cookie parse, constant-time compare
-            k, _, v = part.strip().partition("=")
-            if k == "desk_k" and hmac.compare_digest(v.encode(), DESK_TOKEN.encode()):
+            ck, _, v = part.strip().partition("=")
+            if ck == "desk_k" and hmac.compare_digest(v.encode(), DESK_TOKEN.encode()):
                 return True
+        if q.get("k") or "desk_k=" in (self.headers.get("Cookie") or ""):    # a WRONG token was offered: count it
+            n, t0 = _FAILS.get(k, (0, time.time()))
+            _FAILS[k] = (n + 1, t0 if time.time() - t0 < 600 else time.time())
+            if len(_FAILS) > 5000:
+                _FAILS.clear()
         return False
 
     def _same_origin(self):
@@ -769,7 +796,39 @@ def start_kronos():
     return True
 
 
+def _singleton():
+    """v3.5: one desk process per folder. A second copy (a restart overlapping the old one, or a supervisor plus the
+    old watchdog) exits BEFORE starting any worker, so two engines can never trade the same ledgers at once."""
+    import fcntl
+    path = os.path.join(HERE, "journal", "server.lock")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    f = open(path, "a+")
+    try:
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        print("Another DeltaDesk server is already running from this folder: exiting without starting workers.", flush=True)
+        sys.exit(3)
+    f.seek(0)
+    f.truncate()
+    f.write(str(os.getpid()))
+    f.flush()
+    return f
+
+
+def _graceful(signum, frame):
+    print(f"DeltaDesk stopping (signal {signum}): open positions stay in the database and are managed again on restart.", flush=True)
+    try:
+        import health
+        health.beat("server", True, "stopping")
+    except Exception:
+        pass
+    sys.exit(0)
+
+
 if __name__ == "__main__":
+    _LOCK = _singleton()
+    import signal
+    signal.signal(signal.SIGTERM, _graceful)
     store.conn()
     core.policy()
     threading.Thread(target=engine_loop, daemon=True).start()

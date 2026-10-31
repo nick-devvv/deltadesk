@@ -1,3 +1,55 @@
+# DeltaDesk v3.5: send this one (it includes everything in v3.4.2)
+
+**What's new.** The full report is in `docs/V35_REPORT.md`. Your main rules, layout and limits don't change. There's one new tab at the end, **Learning**.
+
+**Fixes:**
+- The **Markets chart no longer keeps growing**.
+- Paper trades save all-or-nothing and can't double-fill.
+- News can't leak backward into an earlier signal, and a link is no longer proof: the desk reads the article itself.
+- Contract-lab scoring is stricter.
+- Open trades are protected before any research work runs.
+- New health checks.
+- The desk refuses to start twice.
+
+**New research, paper only:**
+- **ORB retest:** your sequence of a break, then a separate candle fully outside the range, then a retest. SPY/QQQ, 4 exit variants.
+- **News momentum:** individual stocks; needs a verified catalyst AND a measured price/volume reaction.
+- **Underlying-first tools:** the exact 20% trigger, a 0DTE check, and reach odds.
+
+**Hosting plan:** a stable free link with systemd + Tailscale Funnel, in `deploy/DEPLOY.md`. Do it after the market closes. Some steps need Nick (logins).
+
+**Message for Chart** (attach `deltadesk-v3.5.zip`):
+
+```
+Zip attached: deltadesk-v3.5.zip. sha256: (the one in Claude's message)
+Show me each output. You never place real trades, never click buy/sell/order buttons, and never enter passwords or keys.
+Do this after 4:15 PM ET or on the weekend.
+
+1. Backup (consistent, WAL-safe):  cd ~/desk && python3 -c "import sqlite3; s=sqlite3.connect('journal/desk.db'); d=sqlite3.connect('journal/desk-before-v35.db'); s.backup(d); d.close(); print(sqlite3.connect('journal/desk-before-v35.db').execute('PRAGMA integrity_check').fetchone())"   (must print ('ok',))
+2. Check the zip: sha256sum deltadesk-v3.5.zip   (must match; if not, stop)
+3. Stop the desk server the way you normally do (watchdog.sh), and make sure it's gone: pgrep -fl 'server.py|kronos_shadow.py'
+4. Unzip over ~/desk. Keep journal/ and every protected file (schwab.env, webhook.env, DESK_TOKEN.txt, watchdog.sh, bot.py, shadow.py, review.py, config/events.json, config/variants.json, variants.py).
+5. cd ~/desk && python3 -m pytest -q tests/   -> must end with "226 passed, 1 skipped" (the count in Claude's message). If not, stop and show me.
+6. Start the desk with watchdog.sh as before (don't touch cloudflared yet). Then:
+   curl -s http://127.0.0.1:8765/healthz ; echo ; curl -s http://127.0.0.1:8765/readyz
+   curl -s "http://127.0.0.1:8765/api/health?k=$(cat DESK_TOKEN.txt)" | head -c 700
+   pgrep -fl kronos_shadow.py | wc -l     (at most 1)
+7. Verify the Oct 30 paper result from the raw records (read-only, nothing is written):
+   python3 tools/verify_day.py 2026-10-30 noise
+   (show the whole output: each position, its fills, stored vs recomputed P/L)
+8. Starting a second copy must refuse:  python3 server.py   -> "Another DeltaDesk server is already running ... exiting"
+9. Read deploy/DEPLOY.md and do steps 0-3 (systemd) only after the close, telling me each output. For step 4 (Tailscale) stop and ask Nick: he logs in himself.
+10. Next trading day (Mon Nov 2): at 10:05 ET and 3:35 PM ET show me:
+    curl -s "http://127.0.0.1:8765/api/learning?k=$(cat DESK_TOKEN.txt)" | head -c 1200
+    curl -s http://127.0.0.1:8765/readyz
+```
+
+**What good looks like:**
+- `/readyz` says `"ready": true` during the session.
+- `/api/health` shows the engine's heartbeat age under 30 s, and `research_waits` is the only budget waiting (the risk budget never waits).
+- The Learning tab fills with opportunities during the day, and ORB-retest stages move for SPY/QQQ.
+- After 4:10 PM: shadow outcomes are scored and `journal/backups/` has a new copy.
+
 # DeltaDesk v3.4.2: the Kronos fix, the contract lab, fair scoring (send this one)
 
 v3.4.2 includes everything in v3.4.1:

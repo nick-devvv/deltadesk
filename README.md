@@ -8,6 +8,21 @@
 ![The deck](docs/screenshots/deck.png)
 *My trades, on a synthetic test market: the desk's own chart (candles, VWAP, EMAs, 2-minute MACD, levels, stops and fills) and live guidance on a reported trade (TIGHTEN STOP, with the stop, target and profit plan).*
 
+## New in v3.5
+- **Corrected ORB (ORBX-15-5):** break → a separate candle entirely outside the range (wick included) → a retest that closes back → next-quote entry → trailed exit. One pure state machine, used live, in tests and in the study. The study results are in `docs/studies/`; they show no edge over random entries yet.
+- **News momentum (NEWS-MOM-1):** individual stocks need a content-verified catalyst AND a measured price/volume reaction. The spec is machine-readable in `config/news_momentum.json`.
+- **Underlying first:** the exact 20% trigger `L(B) = M*(F-(B-s)) + fe + fx`, rounded to a valid tick; 0DTE availability taken from the chain received; reach odds for the stock.
+- **Learning journal:** append-only decision events, shadow outcomes for skipped setups, preregistered hypotheses, run manifests, WAL-safe backups, and a new Learning tab.
+- **Integrity:**
+  - atomic, idempotent paper fills;
+  - immutable catalyst revisions with as-of reads;
+  - a contract-lab scorer with a bounded exit window;
+  - a router that fails closed;
+  - risk-first scheduling;
+  - health endpoints;
+  - single-instance start.
+- **Stable hosting at $0:** systemd user services + Tailscale Funnel (`deploy/DEPLOY.md`).
+
 ## What it does
 - **Plans in code.** Each trade idea gets a full plan: a stop at the chart level that proves it wrong (inside a 20% premium-loss ceiling), T1 at the next opposing level, reward/risk checked at 2:1 on both the stock move and the option dollars after spread, fees and time decay, contract pick (delta 0.45), size and exit rules. The plan is computed before the AI says a word.
 - **Setups on finished candles.** Opening range break and retest (a retest must actually touch the level), failed breaks, PDH/PDL retests, VWAP reclaims and a VWAP + MACD strategy (cross arms it, VWAP retest enters, early entry only in a strong trend). All detectors read one snapshot; same-side ideas merge and call/put conflicts skip the bar. Regime from ADX, efficiency, VWAP crossings and overlap; time-matched RVOL; a developing volume profile.

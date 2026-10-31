@@ -2252,7 +2252,7 @@ async function loadLearning(){
       <td><span class="pill ${h.status === "PAPER CANDIDATE" ? "up" : h.status === "REJECTED" ? "warn" : "dim"}">${esc(h.status)}</span></td><td class="m" style="font-size:11.5px">${esc(h.criteria.rule || "")}${h.criteria.min_trades ? ` (≥${h.criteria.min_trades} trades, ≥${h.criteria.min_sessions} sessions)` : ""}${h.validation_from ? `; validation data from ${esc(h.validation_from)}` : ""}</td></tr>`).join("")}</tbody></table>` : '<div class="empty">No hypotheses registered.</div>';
   try {
     const r = await api("api/research/registry");
-    const en = r.entries || r.candidates || [];
+    const en = (r.entries || r.candidates || []).slice().sort((a, b) => String(a.rank || "Z").localeCompare(String(b.rank || "Z")));
     $("#lnReg").innerHTML = en.length ? `<table><thead><tr><th>Rank</th><th>Source</th><th>What</th><th>Evidence</th><th>Fit / next step</th></tr></thead><tbody>${en.map(x => `<tr><td><b>${esc(x.rank || "")}</b></td>
       <td style="font-size:12px">${x.url ? `<a href="${esc(x.url)}" target="_blank" rel="noopener noreferrer">${esc(x.name || x.url)}</a>` : esc(x.name || "")}<div class="m" style="font-size:11px">${esc(x.license || "")}${x.inspected_commit ? " · " + esc(String(x.inspected_commit).slice(0,7)) : ""}</div></td>
       <td class="m" style="font-size:12px">${esc(x.what || x.summary || "")}</td><td class="m" style="font-size:12px">${esc(x.evidence || x.reported || "")}</td><td class="m" style="font-size:12px">${esc(x.fit || x.next || x.rank_why || "")}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">${esc(r.note || "No registry yet.")}</div>`;

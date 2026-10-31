@@ -136,6 +136,20 @@ def summary():
         out["schwab_rate"] = {k: schwab.STATS.get(k) for k in ("calls", "waited_s", "http_errors")} | {"by_priority": dict(schwab.PRIORITY_STATS)}
     except Exception:
         pass
+    try:                                           # E9: scan coverage, never a claim of full-market coverage
+        import time as _t
+        import scanner_setups as SS
+        import lab
+        bars = dict(SS._state.get("bars") or {})
+        uni = len(SS.tickers()) if hasattr(SS, "tickers") else None
+        fresh = sum(1 for v in bars.values() if _t.time() - v[0] < 300)
+        out["coverage"] = {"tier1_open_positions": "managed first every engine tick (risk priority)",
+                           "board_universe": uni, "bars_fresh_5min": fresh,
+                           "coverage_pct": round(100 * fresh / uni, 1) if uni else None,
+                           "lab_bars_behind": lab._state.get("behind"), "lab_step_s": lab._state.get("step_s"),
+                           "note": "about 127 symbols plus the day's movers: not the whole market"}
+    except Exception:
+        pass
     try:
         import store
         out["db_mb"] = round(store.DB.stat().st_size / 1e6, 1) if store.DB.exists() else None

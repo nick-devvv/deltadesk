@@ -1,0 +1,13 @@
+[Unit]
+Description=DeltaDesk health probe (restarts deltadesk-web only when the process or its engine is dead/stuck)
+
+[Service]
+Type=oneshot
+Environment=DESK_UNIT=deltadesk-web.service
+Environment=DESK_URL=http://127.0.0.1:8765
+Environment=DESK_MAX_FAILS=3
+Environment=DESK_WARMUP_SEC=120
+Environment=DESK_FAILED_RETRY_SEC=900
+ExecStart=%h/.local/bin/deltadesk-healthcheck
+TimeoutStartSec=40s
+Nice=5

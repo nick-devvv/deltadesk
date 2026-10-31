@@ -1,0 +1,35 @@
+# DeltaDesk server (web UI + engine threads + the optional Kronos child), as a systemd USER service. v3.5
+# Based on the systemd man pages (systemd.service(5), systemd.unit(5), systemd.exec(5), systemd.resource-control(5)).
+# Replace %h/desk if the desk lives elsewhere, and /usr/bin/python3 with the interpreter that runs it today.
+[Unit]
+Description=DeltaDesk server (web UI + engine: market data, Schwab stream, scanner, lab, news)
+# bounded restarts: at most 8 starts in 15 min (automatic, manual and health-check starts all count)
+StartLimitIntervalSec=15min
+StartLimitBurst=8
+
+[Service]
+Type=exec
+WorkingDirectory=%h/desk
+Environment=PYTHONUNBUFFERED=1
+# settings only, chmod 600, never committed. The desk token can instead come from LoadCredential (stricter):
+EnvironmentFile=%h/.config/deltadesk/deltadesk.env
+# LoadCredential=deltadesk-token:%h/.config/credstore/deltadesk-token
+ExecStart=/usr/bin/python3 %h/desk/server.py
+Restart=on-failure
+RestartSec=5s
+# exponential backoff 5 s -> 2 min (systemd >= 254; delete these two lines on older systemd)
+RestartSteps=5
+RestartMaxDelaySec=2min
+# SIGTERM: server.py logs and exits; open paper positions stay in SQLite and are managed again on restart
+TimeoutStopSec=30s
+KillMode=mixed
+# resource budget for the server AND its Kronos child (same cgroup). EXAMPLE values: measure the peak first.
+MemoryHigh=2G
+MemoryMax=3G
+CPUWeight=200
+NoNewPrivileges=yes
+UMask=0077
+SyslogIdentifier=deltadesk-web
+
+[Install]
+WantedBy=default.target

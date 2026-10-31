@@ -241,6 +241,10 @@ def _until_next_bar():
 
 def main():
     ppid0 = os.getppid()
+    try:
+        os.nice(10)                          # v3.5: Kronos is optional research: lower CPU priority than the desk
+    except (OSError, AttributeError):
+        pass
     lock = single_instance()
     if lock is None:
         print("kronos_shadow: another copy is already running; this one exits", flush=True)

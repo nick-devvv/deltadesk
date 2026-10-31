@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# DeltaDesk health probe (v3.5). Restarts the desk ONLY when a restart can help:
+#   - /healthz doesn't answer (process dead or hung), or
+#   - /readyz says the engine heartbeat is stale or the database is not writable.
+# A Schwab login that expired or a stale market feed is NOT fixed by a restart: it is logged, not restarted.
+# Skips the warm-up window, leaves a deliberately stopped unit alone, retries a start-limited unit slowly.
+# Never prints the desk token or any secret (these two endpoints carry none).
+set -u
+UNIT="${DESK_UNIT:-deltadesk-web.service}"
+URL="${DESK_URL:-http://127.0.0.1:8765}"
+MAX_FAILS="${DESK_MAX_FAILS:-3}"
+WARMUP_SEC="${DESK_WARMUP_SEC:-120}"
+FAILED_RETRY_SEC="${DESK_FAILED_RETRY_SEC:-900}"
+STATE_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/deltadesk"
+FAILS_FILE="$STATE_DIR/health.fails"
+mkdir -p "$STATE_DIR"
+now=$(date +%s)
+ts() { date -d "$(systemctl --user show "$UNIT" -p "$1" --value)" +%s 2>/dev/null || echo 0; }
+
+case "$(systemctl --user is-active "$UNIT" 2>/dev/null)" in
+  active) ;;
+  activating|deactivating|reloading|refreshing) exit 0 ;;
+  failed)
+    if [ $(( now - $(ts StateChangeTimestamp) )) -ge "$FAILED_RETRY_SEC" ]; then
+      echo "$UNIT is failed (start limit); reset-failed + start"
+      systemctl --user reset-failed "$UNIT"; systemctl --user start --no-block "$UNIT"
+    fi
+    exit 0 ;;
+  *) exit 0 ;;   # stopped on purpose: don't fight the operator
+esac
+[ $(( now - $(ts ActiveEnterTimestamp) )) -lt "$WARMUP_SEC" ] && exit 0
+
+bad=""
+if ! curl -fsS --max-time 8 -o /dev/null "$URL/healthz"; then
+  bad="healthz not answering"
+else
+  R=$(curl -sS --max-time 8 "$URL/readyz" || true)
+  case "$R" in
+    *"engine worker stale"*|*"engine worker error"*) bad="engine heartbeat stale" ;;
+    *"database not writable"*) bad="database not writable" ;;
+    *'"ready": true'*) : ;;
+    *) echo "not ready, no restart (needs data/login, not a restart): $R" ;;
+  esac
+fi
+if [ -z "$bad" ]; then rm -f "$FAILS_FILE"; exit 0; fi
+n=$(( $(cat "$FAILS_FILE" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$FAILS_FILE"
+echo "$bad ($n/$MAX_FAILS)"
+if [ "$n" -ge "$MAX_FAILS" ]; then
+  rm -f "$FAILS_FILE"; echo "restarting $UNIT: $bad"; systemctl --user restart --no-block "$UNIT"
+fi
+exit 0

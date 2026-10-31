@@ -952,3 +952,36 @@ def test_verify_day_recomputes_paper_pnl_read_only(env, capsys, monkeypatch):
     with pytest.raises(Exception):
         import sqlite3
         sqlite3.connect(f"file:{store.DB}?mode=ro", uri=True).execute("DELETE FROM positions")
+
+
+def test_no_token_never_publishes_the_desk_through_a_tunnel(env, monkeypatch):
+    import http.client
+    import threading
+    from http.server import ThreadingHTTPServer
+    import server
+    monkeypatch.setattr(server, "DESK_TOKEN", "")
+    store.conn()
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), server.H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+
+    def get(path, headers=None):
+        c = http.client.HTTPConnection("127.0.0.1", srv.server_address[1], timeout=10)
+        c.request("GET", path, headers=headers or {})
+        r = c.getresponse()
+        r.read()
+        return r.status
+    try:
+        assert get("/api/health") == 200                                           # local, no proxy headers
+        assert get("/api/health", {"X-Forwarded-For": "203.0.113.9"}) == 403        # through a tunnel: refused
+        assert get("/healthz", {"X-Forwarded-For": "203.0.113.9"}) == 200           # liveness carries no data
+    finally:
+        srv.shutdown()
+
+
+def test_repeated_wrong_tokens_are_paused(http, monkeypatch):
+    import server
+    monkeypatch.setattr(server, "_FAILS", {})
+    for _ in range(20):
+        assert http("GET", "/api/health?k=wrong", {"X-Forwarded-For": "198.51.100.7"})[0] == 403
+    assert http("GET", "/api/health?k=tok-test-123", {"X-Forwarded-For": "198.51.100.7"})[0] == 403   # paused even with the right one
+    assert http("GET", "/api/health?k=tok-test-123", {"X-Forwarded-For": "198.51.100.8"})[0] == 200
