@@ -9,6 +9,9 @@ no positions), the same throttle/retry, the same cache layout.
   python3 tools/sprint_pull.py --symbols SPY,QQQ,IWM --from 2024-08-01 --to 2026-06-30 --gaps-only
   (--stock-only VIXY is the default: VIXY 1-minute stock bars, no options, as the labeled proxy for VIX in the
    "VIX falling" filter of oa_crosscheck_v1; pass --stock-only "" to skip it)
+  (--daily VIXY is the default: VIXY DAILY bars, split-adjusted, from --daily-from (2023-01-01) to --to, for the
+   252-session "IV-rank proxy: VIXY percentile" of oa_crosscheck_v2. The locked periods L1/L2 are cut out of that
+   range and never requested; pass --daily "" to skip it)
 
 What it pulls for each symbol and date range:
   1. stock 1-minute bars 04:00-20:00 ET (raw, feed sip), month files, the range clipped to exactly [from, to] in ET
@@ -84,6 +87,38 @@ def pull_stock(sym, a, b, feed="sip", today=None, log=print):
             done.write_text(json.dumps({"rows": len(df), "at": datetime.now().isoformat(timespec="seconds"), "feed": feed}))
         log(f"  {sym} {m0:%Y-%m}: {len(df)} bars")
     return out
+
+
+def locked_free_segments(a, b):
+    """[a, b] with every locked period cut out: [(start, end), ...]."""
+    segs = [(a, b)]
+    for x, y in periods.LOCKED.values():
+        nxt = []
+        for s, e in segs:
+            if e < x or s > y:
+                nxt.append((s, e))
+                continue
+            if s < x:
+                nxt.append((s, x - timedelta(days=1)))
+            if e > y:
+                nxt.append((y + timedelta(days=1), e))
+        segs = nxt
+    return segs
+
+
+def pull_daily(sym, a, b, feed="sip", log=print):
+    """Split-adjusted daily bars for [a, b] minus the locked periods, one file data/alpaca/daily/<SYM>.csv.gz."""
+    rows = []
+    segs = locked_free_segments(a, b)
+    for s, e in segs:
+        for page in PA.get(f"/v2/stocks/{sym}/bars", {"timeframe": "1Day", "start": _utc(s), "end": _utc(e + timedelta(days=1)),
+                                                      "limit": 10000, "adjustment": "split", "feed": feed, "sort": "asc"}):
+            rows += page.get("bars") or []
+    df = PA._frame(rows)
+    if len(df):
+        df = df.drop_duplicates("ts").sort_values("ts")
+    PA._write_gz(PA.ROOT / "daily" / f"{sym}.csv.gz", df)
+    return {"rows": len(df), "segments": [f"{s}..{e}" for s, e in segs]}
 
 
 def _fetch(path, syms, d, extra, kind):
@@ -199,6 +234,8 @@ def main(argv=None):
     ap.add_argument("--feed", default="sip", choices=["sip", "iex"])
     ap.add_argument("--gaps-only", action="store_true")
     ap.add_argument("--stock-only", default="VIXY", help="symbols pulled as stock bars only, no options (default VIXY)")
+    ap.add_argument("--daily", default="VIXY", help="symbols pulled as split-adjusted daily bars (default VIXY)")
+    ap.add_argument("--daily-from", default="2023-01-01", help="first day of the daily pull (locked periods are cut out)")
     ap.add_argument("--root", default=None, help="cache root (default data/alpaca)")
     ap.add_argument("--locked")
     ap.add_argument("--frozen")
@@ -234,6 +271,10 @@ def main(argv=None):
         g = gap_report(s, a, b, out_dir, options=False)
         print(f"{s}: {g['sessions']} sessions, {len(g['no_bars'])} weekdays without bars {g['no_bars'][:10]}, "
               f"{len(g['short_sessions'])} short sessions, {disk_mb(s)} MB on disk -> {g.get('file')}", flush=True)
+    for s in [x.strip().upper() for x in (x.daily or "").split(",") if x.strip()]:
+        if not x.gaps_only:
+            r = pull_daily(s, date.fromisoformat(x.daily_from), b, x.feed)
+            print(f"{s}: {r['rows']} daily bars (split-adjusted) over {', '.join(r['segments'])} (locked periods cut out)", flush=True)
     sm = SP.from_chains(HERE / "data" / "chains", set(syms))
     print("spread model for the runner:", sm.describe(), flush=True)
     return 0

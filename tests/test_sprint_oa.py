@@ -187,7 +187,8 @@ def test_runner_tags_rows_not_seen_by_oa_and_stress_runs_get_their_own_ids(tmp_p
 
 
 def test_shipped_specs_expand_and_validate():
-    want = {"orb_exits_v1": (195, "DEV"), "oa_crosscheck_v1": (444, "NOT_SEEN_BY_OA"), "setups_v1": (58, "DEV")}
+    want = {"orb_exits_v1": (195, "DEV"), "oa_crosscheck_v1": (444, "NOT_SEEN_BY_OA"), "setups_v1": (58, "DEV"),
+            "oa_crosscheck_v2": (66, "NOT_SEEN_BY_OA")}
     for name, (n, period) in want.items():
         spec = json.loads((ROOT / "sprint" / "specs" / f"{name}.json").read_text())
         runs = engine.expand(spec)

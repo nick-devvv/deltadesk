@@ -1,0 +1,129 @@
+{
+  "spec_id": "oa_crosscheck_v2",
+  "description": "Option Alpha's optimizer theme for breakout calls (calm, risk-on days; in-sample on OA's 19 positive runs: IV rank <= ~40 in 8, open change 0 to +0.75% in 4, VIX change <= ~1% in 4), pre-registered 2026-10-31 and tested on the period OA never saw (NOT_SEEN_BY_OA, 2024-08-01..2025-10-29). SPY, QQQ, IWM each on its own, ORB60 calls and puts, first breakout only, signal bars finishing by 12:00, desk fills, base cost (2% half-spread), all out 15:25, fixed stop/target as % of the debit: T1's 50/100 with the 0.50-delta contract (d45-60t50; OA's re-run OA-S1-088 on Nov 2025-Jun 2026: 75 trades, PF 1.55) and the Stage-1 survivor 20/60 with d40-55t45. Filters (every run with a filter has its unfiltered twin here; each filter is also tested against random day-skips): (1) vixy_pctl_le40, IV-rank proxy: VIXY percentile <= 40% (the share of the 252 split-adjusted daily VIXY closes ending at the prior session's close that are at or below that close; the window skips the locked months Feb-Jul 2024, which are never pulled, so early dates reach back into 2023; VIXY's decay biases this proxy low); (2) vixy_not_rising: VIXY's last finished 1-minute close at the decision <= its prior close x 1.01 (proxy: VIXY); (3) gap_side_075: open vs prior close in (0%, +0.75%] for calls, [-0.75%, 0%) for puts; (4) calm = all three. Calls and puts both run (1)-(4). Puts also run the mirrored regime: VIXY percentile >= 60% and VIXY's last 1-minute close >= its prior close x 1.01. 66 runs, all counted as trials.",
+  "period": "NOT_SEEN_BY_OA",
+  "symbols": [
+    "SPY",
+    "QQQ",
+    "IWM"
+  ],
+  "defaults": {
+    "side": "C",
+    "contract": "d40-55t45",
+    "allout": "15:25",
+    "time": "b",
+    "stop": "fixed",
+    "tp": "none",
+    "tp_buffer": "$0.03",
+    "rr_min": null,
+    "trail": "none",
+    "mechanics": "desk",
+    "filters": []
+  },
+  "blocks": [
+    {
+      "name": "calm_regime",
+      "why": "Unfiltered twin, each part of the calm regime, and all three together; calls and puts; 50/100 (0.50 delta) and 20/60 (0.45 delta). 60 runs.",
+      "grid": {
+        "symbols": [
+          [
+            "SPY"
+          ],
+          [
+            "QQQ"
+          ],
+          [
+            "IWM"
+          ]
+        ],
+        "entry": [
+          "orb60"
+        ],
+        "side": [
+          "C",
+          "P"
+        ],
+        "pair": [
+          {
+            "fixed_stop": 0.5,
+            "fixed_target": 1.0,
+            "contract": "d45-60t50"
+          },
+          {
+            "fixed_stop": 0.2,
+            "fixed_target": 0.6,
+            "contract": "d40-55t45"
+          }
+        ],
+        "filters": [
+          [],
+          [
+            "vixy_pctl_le40"
+          ],
+          [
+            "vixy_not_rising"
+          ],
+          [
+            "gap_side_075"
+          ],
+          [
+            "vixy_pctl_le40",
+            "vixy_not_rising",
+            "gap_side_075"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "mirrored_regime_puts",
+      "why": "Puts only: VIXY percentile >= 60% and VIXY up at least 1% on its prior close (proxy: VIXY). Twin = the unfiltered put runs above. 6 runs.",
+      "grid": {
+        "symbols": [
+          [
+            "SPY"
+          ],
+          [
+            "QQQ"
+          ],
+          [
+            "IWM"
+          ]
+        ],
+        "entry": [
+          "orb60"
+        ],
+        "side": [
+          "P"
+        ],
+        "pair": [
+          {
+            "fixed_stop": 0.5,
+            "fixed_target": 1.0,
+            "contract": "d45-60t50"
+          },
+          {
+            "fixed_stop": 0.2,
+            "fixed_target": 0.6,
+            "contract": "d40-55t45"
+          }
+        ],
+        "filters": [
+          [
+            "vixy_pctl_ge60",
+            "vixy_rising_1pct"
+          ]
+        ]
+      }
+    }
+  ],
+  "robustness": {
+    "top_k": 5,
+    "random_paths": 5,
+    "fake_seeds": 0,
+    "min_trades": 60
+  },
+  "oa_reference": {
+    "SPY|orb60|C|50/100|-": "PF 1.55 (OA-S1-088, Nov 2025-Jun 2026)",
+    "SPY|orb60|C|20/60|-": "PF 1.33 (OA-S1-023)"
+  }
+}

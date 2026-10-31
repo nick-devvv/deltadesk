@@ -22,6 +22,14 @@ Filters (entry-level, pre-registered in SPRINT_PLAN "Day type"):
                PROXY: VIXY (Alpaca has no VIX index). Applied as stated to calls and puts alike (no mirror given).
   gap_side_075 open-gap side rule (the optimizer's second lead): calls only when today's 09:30 open vs the prior
                close is above 0% and at most +0.75%, puts only when below 0% and at least -0.75% (the symbol's own)
+  vixy_pctl_le40 / vixy_pctl_ge60   "IV-rank proxy: VIXY percentile": the share of the 252 split-adjusted daily VIXY
+               closes ending at the prior session's close that are <= that close is <= 40% (calm) / >= 60% (stressed).
+               The window skips the locked months (never pulled), so early in NOT_SEEN it reaches back into 2023.
+               VIXY decays over time (futures roll), so this percentile runs lower than a true IV rank: a labeled proxy.
+  vixy_not_rising / vixy_rising_1pct   VIXY's last finished 1-minute close at the decision is <= its prior close x 1.01
+               (VIX not rising) / >= its prior close x 1.01 (rising at least 1%). PROXY: VIXY.
+Several filters on one run must all pass (oa_crosscheck_v2's "calm" regime = vixy_pctl_le40 + vixy_not_rising +
+gap_side_075; the mirrored put regime = vixy_pctl_ge60 + vixy_rising_1pct).
 An event day outside the calendar's coverage is not traded by these filters (counted as "event calendar unknown").
 Specs may give a grid value as an object to set several fields together (e.g. a stop/target pair).
 """
@@ -120,7 +128,8 @@ def _filters_ok(r, ctx, sig, day_count):
             return "FOMC day skipped"
         if cp:
             return "CPI day skipped"
-    if "vixy_falling" in fs:
+    vix_1m = [f for f in ("vixy_falling", "vixy_not_rising", "vixy_rising_1pct") if f in fs]
+    if vix_1m:
         vx = ctx.aux.get("VIXY")
         if vx is None or ctx.day not in vx.rth:
             return "no VIXY bars for the day (VIX proxy)"
@@ -131,8 +140,22 @@ def _filters_ok(r, ctx, sig, day_count):
         closes = closes[~np.isnan(closes)]
         if not len(closes):
             return "no VIXY bar yet today (VIX proxy)"
-        if not closes[-1] < pc["close"]:
+        last, prev = float(closes[-1]), pc["close"]
+        if "vixy_falling" in fs and not last < prev:
             return "VIX proxy (VIXY) not below its prior close"
+        if "vixy_not_rising" in fs and not last <= prev * 1.01:
+            return "VIX proxy (VIXY) up more than 1% on its prior close"
+        if "vixy_rising_1pct" in fs and not last >= prev * 1.01:
+            return "VIX proxy (VIXY) not up 1% on its prior close"
+    if "vixy_pctl_le40" in fs or "vixy_pctl_ge60" in fs:
+        prev = ctx.series.prev_day(ctx.day)
+        pr = data.percentile_rank(ctx.aux.get("VIXY_D"), prev["day"]) if prev else None
+        if pr is None:
+            return "VIXY percentile unknown (needs 252 daily closes up to the prior session)"
+        if "vixy_pctl_le40" in fs and pr > 0.40:
+            return "VIXY percentile above 40% (not calm)"
+        if "vixy_pctl_ge60" in fs and pr < 0.60:
+            return "VIXY percentile below 60%"
     if "gap_side_075" in fs:
         prev = ctx.series.prev_day(ctx.day)
         if prev is None or np.isnan(ctx.o[0]):
@@ -188,7 +211,13 @@ def run_pass(runs, a, b, root=None, spread=None, progress=None, writer=None, lim
     sessions = {}
     syms = sorted({s for r in runs for s in r["symbols"]})
     aux = {}
-    if any("vixy_falling" in (r.get("filters") or ()) for r in runs):
+    used = {f for r in runs for f in (r.get("filters") or ())}
+    if used & {"vixy_pctl_le40", "vixy_pctl_ge60"}:
+        aux["VIXY_D"] = data.read_daily("VIXY", root)              # split-adjusted daily closes (proxy: VIXY percentile)
+        if progress:
+            n = None if aux["VIXY_D"] is None else len(aux["VIXY_D"])
+            progress(f"  VIX percentile proxy: VIXY daily {'MISSING (percentile filters skip every signal)' if n is None else str(n) + ' closes'}")
+    if used & {"vixy_falling", "vixy_not_rising", "vixy_rising_1pct"}:
         vdf = data.read_stock("VIXY", a, b, root)                 # the labeled VIX proxy (stock bars only)
         aux["VIXY"] = data.Series("VIXY", vdf) if vdf is not None else None
         if progress:

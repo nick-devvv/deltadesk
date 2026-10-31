@@ -8,6 +8,7 @@ This runs the sprint's backtests on Chart's computer, the only machine that can 
 | --- | --- | --- | --- | --- |
 | `sprint/specs/orb_exits_v1.json` | 195 | DEV 2024-08-01 to 2026-06-30 | base 2% + 5% stress | Which exit makes the most money on ORB 15/30/60 breakouts: the current fixed-% plan A, a key-level target B, C, E, or a trail? |
 | `sprint/specs/oa_crosscheck_v1.json` | 444 | NOT_SEEN_BY_OA 2024-08-01 to 2025-10-29 | base 2% + 5% stress | Do Option Alpha's Stage-1 survivors (SPY ORB60 calls, fixed stop/target 20/60, 15/45, 10/30), OA's T1 (50/100) and OA's filter leads hold up on the 15 months OA never saw? |
+| `sprint/specs/oa_crosscheck_v2.json` (optional step 5b) | 66 | NOT_SEEN_BY_OA | base 2% only | Does Option Alpha's "calm, risk-on day" theme for breakout calls (IV-rank proxy, VIX not rising, small gap up) hold on unseen data? T1's 50/100 and 20/60. |
 | `sprint/specs/setups_v1.json` | 58 | DEV | base 2% only | First look at every other implemented setup (noise band and its no-cap twin, VWAP + 2-min MACD retest, prior-day high/low retest + 9 EMA, failed-break calls, flush reversal) with the same six exits. |
 
 The cost model is the pre-registered one: a half-spread of **2% of the premium** on every fill (MODELED-SPREAD; amended from 5% before any run, see SPRINT_PLAN), plus fees of $0.65 per contract per side. The 5% reruns are the cost stress test; their run ids end in `@s5`. The desk's chain logs (which would give MEASURED-SPREAD) only start on 2026-11-02 and don't cover these periods. Option trades (for exact stop fills) are not part of this run; without them a stop that trades through inside a minute fills at the stop price, and a stop gapped through fills at the next bar's open.
@@ -17,7 +18,7 @@ The cost model is the pre-registered one: a half-spread of **2% of the premium**
 | Step | Time (estimate) | Disk |
 | --- | --- | --- |
 | Clone + venv + sprint tests | 3-5 min | about 300 MB (venv) |
-| Pull SPY, QQQ, IWM, 2024-08-01 to 2026-06-30: stock bars 04:00-20:00 ET and 0DTE option bars within ±3% of the open; VIXY stock bars only (the VIX proxy) | 30-60 min (about 3,000-4,000 requests under the 200/min free-plan limit) | 0.5-1.5 GB |
+| Pull SPY, QQQ, IWM, 2024-08-01 to 2026-06-30: stock bars 04:00-20:00 ET and 0DTE option bars within ±3% of the open; VIXY 1-minute stock bars (the VIX proxy) and VIXY split-adjusted daily bars from 2023-01-01 with the locked months cut out (the IV-rank proxy) | 30-60 min (about 3,000-4,000 requests under the 200/min free-plan limit) | 0.5-1.5 GB |
 | ORB exits, base + 5% | 15-30 min | |
 | OA cross-check, base + 5% | 10-25 min | |
 | Other setups, base | 8-20 min | |
@@ -50,6 +51,23 @@ If a step fails, show the error and stop. Don't change any code; re-running the 
    cat data/sprint/runs_*.csv
    (if the chat can't take that much text, send Nick the file ~/sprint_results.zip instead)
 ```
+
+## Optional step 5b (run after the first five; about 5 minutes)
+
+`oa_crosscheck_v2` (66 runs) tests Option Alpha's "calm, risk-on day" theme for breakout calls on the period OA never saw. It needs VIXY daily bars from 2023, which the earlier pull didn't fetch, so the line below updates the code, pulls them (locked months cut out, 2 requests), runs the spec and prints its report:
+
+```
+cd ~/sprint && git fetch -q origin sprint/exits && git reset -q --hard origin/sprint/exits && mkdir -p data/sprint/logs && .venv/bin/python tools/sprint_pull.py --symbols "" --stock-only VIXY --daily VIXY --from 2024-08-01 --to 2025-10-29 2>&1 | tail -4 && .venv/bin/python tools/sprint_run.py sprint/specs/oa_crosscheck_v2.json > data/sprint/logs/oa_v2.log 2>&1 && grep -E "^sprint |VIX|pass [12] done|^report:" data/sprint/logs/oa_v2.log && cat "$(ls -t data/sprint/report_*oa_crosscheck_v2*.md | head -1)" || tail -30 data/sprint/logs/oa_v2.log
+```
+
+Then re-run step 6's zip line so `~/sprint_results.zip` includes the new report and run-log rows.
+
+Pre-registered in the spec (all 66 runs count as trials): SPY, QQQ, IWM each on its own, ORB60 calls and puts, desk fills, base cost, fixed 50/100 with the 0.50-delta contract (d45-60t50) and 20/60 with d40-55t45. Filters, each against its unfiltered twin and random day-skips:
+- `vixy_pctl_le40`: IV-rank **proxy: VIXY percentile** ≤ 40% (share of the 252 split-adjusted daily VIXY closes ending at the prior close that are at or below it). The window skips the locked months, so early dates reach back into 2023. VIXY decays over time, so this runs lower than a true IV rank.
+- `vixy_not_rising`: VIXY's last finished 1-minute close at the decision ≤ its prior close × 1.01 (**proxy: VIXY**).
+- `gap_side_075`: open vs prior close in (0%, +0.75%] for calls, [-0.75%, 0%) for puts.
+- **calm** = all three together.
+- Puts only, the mirrored regime: VIXY percentile ≥ 60% and VIXY ≥ its prior close × 1.01.
 
 ## What Nick sends back
 

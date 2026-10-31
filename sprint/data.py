@@ -324,6 +324,34 @@ def read_option_day(under, day, root=None, want_trades=True):
     return out
 
 
+def read_daily(sym, root=None):
+    """Split-adjusted daily closes {date: close} from data/alpaca/daily/<SYM>.csv.gz, locked-period dates dropped
+    (they are never pulled; this is a second guard). None if the file is missing."""
+    from .periods import LOCKED
+    f = Path(root or ROOT) / "daily" / f"{sym}.csv.gz"
+    if not f.exists():
+        return None
+    df = pd.read_csv(f, compression="gzip")
+    if not len(df):
+        return pd.Series(dtype=float)
+    d = pd.to_datetime(df["ts"], utc=True, format="ISO8601").dt.tz_convert("America/New_York").dt.date
+    s = pd.Series(df["c"].to_numpy(float), index=d)
+    s = s[~s.index.duplicated(keep="last")].sort_index()
+    keep = [not any(a <= x <= b for a, b in LOCKED.values()) for x in s.index]
+    return s[keep]
+
+
+def percentile_rank(closes, prior_day, n=252):
+    """Share of the n daily closes ending at `prior_day` (inclusive) that are <= the close on `prior_day`.
+    Uses nothing after prior_day. None if prior_day has no close or fewer than n closes exist up to it."""
+    if closes is None or prior_day not in closes.index:
+        return None
+    w = closes[closes.index <= prior_day].iloc[-n:]
+    if len(w) < n:
+        return None
+    return float((w.to_numpy() <= float(w.iloc[-1])).mean())
+
+
 def option_days(under, root=None):
     folder = Path(root or ROOT) / "options" / under
     if not folder.exists():

@@ -33,7 +33,8 @@ VALID = {"stop": {"premium", "level", "noise", "fixed"}, "mechanics": {"desk", "
          "trail": {"none", "be6", "be8", "be10", "be15", "belevel", "L1", "L2", "L3", "hl1m", "hl5m", "lvl", "gb20", "gb30", "gb40",
                    "gb50", "gb60", "vwap", "ema9"}, "side": {"both", "C", "P"},
          "filters": {"after14", "chop2", "trend_only", "noise_trend", "sma20_side", "sma20_side_1pct", "skip_fomc", "skip_fomc_cpi",
-                     "vixy_falling", "gap_side_075"}}
+                     "vixy_falling", "gap_side_075", "vixy_pctl_le40", "vixy_pctl_ge60", "vixy_not_rising",
+                     "vixy_rising_1pct"}}
 
 
 def label_for(tag):
@@ -238,8 +239,13 @@ def run_spec(spec_path, a=None, b=None, locked=None, frozen=None, data_root=None
             notes.append(f"DSR {rb['dsr']} (N={n_trials})")
         if rb.get("skip_test"):
             notes.append(f"random day-skip p {rb['skip_test']['p_value']} vs {rb['skip_test']['twin']}")
-        if "vixy_falling" in (r.get("filters") or ()):
+        fl = set(r.get("filters") or ())
+        if "vixy_falling" in fl:
             notes.append("VIX falling filter: proxy: VIXY (last 1m close below its prior close)")
+        if fl & {"vixy_not_rising", "vixy_rising_1pct"}:
+            notes.append("VIX rising/not rising: proxy: VIXY (last 1m close vs prior close x 1.01)")
+        if fl & {"vixy_pctl_le40", "vixy_pctl_ge60"}:
+            notes.append("IV-rank proxy: VIXY percentile (252 split-adjusted daily closes; VIXY decay biases it low)")
         if rid in [x["run_id"] for x in top]:
             if rb.get("nudge_min_pf") is not None:
                 notes.append(f"nudge min PF {rb['nudge_min_pf']}")
@@ -366,6 +372,13 @@ def render(spec, sha, tag, a, b, runs, summ, robx, res, sessions, top, top_note,
                  "Stage-1 result for the same rule on SPY, Nov 2025-Jun 2026 (fills MODELED by OA, from docs/research/"
                  "sprint_runs.csv); T1/T2 used OA's 1-year window. Different period, different fill model: a cross-check, "
                  "not a replication.\n")
+        if any(set(r["filters"]) & {"vixy_pctl_le40", "vixy_pctl_ge60", "vixy_not_rising", "vixy_rising_1pct"} for r in fx):
+            L.append("Regime filters: `vixy_pctl_le40` / `vixy_pctl_ge60` = IV-rank **proxy: VIXY percentile** (share of the 252 "
+                     "split-adjusted daily VIXY closes ending at the prior close that are at or below it; the window skips the "
+                     "locked months, and VIXY's decay biases it low next to a true IV rank); `vixy_not_rising` / `vixy_rising_1pct` = "
+                     "VIXY's last finished 1-minute close at the decision vs its prior close x 1.01 (**proxy: VIXY**); "
+                     "`gap_side_075` = open vs prior close in (0%, +0.75%] for calls, [-0.75%, 0%) for puts. A run with several "
+                     "filters needs all of them. In-sample leads from Option Alpha's optimizer, tested on data OA never saw.\n")
         if any("vixy_falling" in r["filters"] for r in fx):
             L.append("`vixy_falling` = OA's \"VIX falling\" optimizer lead with **proxy: VIXY** (Alpaca has no VIX index): VIXY's last "
                      "finished 1-minute close at the decision is below its prior close. `gap_side_075` = open vs prior close in "
