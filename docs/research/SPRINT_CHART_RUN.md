@@ -2,6 +2,20 @@
 
 This runs the sprint's backtests on Chart's computer, the only machine that can reach Alpaca's data API. Everything runs in its own folder, `~/sprint`, from branch `sprint/exits`. Nothing touches `~/desk`, its journal or the live desk, and nothing can place an order: the puller only reads `data.alpaca.markets` (market data), and the engine only reads files it pulled.
 
+## Run 5: the "skip the quiet days" rules on real option prices (about 5 minutes, no new data)
+
+SPRINT_PLAN Amendment 6, holdout 2. The four rules that passed 2020-2023 (F, G, H, I), plus a learner trained only on 2016-2024 history, are scored on the run-3 trade files: DEV 2024-08 to 2026-06, real Alpaca option prices. Results: SPRINT_RESULTS_5.md.
+
+```
+Sprint run 5 (research only, about 5 minutes, no new data). Show me every output.
+Same rules as before: never trade, never touch ~/desk, never pass --locked or --frozen, stop and show the error if a step fails.
+1. cd ~/sprint && git fetch -q origin sprint/exits && git reset -q --hard origin/sprint/exits && git log -1 --oneline
+2. cd ~/sprint && .venv/bin/python -m pytest -q tests/test_sprint_*.py 2>&1 | tail -3
+3. cd ~/sprint && ls -la data/sprint/trades_otm_v1_*.csv.gz data/sprint/trades_hist_v1_*.csv.gz && .venv/bin/python tools/sprint_regime.py > data/sprint/logs/run5_regime.log 2>&1; tail -25 data/sprint/logs/run5_regime.log
+4. cd ~/sprint && .venv/bin/python -m zipfile -c ~/sprint_results5.zip data/sprint/regime_holdout2_* data/sprint/logs/run5_regime.log && ls -la ~/sprint_results5.zip
+   (send Nick the step-3 output, or the file ~/sprint_results5.zip)
+```
+
 ## Run 4: free 2016-2023 history
 
 Nick approved a free long-history check. It tests the sprint's surviving ideas (`fb_or` with its base `fb`, `otm_put` with its unfiltered twin, `otm_bounce` with its twin) on **HIST = 2016-01-04 to 2024-01-31**: eight years these rules were never tuned on. The rules, pass bars, costs and idealizations were fixed before any pull or run in SPRINT_PLAN "Amendment 5" (commit `1d889ce`).

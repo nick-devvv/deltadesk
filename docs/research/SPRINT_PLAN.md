@@ -401,6 +401,18 @@ These pin down details the text above left open. None comes from a result.
 
 A rule that passes both becomes a frozen finalist for L1/L2 (each run once). If none passes, the report says so and nothing changes on the desk.
 
+**Holdout 1 result** (evaluated once, 2026-10-31; MODELED; numbers in SPRINT_RESULTS_5.md):
+- PASS: F (10:30 puts, range and volume), G, H and I (11:00 calls).
+- Fail: A, B and C (failed-break calls).
+
+**Learner, same session.** The walk-forward learner from Amendment 3 was run unchanged on the HIST trade file, with 24 months of training before its first out-of-sample month. Its logit model passed on both far-OTM runs (10:30 puts and 11:00 calls) and failed on fb_or.
+
+**Holdout 2 adds one pre-registered learner test** (written before any DEV look): fit the same logit model (Amendment 3 settings) on ALL HIST trades of the run, then score that run's DEV real-price trades with it. Take a trade when P(win) >= 0.5. It must meet the same holdout-2 bar as the rules.
+
+**Run ids:**
+- HIST: hist_v1-003 / hist_v1-005.
+- DEV real prices: otm_v1-010 (10:30 puts, d06-15t10, 15:25) and otm_v1-040 (11:00 calls, d03-12t07, 15:25).
+
 ## Limits
 
 - Backtests only.
