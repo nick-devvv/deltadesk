@@ -35,7 +35,7 @@ Other fixes made along the way:
 | Item | Source | What this session reproduced |
 |---|---|---|
 | ~$500 day (SPY 760P +$401, QQQ 692P +$136 = $537, noise-band paper ledger, Oct 30) | Chart's Oct 30 report | **Not verifiable here.** The live database is on Chart's computer. `tools/verify_day.py 2026-10-30 noise` opens it read-only and recomputes each position's P/L from its own orders and fees. Until Chart runs it, $537 is a report-derived sum of SIMULATED paper fills, not real money. One good day is not evidence of an edge. |
-| Test count | earlier reports | **Fresh run here: 224 passed, 1 skipped** (pandas 3; the pandas-2.2 run is in §8). The skip is the node-based page test when node is absent. |
+| Test count | earlier reports | **Fresh runs here: 226 passed, 1 skipped on pandas 3.0.5 and on pandas 2.2.3.** The skip is the optional TA-Lib parity check (TA-Lib is not installed here). |
 | ORB15 first-break underperformed controls | v3.3 study | Consistent on the same sessions in this study's baseline. Frozen ORB15 BASE (fixed 2R): stocks n 1,947, avg −0.224 R [−0.29, −0.16], controls −0.173, difference −0.051 [−0.135, +0.031]. SPY/QQQ n 30, avg −0.565 R. |
 | Noise band 61 trades / PF 1.67 | v3.1 report | Not re-run (modeled option prices, in-sample dates). Still RESEARCH ONLY. |
 
@@ -135,7 +135,7 @@ See §9 (filled from the research runs) and `deploy/DEPLOY.md`.
 
 ## 8. Tests and validation levels
 
-- **Unit/integration (here): 224 passed, 1 skipped** on pandas 3.x. New suites:
+- **Unit/integration (here): 226 passed, 1 skipped** on pandas 3.0.5, and **226 passed, 1 skipped** on pandas 2.2.3 / numpy 2.1.3. New suites:
   - `tests/test_v35.py`: crash-injected lifecycle, ledger-id collisions, as-of catalysts, content verification, contract scorer v2, router end-to-end, health/CSRF/cookie over real HTTP, priority budget, risk-first measurement, learning journal, news momentum, underlying-first, verify_day.
   - `tests/test_orbx.py`: the ORB sequence suite.
 - **Browser (local demo, Playwright):** chart sizing over time, tabs, widths and timeframes; Learning tab; header width at 11 widths. Adding the tab does not overflow the header more than v3.4.2 did; the min-width overflow between 1101 and 1252 px existed before.
