@@ -34,7 +34,7 @@ Other fixes made along the way:
 
 | Item | Source | What this session reproduced |
 |---|---|---|
-| ~$500 day (SPY 760P +$401, QQQ 692P +$136 = $537, noise-band paper ledger, Oct 30) | Chart's Oct 30 report | **Not verifiable here.** The live database is on Chart's computer. `tools/verify_day.py 2026-10-30 noise` opens it read-only and recomputes each position's P/L from its own orders and fees. Until Chart runs it, $537 is a report-derived sum of SIMULATED paper fills, not real money. One good day is not evidence of an edge. |
+| ~$500 day (SPY 760P +$401, QQQ 692P +$136 = $537, noise-band paper ledger, Oct 30) | Chart's Oct 30 report | **Verified from the raw records on Chart's computer** (`tools/verify_day.py 2026-10-30 noise`, read-only, Oct 30 after the install): SPY 760P stored +400.96 = recomputed +400.96; QQQ 692P stored +135.96 = recomputed +135.96; total +$536.92, both closed by ALL OUT 15:25. These are SIMULATED paper fills on real quotes, not real money, and one good day is not evidence of an edge. |
 | Test count | earlier reports | **Fresh runs here: 226 passed, 1 skipped on pandas 3.0.5 and on pandas 2.2.3.** The skip is the optional TA-Lib parity check (TA-Lib is not installed here). |
 | ORB15 first-break underperformed controls | v3.3 study | Consistent on the same sessions in this study's baseline. Frozen ORB15 BASE (fixed 2R): stocks n 1,947, avg −0.224 R [−0.29, −0.16], controls −0.173, difference −0.051 [−0.135, +0.031]. SPY/QQQ n 30, avg −0.565 R. |
 | Noise band 61 trades / PF 1.67 | v3.1 report | Not re-run (modeled option prices, in-sample dates). Still RESEARCH ONLY. |
