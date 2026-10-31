@@ -159,14 +159,10 @@ def test_research_page_shows_the_v4_lineup_with_a_collapsed_archive():
 
 
 @pytest.mark.skipif(not shutil.which("node"), reason="node not installed")
-def test_page_script_parses():
+def test_page_script_parses(tmp_path):
     html = (ROOT / "index.html").read_text()
     scripts = re.findall(r"<script(?![^>]*src=)[^>]*>(.*?)</script>", html, re.S)
-    js = "\n".join(scripts)
-    p = Path(ROOT / "tests" / "_v4_page_check.js")
-    try:
-        p.write_text(js)
-        res = subprocess.run(["node", "--check", str(p)], capture_output=True, text=True, timeout=60)
-    finally:
-        p.unlink(missing_ok=True)
+    p = tmp_path / "page_check.js"
+    p.write_text("\n".join(scripts))
+    res = subprocess.run(["node", "--check", str(p)], capture_output=True, text=True, timeout=60)
     assert res.returncode == 0, res.stderr[:2000]
