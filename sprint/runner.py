@@ -9,6 +9,16 @@
   5. append one row per run to data/sprint/runs_<host>.csv (columns = docs/research/sprint_runs.csv), write
      data/sprint/report_<date>.md, print a compact summary table
 Every number is a BACKTEST on cached Alpaca data with a MODELED (or MEASURED) spread; nothing here trades.
+
+MODELED specs (SPRINT_PLAN Amendment 5): `"tapes": "modeled"` prices the options with sprint/modeled.py from the stock
+bars, at IV = IV proxy x the multiplier in data/sprint/calib_modeled.json (tools/sprint_calibrate.py; refused when it is
+missing or thin). The spread is always the pre-registered default model (or --spread-pct), never logged 2026 chains.
+Every number is labeled "MODELED (BS, calibrated IV)". A spec period with a warm-up (HIST) loads history from
+periods.WARMUP; the guard checks the whole loaded range. Extra spec keys:
+  "validate_against": {block: real run id}  compare each block with that real-tape run from docs/research/sprint_runs.csv
+                      (pre-registered: same expectancy sign, PF within +/-35%); writes data/sprint/validation_<spec>.json
+  "validation": "<spec id>"                  read that validation file and label each block RELIABLE / UNRELIABLE; the
+                      pre-registered HIST reading is given for reliable blocks only
 """
 import csv
 import hashlib
@@ -25,6 +35,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 from . import VERSION, contracts, engine, entries, periods, report as R, sim, spread as SP
+from . import modeled as MD
 
 REPO = Path(__file__).resolve().parents[1]
 RUN_LOG = REPO / "docs" / "research" / "sprint_runs.csv"
@@ -42,7 +53,24 @@ def label_for(tag):
         return "BACKTEST in-sample (DEV)"
     if tag.startswith("NOT_SEEN_BY_OA"):
         return "BACKTEST on the period Option Alpha never saw (inside DEV)"
+    if tag.startswith("HIST"):
+        return f"BACKTEST {tag} (2016-2023 history, never used to choose these rules)"
     return f"BACKTEST {tag}"
+
+
+def real_runs(out_dir=None):
+    """{run_id: row} from docs/research/sprint_runs.csv, then data/sprint/runs_*.csv for ids it lacks (last row wins)."""
+    out = {}
+    for p in [RUN_LOG] + (sorted(Path(out_dir).glob("runs_*.csv")) if out_dir else []):
+        try:
+            with open(p) as f:
+                rows = {r["run_id"]: r for r in csv.DictReader(f)}
+        except OSError:
+            continue
+        for k, v in rows.items():
+            if p == RUN_LOG or k not in out:
+                out[k] = v
+    return out
 
 
 def host():
@@ -101,10 +129,13 @@ def _twin(r, by_key):
 
 def run_spec(spec_path, a=None, b=None, locked=None, frozen=None, data_root=None, chains_dir=None, out_dir=None, host_name=None,
              top_k=None, random_paths=None, fake_seeds=None, robust=True, limit_days=None, trials=None, log=print, today=None,
-             spread_pct=None):
+             spread_pct=None, calib_path=None):
     spec_path = Path(spec_path)
     spec = json.loads(spec_path.read_text())
     sha = periods.sha256_file(spec_path)
+    tape_mode = spec.get("tapes", "real")
+    if tape_mode not in ("real", "modeled"):
+        raise ValueError(f"spec tapes must be 'real' or 'modeled', not {tape_mode!r}")
     if locked:
         names = [x.strip().upper() for x in str(locked).split(",") if x.strip()]
         if len(names) != 1:
@@ -116,7 +147,10 @@ def run_spec(spec_path, a=None, b=None, locked=None, frozen=None, data_root=None
         pa, pb = periods.period_range(spec.get("period", "DEV"))
         a, b = a or pa, b or pb
         tag = spec.get("period", "DEV") if (a, b) == (pa, pb) else f"{spec.get('period', 'DEV')}[{a}..{b}]"
-    periods.guard(a, b, locked, frozen, spec_path)
+    warm_from = None if locked else periods.WARMUP.get(str(spec.get("period", "DEV")).upper())
+    periods.guard(min(a, warm_from) if warm_from else a, b, locked, frozen, spec_path)   # the whole range read
+    if tape_mode == "real" and str(spec.get("period", "DEV")).upper() == "HIST":
+        raise ValueError("HIST has no option prices (Alpaca's start in Feb 2024): a HIST spec needs \"tapes\": \"modeled\"")
     out_dir = Path(out_dir or REPO / "data" / "sprint")
     out_dir.mkdir(parents=True, exist_ok=True)
     host_name = host_name or host()
@@ -134,13 +168,29 @@ def run_spec(spec_path, a=None, b=None, locked=None, frozen=None, data_root=None
         for r in runs:
             r["run_id"] += suffix
     syms = sorted({s for r in runs for s in r["symbols"]})
-    spread = SP.SpreadModel(pct=float(spread_pct)) if spread_pct is not None else \
-        SP.from_chains(chains_dir or REPO / "data" / "chains", unders=set(syms))
+    calib = mods = None
+    if tape_mode == "modeled":
+        cp = Path(calib_path) if calib_path else out_dir / "calib_modeled.json"
+        calib = MD.load_calib(cp)
+        calib["_file"], calib["_sha"] = str(cp), periods.sha256_file(cp)[:12]
+        mods = {}
+        for r in runs:
+            for sd in (("C", "P") if r["side"] == "both" else (r["side"],)):
+                mods[MD.calib_key(r["exit"].contract, sd)] = MD.multiplier(calib, r["exit"].contract, sd)   # refuses thin keys
+        spread = SP.SpreadModel(pct=float(spread_pct)) if spread_pct is not None else SP.SpreadModel()
+    else:
+        spread = SP.SpreadModel(pct=float(spread_pct)) if spread_pct is not None else \
+            SP.from_chains(chains_dir or REPO / "data" / "chains", unders=set(syms))
     log(f"sprint {VERSION}: spec {spec['spec_id']} ({len(runs)} runs, sha256 {sha[:12]}), period {tag} {a}..{b}, symbols "
         f"{','.join(syms)}, {spread.describe()}")
+    if mods is not None:
+        log(f"  tapes: {MD.LABEL}; calibration {calib['_file']} (sha256 {calib['_sha']}), multipliers "
+            + ", ".join(f"{k} x{v:.3f}" for k, v in sorted(mods.items()))
+            + (f"; history from {warm_from} (indicators only)" if warm_from else ""))
     t0 = time.time()
     writer = engine.TradeWriter(out_dir / f"trades_{spec['spec_id']}{suffix}_{today}.csv.gz")
-    res, sessions = engine.run_pass(runs, a, b, data_root, spread, progress=log, writer=writer, limit_days=limit_days)
+    mkw = dict(tape_mode=tape_mode, calib=calib, warm_from=warm_from)
+    res, sessions = engine.run_pass(runs, a, b, data_root, spread, progress=log, writer=writer, limit_days=limit_days, **mkw)
     writer.close()
     log(f"pass 1 done in {time.time() - t0:.0f}s")
     all_sessions = sorted({d for v in sessions.values() for d in v})
@@ -196,7 +246,7 @@ def run_spec(spec_path, a=None, b=None, locked=None, frozen=None, data_root=None
     if jobs:
         log(f"pass 2 (robustness): {len(jobs)} jobs for the top {len(top)} runs")
         t1 = time.time()
-        res2, _ = engine.run_pass(jobs, a, b, data_root, spread, progress=log, limit_days=limit_days)
+        res2, _ = engine.run_pass(jobs, a, b, data_root, spread, progress=log, limit_days=limit_days, **mkw)
         log(f"pass 2 done in {time.time() - t1:.0f}s")
     allres = dict(res, **res2)
     for r in top:
@@ -219,6 +269,44 @@ def run_spec(spec_path, a=None, b=None, locked=None, frozen=None, data_root=None
         fk = [x for x in fk if x is not None]
         robx[rid]["fake_exp"] = fk
         robx[rid]["fake_beat"] = R.beat_share(exp, fk)
+    extra = None
+    if tape_mode == "modeled":
+        extra = {"calib": calib, "mods": mods, "warm_from": warm_from, "validation": None, "reliable": None, "readings": {},
+                 "stress": bool(suffix)}
+        if spec.get("validate_against"):
+            ref = real_runs(out_dir)
+            val = {}
+            for r in runs:
+                rid_real = spec["validate_against"].get(r["block"])
+                if not rid_real:
+                    continue
+                row = ref.get(rid_real)
+                v = MD.validate(summ[r["run_id"]], row or {})
+                v.update(run=r["run_id"], real_run=rid_real, real_found=row is not None)
+                val[r["block"]] = v
+                log(f"validation {r['block']}: {'PASS' if v['pass'] else 'FAIL'} (real {rid_real}: n={v['real_trades']} exp "
+                    f"{v['real_exp']} PF {v['real_pf']}; modeled {r['run_id']}: n={v['modeled_trades']} exp {v['modeled_exp']} "
+                    f"PF {v['modeled_pf']}; PF ratio {v['pf_ratio']}) [{MD.LABEL}]")
+            vp = out_dir / f"validation_{spec['spec_id']}{suffix}.json"
+            vp.write_text(json.dumps({"spec": spec["spec_id"], "spec_sha": sha, "period": tag, "spread": spread.label,
+                                      "calib_sha": calib["_sha"], "bar": "same expectancy sign and modeled PF within +/-35% of the real PF",
+                                      "blocks": val, "at": datetime.now().isoformat(timespec="seconds")}, indent=1))
+            extra["validation"] = val
+            log(f"validation file: {vp}")
+        if spec.get("validation"):
+            vp = out_dir / f"validation_{spec['validation']}.json"
+            vb = json.loads(vp.read_text())["blocks"] if vp.exists() else {}
+            extra["reliable"] = {r["block"]: (vb.get(r["block"]) or {}).get("pass") for r in runs}
+            extra["validation_file"] = str(vp) if vp.exists() else None
+            for r in runs:
+                rel = extra["reliable"][r["block"]]
+                items, ok = MD.hist_reading(summ[r["run_id"]], robx[r["run_id"]], bool(r.get("filters")))
+                extra["readings"][r["run_id"]] = {"items": items, "verdict": ok, "reliable": rel}
+                state = ("HOLDS" if ok else "does not hold") if rel else ("UNRELIABLE (failed validation)" if rel is False else
+                                                                          "NOT VALIDATED (no validation file: treat as UNRELIABLE)")
+                if suffix:
+                    state += f" (cost stress {suffix}: information only; the pre-registered reading is the base-cost run's)"
+                log(f"HIST reading {r['block']} ({r['run_id']}): {state} [{MD.LABEL}]")
     stamp = datetime.now().isoformat(timespec="seconds")
     csv_path = out_dir / f"runs_{host_name}.csv"
     new = not csv_path.exists()
@@ -239,6 +327,18 @@ def run_spec(spec_path, a=None, b=None, locked=None, frozen=None, data_root=None
             notes.append(f"DSR {rb['dsr']} (N={n_trials})")
         if rb.get("skip_test"):
             notes.append(f"random day-skip p {rb['skip_test']['p_value']} vs {rb['skip_test']['twin']}")
+        if extra is not None:
+            notes.append(f"{MD.LABEL}: option prices from Black-Scholes on the stock bars, IV = 20-session realized 1m vol x "
+                         + ", ".join(f"{MD.calib_key(r['exit'].contract, sd)} {mods[MD.calib_key(r['exit'].contract, sd)]:.3f}"
+                                     for sd in (("C", "P") if r["side"] == "both" else (r["side"],)))
+                         + f" (calib {calib['_sha']}); 0DTE priced every session")
+            if (extra.get("validation") or {}).get(r["block"]):
+                v = extra["validation"][r["block"]]
+                notes.append(f"validation vs {v['real_run']}: {'PASS' if v['pass'] else 'FAIL'} (PF ratio {v['pf_ratio']})")
+            if extra.get("reliable") is not None:
+                rel = extra["reliable"].get(r["block"])
+                notes.append("RELIABLE (validated on DEV)" if rel else "UNRELIABLE (failed validation)" if rel is False else
+                             "NOT VALIDATED (treat as UNRELIABLE)")
         fl = set(r.get("filters") or ())
         if "vixy_falling" in fl:
             notes.append("VIX falling filter: proxy: VIXY (last 1m close below its prior close)")
@@ -260,7 +360,7 @@ def run_spec(spec_path, a=None, b=None, locked=None, frozen=None, data_root=None
             w.writeheader()
         w.writerows(rows)
     md = render(spec, sha, tag, a, b, runs, summ, robx, res, sessions, top, top_note, spread, n_trials, host_name, csv_path,
-                writer.path, time.time() - t0)
+                writer.path, time.time() - t0, extra)
     rp = out_dir / f"report_{today}_{spec['spec_id']}{suffix}.md"
     if rp.exists():
         rp = out_dir / f"report_{today}_{spec['spec_id']}{suffix}_{datetime.now():%H%M%S}.md"
@@ -268,7 +368,7 @@ def run_spec(spec_path, a=None, b=None, locked=None, frozen=None, data_root=None
     log(summary_table(runs, summ))
     log(f"\nrun log: {csv_path}\nreport:  {rp}\ntrades:  {writer.path}")
     return {"runs": runs, "summary": summ, "robust": robx, "csv": csv_path, "report": rp, "results": res, "sessions": sessions,
-            "trials": n_trials}
+            "trials": n_trials, "modeled": extra}
 
 
 def _lab(r):
@@ -324,22 +424,81 @@ def _best(runs, summ, pred, min_n):
     return max(c, key=lambda r: summ[r["run_id"]].get("expectancy") or -1e9) if c else None
 
 
-def render(spec, sha, tag, a, b, runs, summ, robx, res, sessions, top, top_note, spread, n_trials, host_name, csv_path, trades_path, secs):
+def render(spec, sha, tag, a, b, runs, summ, robx, res, sessions, top, top_note, spread, n_trials, host_name, csv_path, trades_path, secs,
+           extra=None):
     min_n = (spec.get("robustness") or {}).get("min_trades", 60)
     L = []
-    L.append(f"# Sprint report: {spec['spec_id']} ({tag}), {spread.label}\n")
+    mlab = f" {MD.LABEL}" if extra is not None else ""
+    L.append(f"# Sprint report: {spec['spec_id']} ({tag}), {spread.label}{',' + mlab if mlab else ''}\n")
     L.append(f"Generated {datetime.now():%Y-%m-%d %H:%M} on `{host_name}` by sprint engine `{VERSION}` in {secs / 60:.1f} min. "
              f"Spec sha256 `{sha}`.\n")
-    L.append(f"**Every number below is a {label_for(tag)}** on Alpaca 1-minute "
-             f"bars, {a} to {b}. Option fills are real traded prices +/- a half-spread: **{spread.describe()}**. "
-             "Fees $0.65 per contract per side. P/L is per 1-contract unit. Deltas are BS-EST (Black-Scholes from the option's "
-             "price). Nothing here is a live or paper fill.\n")
+    if extra is None:
+        L.append(f"**Every number below is a {label_for(tag)}** on Alpaca 1-minute "
+                 f"bars, {a} to {b}. Option fills are real traded prices +/- a half-spread: **{spread.describe()}**. "
+                 "Fees $0.65 per contract per side. P/L is per 1-contract unit. Deltas are BS-EST (Black-Scholes from the option's "
+                 "price). Nothing here is a live or paper fill.\n")
+    else:
+        mods = extra["mods"]
+        L.append(f"**Every number below is a {label_for(tag)}, {MD.LABEL}.** Stock prices are Alpaca 1-minute bars, {a} to {b}"
+                 + (f" (history from {extra['warm_from']} feeds indicators only)" if extra.get("warm_from") else "") + ". "
+                 "**Option prices are not real**: every contract is priced with Black-Scholes from the stock's bars at one implied "
+                 "vol per day = the 20-session realized 1-minute volatility (prior sessions only) x a multiplier fitted on DEV's real "
+                 "option trades (" + ", ".join(f"`{k}` x{v:.3f}" for k, v in sorted(mods.items())) + f"; calibration sha256 "
+                 f"`{extra['calib']['_sha']}`). Fills: modeled price +/- a half-spread, **{spread.describe()}**. Fees $0.65 per "
+                 "contract per side. P/L is per 1-contract unit. Nothing here is a live or paper fill.\n")
     cov = ", ".join(f"{s}: {len(v)} sessions" for s, v in sorted(sessions.items()))
     L.append(f"Data: {cov}. Runs in this spec: {len(runs)}. Trials counted for the deflated Sharpe: {n_trials} "
              f"(docs/research/sprint_runs.csv + data/sprint/runs_*.csv + this spec).\n")
-    L.append("Known limits: July 2024 is locked (L2), so early-August 2024 sessions have partial history; news and VIX are "
-             "unknown in the backtest (rules that need them never fire); a contract needs BS-EST |delta| inside the band, "
-             "so some signals have no contract (counted as skips).\n")
+    if extra is None:
+        L.append("Known limits: July 2024 is locked (L2), so early-August 2024 sessions have partial history; news and VIX are "
+                 "unknown in the backtest (rules that need them never fire); a contract needs BS-EST |delta| inside the band, "
+                 "so some signals have no contract (counted as skips).\n")
+    else:
+        L.append("Idealizations of the model (SPRINT_PLAN Amendment 5): a 0DTE contract is priced every session (before Nov 2022 "
+                 "SPY/QQQ/IWM did not list an expiry every weekday; see the Mon/Wed/Fri vs Tue/Thu lines); one flat IV per day "
+                 "(no smile, no intraday IV change: real puts gain extra value when IV jumps in a selloff, real calls lose some "
+                 "when IV falls in a rally); a price every minute; the 2% half-spread may be optimistic for thinner years (the "
+                 "5% rerun is the check). Sessions without an IV proxy (fewer than 10 prior sessions) are skipped.\n")
+        if extra.get("validation"):
+            v = extra["validation"]
+            L.append(f"## Validation on DEV: modeled vs real option prices ({MD.LABEL} vs real tapes)\n")
+            L.append("Pre-registered bar: the same sign of expectancy as the real-tape run AND modeled PF within +/-35% of the "
+                     "real PF. The multiplier was fitted on the same DEV trades, so this checks the model's shape, not a "
+                     "prediction. A strategy that fails gets its HIST numbers labeled UNRELIABLE.\n")
+            L.append(R.table(list(v.items()), [("strategy", lambda kv: kv[0]), ("real run", lambda kv: kv[1]["real_run"]),
+                                               ("real n", lambda kv: str(kv[1]["real_trades"])), ("real exp", lambda kv: kv[1]["real_exp"]),
+                                               ("real PF", lambda kv: kv[1]["real_pf"]), ("modeled run", lambda kv: kv[1]["run"]),
+                                               ("modeled n", lambda kv: kv[1]["modeled_trades"]), ("modeled exp", lambda kv: kv[1]["modeled_exp"]),
+                                               ("modeled PF", lambda kv: kv[1]["modeled_pf"]), ("PF ratio", lambda kv: kv[1]["pf_ratio"]),
+                                               ("verdict", lambda kv: "PASS" if kv[1]["pass"] else "FAIL")]))
+            L.append("")
+        if extra.get("readings"):
+            L.append(f"## Pre-registered HIST reading ({MD.LABEL})\n")
+            if extra.get("stress"):
+                L.append("**This is a cost stress run: the checks below are information only. The pre-registered reading is the "
+                         "base-cost run's.**\n")
+            L.append("SPRINT_PLAN Amendment 5: \"holds on HIST (MODELED)\" needs every check below, and counts only for a "
+                     "strategy that passed its DEV validation"
+                     + (f" (`{extra.get('validation_file')}`)" if extra.get("validation_file") else
+                        " (**no validation file was found: every strategy is NOT VALIDATED**)") + ".\n")
+            for r in runs:
+                g = extra["readings"][r["run_id"]]
+                rel = g["reliable"]
+                state = ("**HOLDS**" if g["verdict"] else "**does not hold**") if rel else \
+                    ("**UNRELIABLE** (failed DEV validation): numbers shown, no verdict" if rel is False else
+                     "**NOT VALIDATED**: numbers shown, no verdict")
+                L.append(f"### {r['block']} ({r['run_id']}): {state}\n")
+                sm = summ[r["run_id"]]
+                wg = sm.get("weekday_groups") or {}
+                L.append(f"{sm.get('trades', 0)} trades, win {R.fmt(100 * (sm.get('win_rate') or 0), 1)}%, avg win "
+                         f"{R.fmt(sm.get('avg_win'))}, avg loss {R.fmt(sm.get('avg_loss'))}, expectancy {R.fmt(sm.get('expectancy'))}, "
+                         f"PF {R.fmt(sm.get('profit_factor'))}, PF 2x {R.fmt(sm.get('pf_2x_slip'))}, max DD {R.fmt(sm.get('max_dd'))}, "
+                         f"CI95 {robx[r['run_id']].get('ci95')}, without the best 5 {R.fmt((sm.get('without_best5') or {}).get('net'))}. "
+                         + "; ".join(f"{k}: n={v.get('trades')} exp {R.fmt(v.get('expectancy'))} PF {R.fmt(v.get('profit_factor'))}"
+                                     for k, v in wg.items()) + f" [{MD.LABEL}]\n")
+                for name, ok in g["items"]:
+                    L.append(f"- [{'x' if ok else ' '}] {name}")
+                L.append("")
     if spread.label != "MEASURED-SPREAD":
         L.append(f"**Cost caveat:** {spread.describe()}. The pre-registered default (2% of premium for SPY/QQQ/IWM, amended "
                  "from 5% before any run, see SPRINT_PLAN) is a placeholder until the desk's logged chains exist; the 5% "
@@ -374,13 +533,19 @@ def render(spec, sha, tag, a, b, runs, summ, robx, res, sessions, top, top_note,
         order_sym = {x: k for k, x in enumerate(spec.get("symbols") or [])}
         fx.sort(key=lambda r: (order_sym.get(r["symbols"][0], 9), r["entry"] != "orb60", r["entry"], r["side"], "+".join(r["filters"]),
                                -r["exit"].fixed_target / r["exit"].fixed_stop, r["exit"].fixed_stop, r["exit"].contract, r["exit"].mechanics))
-        L.append("## Fixed premium stop / target runs (Option Alpha's exit; the cross-check)\n")
-        L.append("Each row: one symbol, one side, a fixed stop/target of the debit, all out 15:25. `desk` = SPRINT_PLAN's fill "
-                 "rules (inside the bar, same-bar stop wins); `oa1m` = OA-LIKE mechanics (checked once a minute on the close, "
-                 "filled at the next minute's print). `2m+` = profitable two-month blocks. `OA ref` = Option Alpha's own "
-                 "Stage-1 result for the same rule on SPY, Nov 2025-Jun 2026 (fills MODELED by OA, from docs/research/"
-                 "sprint_runs.csv); T1/T2 used OA's 1-year window. Different period, different fill model: a cross-check, "
-                 "not a replication.\n")
+        if extra is not None:
+            L.append(f"## Fixed premium stop / target runs ({MD.LABEL})\n")
+            L.append("Each row: a fixed stop/target of the debit on the modeled option price, desk fill rules (inside the bar, "
+                     "same-bar stop wins), all out at the run's time. `2m+` = profitable two-month blocks.\n")
+        else:
+            L.append("## Fixed premium stop / target runs (Option Alpha's exit; the cross-check)\n")
+        if extra is None:
+            L.append("Each row: one symbol, one side, a fixed stop/target of the debit, all out 15:25. `desk` = SPRINT_PLAN's fill "
+                     "rules (inside the bar, same-bar stop wins); `oa1m` = OA-LIKE mechanics (checked once a minute on the close, "
+                     "filled at the next minute's print). `2m+` = profitable two-month blocks. `OA ref` = Option Alpha's own "
+                     "Stage-1 result for the same rule on SPY, Nov 2025-Jun 2026 (fills MODELED by OA, from docs/research/"
+                     "sprint_runs.csv); T1/T2 used OA's 1-year window. Different period, different fill model: a cross-check, "
+                     "not a replication.\n")
         if any(set(r["filters"]) & {"vixy_pctl_le40", "vixy_pctl_ge60", "vixy_not_rising", "vixy_rising_1pct"} for r in fx):
             L.append("Regime filters: `vixy_pctl_le40` / `vixy_pctl_ge60` = IV-rank **proxy: VIXY percentile** (share of the 252 "
                      "split-adjusted daily VIXY closes ending at the prior close that are at or below it; the window skips the "
@@ -420,7 +585,8 @@ def render(spec, sha, tag, a, b, runs, summ, robx, res, sessions, top, top_note,
             L.append(f"- [{'x' if ok else ' '}] {name}")
         L.append("")
         st = dict(s.get("stretches") or {})
-        st.update({f"2m: {k}": v for k, v in (s.get("blocks_2m") or {}).items()})
+        if not str(tag).startswith("HIST"):                       # 49 two-month blocks on HIST: count in the run log only
+            st.update({f"2m: {k}": v for k, v in (s.get("blocks_2m") or {}).items()})
         L.append(R.table(list(st.items()), [("stretch / two-month block", lambda kv: kv[0]), ("trades", lambda kv: kv[1].get("trades")),
                                             ("net $", lambda kv: kv[1].get("net")), ("exp $", lambda kv: kv[1].get("expectancy")),
                                             ("PF", lambda kv: kv[1].get("profit_factor"))]))
@@ -429,6 +595,8 @@ def render(spec, sha, tag, a, b, runs, summ, robx, res, sessions, top, top_note,
                                           f"PF {R.fmt(v.get('profit_factor'))}" for k, v in sides.items()))
         L.append("Symbols: " + "; ".join(f"{k} n={v.get('trades')} exp {R.fmt(v.get('expectancy'))} PF {R.fmt(v.get('profit_factor'))}"
                                           for k, v in (s.get("symbols") or {}).items()))
+        L.append("Weekdays: " + "; ".join(f"{k} n={v.get('trades')} exp {R.fmt(v.get('expectancy'))} PF {R.fmt(v.get('profit_factor'))}"
+                                           for k, v in (s.get("weekday_groups") or {}).items()))
         wb = s.get("without_best5") or {}
         L.append(f"Without the best 5 trades: net {R.fmt(wb.get('net'))}, expectancy {R.fmt(wb.get('expectancy'))}.")
         if rb.get("nudges"):
@@ -482,5 +650,9 @@ def render(spec, sha, tag, a, b, runs, summ, robx, res, sessions, top, top_note,
                                  ("aRR", lambda r: summ[r["run_id"]].get("actual_rr")), ("DSR", lambda r: robx[r["run_id"]].get("dsr"))]))
     L.append("")
     L.append(f"Run log rows appended to `{csv_path}`; every trade in `{trades_path}`.\n")
-    L.append("Labels: BACKTEST (in-sample on DEV). Spread: " + spread.label + ". Delta: BS-EST. Not financial advice: evidence for Nick to decide.\n")
+    if extra is None:
+        L.append("Labels: BACKTEST (in-sample on DEV). Spread: " + spread.label + ". Delta: BS-EST. Not financial advice: evidence for Nick to decide.\n")
+    else:
+        L.append(f"Labels: {label_for(tag)}, {MD.LABEL}. Spread: " + spread.label + ". No real option price was used. Not financial "
+                 "advice: evidence for Nick to decide.\n")
     return "\n".join(L)

@@ -1,0 +1,184 @@
+{
+ "spec_id": "hist_val_v1",
+ "description": "SPRINT_PLAN Amendment 5, Layer 2 validation (pre-registered 2026-10-31): the six hist_v1 runs on DEV with MODELED (BS, calibrated IV) option tapes instead of the real Alpaca option prices, each compared with its real-tape run. Pre-registered bar: the same sign of expectancy and modeled PF within +/-35% of the real PF. No robustness pass (the comparison is the point). 6 runs.",
+ "period": "DEV",
+ "symbols": [
+  "SPY",
+  "QQQ",
+  "IWM"
+ ],
+ "tapes": "modeled",
+ "defaults": {},
+ "blocks": [
+  {
+   "name": "fb",
+   "why": "reference: setups_v2-001 (failed_break calls, plain premium-ceiling exit), base of fb_or",
+   "grid": {
+    "_": [
+     {
+      "side": "C",
+      "contract": "d40-55t45",
+      "allout": "15:25",
+      "time": "b",
+      "stop": "premium",
+      "tp": "none",
+      "tp_buffer": "$0.03",
+      "rr_min": null,
+      "trail": "none",
+      "mechanics": "desk",
+      "filters": [],
+      "risk": "none",
+      "entry": "failed_break"
+     }
+    ]
+   }
+  },
+  {
+   "name": "fb_or",
+   "why": "setups_v2-012 = the fb_or paper ledger: failed_break_or calls, plain exit",
+   "grid": {
+    "_": [
+     {
+      "side": "C",
+      "contract": "d40-55t45",
+      "allout": "15:25",
+      "time": "b",
+      "stop": "premium",
+      "tp": "none",
+      "tp_buffer": "$0.03",
+      "rr_min": null,
+      "trail": "none",
+      "mechanics": "desk",
+      "filters": [],
+      "risk": "none",
+      "entry": "failed_break_or"
+     }
+    ]
+   }
+  },
+  {
+   "name": "otm_put_base",
+   "why": "otm_v1-010: unfiltered twin of otm_put (time_1030 puts, d06-15t10, -95% stop, all out 15:25)",
+   "grid": {
+    "_": [
+     {
+      "contract": "d06-15t10",
+      "allout": "15:25",
+      "time": "b",
+      "stop": "fixed",
+      "fixed_stop": 0.95,
+      "fixed_target": 99.0,
+      "tp": "none",
+      "tp_buffer": "$0.03",
+      "rr_min": null,
+      "trail": "none",
+      "mechanics": "desk",
+      "filters": [],
+      "risk": "none",
+      "entry": "time_1030",
+      "side": "P"
+     }
+    ]
+   }
+  },
+  {
+   "name": "otm_put",
+   "why": "otm_v1-011 = the otm_put paper ledger: otm_put_base + the put-hedge proxy filters",
+   "grid": {
+    "_": [
+     {
+      "contract": "d06-15t10",
+      "allout": "15:25",
+      "time": "b",
+      "stop": "fixed",
+      "fixed_stop": 0.95,
+      "fixed_target": 99.0,
+      "tp": "none",
+      "tp_buffer": "$0.03",
+      "rr_min": null,
+      "trail": "none",
+      "mechanics": "desk",
+      "filters": [
+       "vixy_pctl_le40",
+       "vixy_not_rising",
+       "day_up",
+       "wed_fri",
+       "skip_opex"
+      ],
+      "risk": "none",
+      "entry": "time_1030",
+      "side": "P"
+     }
+    ]
+   }
+  },
+  {
+   "name": "otm_bounce_base",
+   "why": "otm_v1-040: unfiltered twin of otm_bounce (time_1100 calls, d03-12t07, -95% stop, all out 15:25)",
+   "grid": {
+    "_": [
+     {
+      "contract": "d03-12t07",
+      "allout": "15:25",
+      "time": "b",
+      "stop": "fixed",
+      "fixed_stop": 0.95,
+      "fixed_target": 99.0,
+      "tp": "none",
+      "tp_buffer": "$0.03",
+      "rr_min": null,
+      "trail": "none",
+      "mechanics": "desk",
+      "filters": [],
+      "risk": "none",
+      "entry": "time_1100",
+      "side": "C"
+     }
+    ]
+   }
+  },
+  {
+   "name": "otm_bounce",
+   "why": "otm_v1-042 = the otm_bounce paper ledger (WATCH-ONLY): otm_bounce_base + the call-bounce proxy filters",
+   "grid": {
+    "_": [
+     {
+      "contract": "d03-12t07",
+      "allout": "15:25",
+      "time": "b",
+      "stop": "fixed",
+      "fixed_stop": 0.95,
+      "fixed_target": 99.0,
+      "tp": "none",
+      "tp_buffer": "$0.03",
+      "rr_min": null,
+      "trail": "none",
+      "mechanics": "desk",
+      "filters": [
+       "vixy_pctl_ge60",
+       "day_down",
+       "skip_opex"
+      ],
+      "risk": "none",
+      "entry": "time_1100",
+      "side": "C"
+     }
+    ]
+   }
+  }
+ ],
+ "validate_against": {
+  "fb": "setups_v2-001",
+  "fb_or": "setups_v2-012",
+  "otm_put_base": "otm_v1-010",
+  "otm_put": "otm_v1-011",
+  "otm_bounce_base": "otm_v1-040",
+  "otm_bounce": "otm_v1-042"
+ },
+ "robustness": {
+  "top_k": 0,
+  "random_paths": 0,
+  "fake_seeds": 0,
+  "min_trades": 60
+ }
+}

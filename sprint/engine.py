@@ -32,6 +32,11 @@ Several filters on one run must all pass (oa_crosscheck_v2's "calm" regime = vix
 gap_side_075; the mirrored put regime = vixy_pctl_ge60 + vixy_rising_1pct).
 An event day outside the calendar's coverage is not traded by these filters (counted as "event calendar unknown").
 Specs may give a grid value as an object to set several fields together (e.g. a stop/target pair).
+Tapes: "real" (default) reads the cached Alpaca option bars. "modeled" (SPRINT_PLAN Amendment 5; sprint/modeled.py)
+prices every contract with Black-Scholes from the stock bars at IV = the day's IV proxy x the calibrated multiplier of
+the run's contract rule and side, strikes built around the price at the decision bar; nothing else changes. Days without
+an IV proxy (fewer than 10 prior sessions) are skipped and counted. warm_from loads stock (and VIXY) history before the
+period for indicators only; trades are taken inside [a, b] only.
 """
 import csv
 import gzip
@@ -48,6 +53,7 @@ from dataclasses import replace
 import numpy as np
 
 from . import contracts, data, entries
+from . import modeled as MD
 from .features import FEATURES
 from .sim import ExitCfg, simulate
 
@@ -220,8 +226,21 @@ class TradeWriter:
                 f.write(self.buf.getvalue())
 
 
-def run_pass(runs, a, b, root=None, spread=None, progress=None, writer=None, limit_days=None, early_close=None):
-    """Simulate every run over [a, b]. Returns ({run_id: {"trades", "skips", "signals"}}, {symbol: [sessions]})."""
+def run_pass(runs, a, b, root=None, spread=None, progress=None, writer=None, limit_days=None, early_close=None, tape_mode="real",
+             calib=None, warm_from=None):
+    """Simulate every run over [a, b]. Returns ({run_id: {"trades", "skips", "signals"}}, {symbol: [sessions]}).
+    tape_mode="modeled" needs `calib` (sprint/modeled.py); warm_from = first day of history loaded (indicators only)."""
+    if tape_mode not in ("real", "modeled"):
+        raise ValueError(f"tape_mode must be 'real' or 'modeled', not {tape_mode!r}")
+    modeled = tape_mode == "modeled"
+    mult = {}
+    if modeled:
+        for r in runs:
+            if contracts.is_next(r["exit"].contract):
+                raise ValueError(f"{r['run_id']}: MODELED tapes price 0DTE only, not {r['exit'].contract}")
+            for sd in (("C", "P") if r["side"] == "both" else (r["side"],)):
+                mult[(r["exit"].contract, sd)] = MD.multiplier(calib, r["exit"].contract, sd)
+    h0 = warm_from if warm_from is not None and warm_from < a else a
     res = {r["run_id"]: {"trades": [], "skips": Counter(), "signals": 0} for r in runs}
     sessions = {}
     syms = sorted({s for r in runs for s in r["symbols"]})
@@ -233,18 +252,18 @@ def run_pass(runs, a, b, root=None, spread=None, progress=None, writer=None, lim
             n = None if aux["VIXY_D"] is None else len(aux["VIXY_D"])
             progress(f"  VIX percentile proxy: VIXY daily {'MISSING (percentile filters skip every signal)' if n is None else str(n) + ' closes'}")
     if used & {"vixy_falling", "vixy_not_rising", "vixy_rising_1pct"}:
-        vdf = data.read_stock("VIXY", a, b, root)                 # the labeled VIX proxy (stock bars only)
+        vdf = data.read_stock("VIXY", h0, b, root)                # the labeled VIX proxy (stock bars only)
         aux["VIXY"] = data.Series("VIXY", vdf) if vdf is not None else None
         if progress:
             progress(f"  VIX proxy: VIXY {'loaded, ' + str(len(aux['VIXY'].days)) + ' sessions' if aux['VIXY'] else 'MISSING (vixy_falling skips every signal)'}")
     t0 = time.time()
-    want_next = any(contracts.is_next(r["exit"].contract) for r in runs)
+    want_next = not modeled and any(contracts.is_next(r["exit"].contract) for r in runs)
     held = {r["run_id"]: [] for r in runs if r["exit"].risk != "none"}   # full trades of risk-rule runs, written after the pass
     for sym in syms:
         rs = [r for r in runs if sym in r["symbols"]]
-        df = data.read_stock(sym, a, b, root)
+        df = data.read_stock(sym, h0, b, root)
         series = data.Series(sym, df)
-        odays = data.option_days(sym, root)
+        odays = set() if modeled else data.option_days(sym, root)
         ndays = data.option_days(sym, root, "next") if want_next else set()
         days = [d for d in series.days if a <= d <= b]
         if limit_days:
@@ -255,6 +274,8 @@ def run_pass(runs, a, b, root=None, spread=None, progress=None, writer=None, lim
             tnext = data.read_option_day(sym, day, root, want_trades=False, expiry="next") if day in ndays else {}
             ctx = data.DayContext(series, day, tapes, spread, early_close=None if early_close is None else day.isoformat() in early_close,
                                   aux=aux, tapes_next=tnext)
+            md = MD.ModeledDay(ctx) if modeled else None
+            ivp = MD.iv_proxy(series, day) if modeled else None
             sig_cache, pick_cache = {}, {}
             for r in rs:
                 rid = r["run_id"]
@@ -279,11 +300,17 @@ def run_pass(runs, a, b, root=None, spread=None, progress=None, writer=None, lim
                         res[rid]["skips"][why] += 1
                         continue
                     nxt = contracts.is_next(r["exit"].contract)
-                    if not (tnext if nxt else tapes):
+                    if modeled:
+                        if ivp is None:
+                            res[rid]["skips"]["MODELED: no IV proxy (fewer than 10 prior sessions)"] += 1
+                            continue
+                    elif not (tnext if nxt else tapes):
                         res[rid]["skips"]["no next-expiry option data for the day" if nxt else "no 0DTE option data for the day"] += 1
                         continue
                     pk = (sig.key, r["exit"].contract)
                     if pk not in pick_cache:
+                        if modeled:                               # strikes around the price at the decision bar
+                            ctx.tapes = md.pool(float(ctx.c[sig.idx]), sig.side, ivp * mult[(r["exit"].contract, sig.side)])
                         pick_cache[pk] = contracts.pick(ctx, sig.side, sig.idx, r["exit"].contract)
                     tape, info = pick_cache[pk]
                     if tape is None:

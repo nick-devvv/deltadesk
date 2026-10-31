@@ -20,5 +20,8 @@ Modules:
   sim       the trade simulator (stops, targets A-E, trails 1-5, time-of-day versions, R:R filter)
   report    metrics and robustness (bootstrap, nudges, random entries, made-up levels, deflated Sharpe)
   engine    passes over the data that run many exit configurations on shared entries
+  modeled   MODELED (BS, calibrated IV) 0DTE tapes from stock bars, the IV proxy, calibration and validation math
+            (HIST = 2016-01-04..2024-01-31, SPRINT_PLAN Amendment 5)
+  underlying  Layer 1 of the HIST check: the same entries and filters on stock bars only (no option model)
 """
-VERSION = "2026-10-31.sprint1"
+VERSION = "2026-10-31.sprint2"      # sprint2: HIST period, modeled tapes, Layer 1 (Amendment 5); real-tape runs unchanged

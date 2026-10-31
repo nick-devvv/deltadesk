@@ -103,8 +103,15 @@ class Series:
         mins = (ts.dt.hour * 60 + ts.dt.minute).to_numpy()
         dates = ts.dt.date.to_numpy()
         arr = df[["o", "h", "l", "c", "v"]].to_numpy(float)
-        for d in sorted(set(dates)):
-            sel = dates == d
+        # group rows by day in one stable sort (same rows, same order within a day as a per-day boolean mask, but linear
+        # in the number of days: HIST loads ~2,000 sessions x ~2M rows per symbol)
+        keys = (ts.dt.year * 10000 + ts.dt.month * 100 + ts.dt.day).to_numpy()
+        order = np.argsort(keys, kind="stable")
+        _u, starts = np.unique(keys[order], return_index=True)
+        ends = list(starts[1:]) + [len(order)]
+        for s0, s1 in zip(starts, ends):
+            sel = order[s0:s1]
+            d = dates[sel[0]]
             m = mins[sel]
             a = arr[sel]
             r = (m >= 570) & (m < 960)

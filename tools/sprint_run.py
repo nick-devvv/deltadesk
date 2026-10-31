@@ -5,6 +5,8 @@ no network, no orders, no broker code. Run it from a SEPARATE checkout (e.g. ~/s
   python3 tools/sprint_run.py sprint/specs/orb_exits_v1.json              # DEV (2024-08-01..2026-06-30)
   python3 tools/sprint_run.py SPEC --from 2025-01-02 --to 2025-03-31      # a sub-range of DEV
   python3 tools/sprint_run.py SPEC --locked L2 --frozen <sha256 of SPEC>  # ONLY for frozen, committed finalists
+  python3 tools/sprint_run.py sprint/specs/hist_v1.json                   # HIST 2016-01-04..2024-01-31, MODELED option
+                                                                           # prices (needs data/sprint/calib_modeled.json)
 
 Writes data/sprint/runs_<host>.csv (one row per run, the columns of docs/research/sprint_runs.csv),
 data/sprint/report_<date>.md and data/sprint/trades_<spec>_<date>.csv.gz, and prints a summary table.
@@ -39,6 +41,7 @@ def main(argv=None):
     ap.add_argument("--no-robust", action="store_true", help="skip pass 2 (nudges, random entries, made-up levels)")
     ap.add_argument("--limit-days", type=int, default=None, help="first N sessions per symbol only (smoke test)")
     ap.add_argument("--trials", type=int, default=None, help="override the trial count for the deflated Sharpe")
+    ap.add_argument("--calib", default=None, help="calibration file for MODELED specs (default data/sprint/calib_modeled.json)")
     ap.add_argument("--spread-pct", type=float, default=None,
                     help="SENSITIVITY only: half-spread = this share of premium for every symbol (labeled; default = the "
                          "pre-registered model)")
@@ -49,7 +52,7 @@ def main(argv=None):
         ap.error("--from and --to go together")
     try:
         runner.run_spec(x.spec, a, b, x.locked, x.frozen, x.data, x.chains_dir, x.out, x.host, x.top_k, x.random_paths, x.fake_seeds,
-                        not x.no_robust, x.limit_days, x.trials, spread_pct=x.spread_pct)
+                        not x.no_robust, x.limit_days, x.trials, spread_pct=x.spread_pct, calib_path=x.calib)
     except periods.LockedPeriod as e:
         print(str(e), file=sys.stderr)
         return 2

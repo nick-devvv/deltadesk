@@ -2,6 +2,68 @@
 
 This runs the sprint's backtests on Chart's computer, the only machine that can reach Alpaca's data API. Everything runs in its own folder, `~/sprint`, from branch `sprint/exits`. Nothing touches `~/desk`, its journal or the live desk, and nothing can place an order: the puller only reads `data.alpaca.markets` (market data), and the engine only reads files it pulled.
 
+## Run 4: free 2016-2023 history
+
+Nick approved a free long-history check. It tests the sprint's surviving ideas (`fb_or` with its base `fb`, `otm_put` with its unfiltered twin, `otm_bounce` with its twin) on **HIST = 2016-01-04 to 2024-01-31**: eight years these rules were never tuned on. The rules, pass bars, costs and idealizations were fixed before any pull or run in SPRINT_PLAN "Amendment 5" (commit `1d889ce`).
+- HIST ends the day before L2 starts. L1 and L2 are never pulled or run; the guard refuses any range that touches them.
+- Alpaca has stock bars there but no option prices (they start in Feb 2024). So there are two layers:
+  - **Layer 1** (`tools/sprint_hist.py`): the same entries and filters on the stock alone. fb/fb_or as long stock with a stock stop (in R); the far out-of-the-money ideas as the stock's move after 10:30 / 11:00, in remaining-day sigmas. No option model.
+  - **Layer 2** (`hist_v1`): option prices MODELED with Black-Scholes from the stock bars, at one implied vol per day = the 20-session realized volatility x a multiplier fitted on the real 2024-2026 option trades (`tools/sprint_calibrate.py`). Every Layer-2 number is labeled **MODELED (BS, calibrated IV)**.
+  - First the model runs on 2024-2026 with modeled prices (`hist_val_v1`) and is compared with the real-price runs. A strategy that misses the pre-registered bar (same sign of expectancy, PF within ±35%) gets its HIST numbers labeled UNRELIABLE.
+- New pull: stock 1-minute bars only (no option requests), split-adjusted, for SPY, QQQ, IWM and VIXY from 2015-11-01 (warm-up) to 2024-01-31; plus one VIXY daily file from 2014-11-01 to 2026-06-30 with L2 cut out (it replaces the 2023-2026 one with the same split-adjusted closes over a longer range).
+- The 5% stress rerun skips the robustness pass (`--no-robust`): it only checks how the headline numbers move with costs.
+
+### What to expect
+
+| Step | Time (estimate) | Disk |
+| --- | --- | --- |
+| Update + sprint tests | 3-5 min | |
+| Pull: 99 months x 4 symbols of 1-minute bars 04:00-20:00 (about 700-900 requests) + VIXY daily (2 requests) | 15-30 min | about 100-250 MB |
+| Layer 1 (6 strategies, 5 random seeds) | 2-4 min | under 10 MB |
+| Calibration (reads the run 1-3 trade files) | 2-5 min | |
+| Validation on 2024-2026, modeled (6 runs) | 2-5 min | |
+| HIST Layer 2, base cost + robustness (6 runs, 40 robustness jobs) | 17-35 min | a few MB of trades |
+| HIST Layer 2 at 5%, no robustness | 5-12 min | |
+| **Total** | **about 1-1.5 hours** | about 100-250 MB |
+
+Estimates come from timing the full HIST length on synthetic stock bars of the real shape (2,075 sessions with the warm-up, 3 symbols plus VIXY, every minute 04:00-20:00, the same six runs) on a 2-core machine: Layer 1 took 1.6 min; Layer 2 took about 17 min with the robustness pass (6 runs + 40 robustness jobs) and about 5 min without; peak memory 1.5 GB. The ranges allow for Chart's computer being up to twice as slow. The synthetic cache was 28 MB per symbol (real VIXY is much thinner). The pull is resumable: if it stops, run the same command again; finished months are skipped.
+
+### Message for Chart, run 4 (one paste)
+
+```
+Sprint run 4: free 2016-2023 history (research only, about 1 to 1.5 hours). Show me every output.
+Rules: you never place trades, never click buy/sell/order buttons, never enter passwords or keys, never print a key.
+Never touch ~/desk: don't cd into it, don't edit, copy, restart or run anything there. Never pass --locked or --frozen to any command.
+If a step fails, show the error and stop. Don't change any code; re-running the same command once is fine (the pull resumes).
+1. Update the sprint code:
+   cd ~/sprint && git fetch -q origin sprint/exits && git checkout -q sprint/exits && git reset -q --hard origin/sprint/exits && git log -1 --oneline
+2. Tests:
+   cd ~/sprint && .venv/bin/pip install -q -r requirements.txt && .venv/bin/python -m pytest -q tests/test_sprint_*.py 2>&1 | tail -3
+3. Alpaca key check (prints only yes/no):
+   [ -n "$ALPACA_KEY" ] && [ -n "$ALPACA_SECRET" ] && echo "alpaca keys present" || echo "ALPACA KEYS MISSING: stop and tell Nick"
+4. Pull 2015-11 to 2024-01 stock bars (no options) and the VIXY daily file (15-30 min, about 100-250 MB, safe to re-run):
+   cd ~/sprint && mkdir -p data/sprint/logs && .venv/bin/python tools/sprint_pull.py --period HIST > data/sprint/logs/run4_pull.log 2>&1; grep -vE "^  [A-Z]+ [0-9]{4}-[0-9]{2}: " data/sprint/logs/run4_pull.log | tail -14; du -sh data/alpaca/stocks data/alpaca/daily
+5. Layer 1, the stock signal alone:
+   cd ~/sprint && .venv/bin/python tools/sprint_hist.py > data/sprint/logs/run4_layer1.log 2>&1; grep -E "^sprint_hist|^  [A-Z]+:|^  VIXY|^layer1 |^done|^report:" data/sprint/logs/run4_layer1.log || tail -30 data/sprint/logs/run4_layer1.log
+6. Fit the option model on the real 2024-2026 option trades:
+   cd ~/sprint && .venv/bin/python tools/sprint_calibrate.py > data/sprint/logs/run4_calib.log 2>&1; grep -vE "^  trades_" data/sprint/logs/run4_calib.log | tail -14
+7. Check the model against real option prices (2024-2026), then run 2016-2023 with it, then the 5% stress:
+   cd ~/sprint && for a in "sprint/specs/hist_val_v1.json" "sprint/specs/hist_v1.json" "sprint/specs/hist_v1.json --spread-pct 0.05 --no-robust"; do L="data/sprint/logs/run4_$(echo "$a" | tr ' /.-' '____').log"; echo "=== $a"; .venv/bin/python tools/sprint_run.py $a > "$L" 2>&1 && grep -E "^sprint |tapes:|^validation |^HIST reading|pass [12] done|^report:" "$L" || { echo "FAILED: $a"; tail -30 "$L"; }; done
+8. Zip everything and show the Layer-1 readings:
+   cd ~/sprint && .venv/bin/python -m zipfile -c ~/sprint_results4.zip $(ls data/sprint/report_*hist_*.md data/sprint/hist_layer1_* data/sprint/validation_hist_val_v1*.json data/sprint/calib_modeled.json data/sprint/gaps_*_2015-11-01_2024-01-31.json data/sprint/trades_hist_v1_*.csv.gz data/sprint/logs/run4_*.log) data/sprint/runs_*.csv && ls -la ~/sprint_results4.zip
+   sed -n '/^## Pre-registered readings/,/^## fb /p' "$(ls -t data/sprint/hist_layer1_*.md | head -1)"
+   (send Nick the file ~/sprint_results4.zip)
+```
+
+What Nick sends back: step 2's last line, step 4's lines, step 5's `layer1` lines, step 6's multiplier table, step 7's lines (the `validation` and `HIST reading` lines are the headline), step 8's readings, and `~/sprint_results4.zip`.
+
+Checks on the way in:
+- Step 2: 177 sprint tests pass.
+- Step 4: 2,075 sessions per symbol from 2015-11-02 (42 of them warm-up, 2,033 in HIST: 252, 251, 251, 252, 253, 252, 251, 250 a year, plus 21 in January 2024), "no option request before 2024-02-01", and VIXY daily over `2014-11-01..2024-01-31, 2024-08-01..2026-06-30`. A weekday without bars or a short session that isn't an early close is a data gap (or a calendar miss) to look at.
+- Step 6: three keys are needed (`d40-55t45|C`, `d06-15t10|P`, `d03-12t07|C`). If one says MISSING or THIN, step 7 refuses the modeled runs; stop there.
+- Step 7: run ids `hist_val_v1-001..006`, `hist_v1-001..006` and `hist_v1-001@s5..006@s5`, period tags DEV and HIST, notes saying MODELED. The run log gains 18 rows.
+- Known gap between model and reality: a modeled option has a price every minute (at least $0.01), while a real far out-of-the-money contract can stop trading. The real runs dropped those trades as VOID (12 next to otm_v1-010's 1,408 trades; 4 next to otm_v1-040's 1,418), which flatters the real far-OTM results a little next to the model.
+
 ## Run 2 (setups_v2): the failed-break deep dive
 
 Run 1's results are in `docs/research/SPRINT_RESULTS_1.md`. Run 2 changes one thing at a time on the only lead, failed-break calls (58 runs on DEV; what each block tests is in `sprint/specs/setups_v2.json` and SPRINT_PLAN "Amendment 2"). It needs one new pull: each session's prices of the **next listed expiry** (bars only, strikes within 1.5% of the open widened to the day's range; about 30-45 minutes, about 100-250 MB). Then it runs the spec at the base cost and at the 5% stress cost, and the former optional step 5b, `oa_crosscheck_v2` (66 runs): Option Alpha's "calm market" filters (VIX level and VIX change via the VIXY proxy, small gap up) on the 15 months Option Alpha never saw. Its VIXY daily bars come with step 3's pull. About 20-35 minutes for the three runs.
@@ -176,3 +238,4 @@ C, E and the trails use B without an R:R minimum so that they compare exits on t
 | Entries: ORB 15/30/60, noise band + no-cap twin, VWAP + 2m MACD retest, PDH/PDL retest + 9 EMA, failed-break calls, flush reversal | pre-registered in `sprint/entries.py` docstrings, implemented and tested for rules and no look-ahead |
 | Risk layer for the full bot rules ($50 max planned loss, 4 trades a day, streak rules) | implemented for setups_v2 (`sprint/engine.bot_risk`), tested; the runner exception needs live news and is not testable here |
 | Failed-break variants, the put mirror (failed_high), next-expiry contracts and their puller | implemented for setups_v2, tested (rules, no look-ahead, fake HTTP) |
+| HIST check (run 4): stock-only HIST pull, Layer 1 (`sprint/underlying.py`), MODELED (BS, calibrated IV) tapes, calibration and validation (`sprint/modeled.py`) | implemented, tested on synthetic data (rules, no look-ahead, prior-session IV proxy, planted-multiplier recovery, guard, fake HTTP); not yet run against Alpaca |

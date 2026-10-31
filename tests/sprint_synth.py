@@ -103,6 +103,37 @@ def write_cache(root, under, days, px0=500.0, seed=1, iv=0.18, drifts=None, tren
     return out
 
 
+def write_stock_only(root, under, days, px0=500.0, seed=1, vol=0.0005, drifts=None):
+    """Stock 1-minute bars only (no option files), month files in the cache layout: the shape of a HIST pull."""
+    import pull_alpaca as PA
+    root = Path(root)
+    frames, px, out = [], px0, {}
+    for n, d in enumerate(days):
+        df = stock_day(d, px, seed + n, drift=(drifts or {}).get(d, 0.0), vol=vol)
+        out[d] = df
+        frames.append(df)
+        px = float(df["c"].iloc[-1])
+    allb = pd.concat(frames, ignore_index=True)
+    for m, g in allb.groupby(allb["ts"].dt.strftime("%Y-%m")):
+        PA._write_gz(root / "stocks" / under / f"{m}.csv.gz", g.reset_index(drop=True))
+    return out
+
+
+def write_daily(root, under, a, b, px0=20.0, seed=3, skip=None):
+    """Split-adjusted daily closes (ts, o, h, l, c, v) for weekdays in [a, b], minus `skip` ranges [(x, y), ...]."""
+    import pull_alpaca as PA
+    rng = np.random.default_rng(seed)
+    rows, px, d = [], px0, a
+    while d <= b:
+        if d.weekday() < 5 and not any(x <= d <= y for x, y in (skip or [])):
+            px *= float(np.exp(rng.normal(0, 0.03)))
+            rows.append((pd.Timestamp(f"{d} 00:00", tz="America/New_York").tz_convert("UTC"), px, px, px, px, 1000.0))
+        d += timedelta(days=1)
+    df = pd.DataFrame(rows, columns=["ts", "o", "h", "l", "c", "v"])
+    PA._write_gz(Path(root) / "daily" / f"{under}.csv.gz", df)
+    return df
+
+
 class ConstSpread:
     """A fixed half-spread (for hand-checked P/L)."""
     label = "CONST"

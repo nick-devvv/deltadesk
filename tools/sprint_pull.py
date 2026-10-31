@@ -13,6 +13,10 @@ no positions), the same throttle/retry, the same cache layout.
   (--daily VIXY is the default: VIXY DAILY bars, split-adjusted, from --daily-from (2023-01-01) to --to, for the
    252-session "IV-rank proxy: VIXY percentile" of oa_crosscheck_v2. The locked periods L1/L2 are cut out of that
    range and never requested; pass --daily "" to skip it)
+  python3 tools/sprint_pull.py --period HIST      # the free 2016-2023 history check (SPRINT_PLAN Amendment 5):
+   stock 1-minute bars only (no options: Alpaca has none before 2024-02-01) for SPY,QQQ,IWM + VIXY, split-adjusted,
+   from 2015-11-01 (warm-up) to 2024-01-31; plus ONE VIXY daily file from 2014-11-01 to the end of DEV (2026-06-30)
+   with L2 cut out, so HIST and the DEV validation read the same split-adjusted closes. Resumable like the rest.
 
 What it pulls for each symbol and date range:
   1. stock 1-minute bars 04:00-20:00 ET (raw, feed sip), month files, the range clipped to exactly [from, to] in ET
@@ -61,8 +65,9 @@ def sessions(a, b):
     return out
 
 
-def pull_stock(sym, a, b, feed="sip", today=None, log=print):
-    """Month files, each request clipped to [a, b] in ET. Returns counts."""
+def pull_stock(sym, a, b, feed="sip", today=None, log=print, adjustment="raw"):
+    """Month files, each request clipped to [a, b] in ET. Returns counts. adjustment: "raw" (DEV's pulls) or "split"
+    (HIST: VIXY's reverse splits would otherwise fake huge daily moves; SPY/QQQ/IWM had no splits then)."""
     today = today or date.today()
     out = {"pulled": 0, "skipped": 0, "rows": 0}
     for m0, m1 in PA._months(a, b):
@@ -75,7 +80,7 @@ def pull_stock(sym, a, b, feed="sip", today=None, log=print):
             continue
         bars = []
         for page in PA.get(f"/v2/stocks/{sym}/bars", {"timeframe": "1Min", "start": _utc(s0), "end": _utc(s1 + timedelta(days=1)),
-                                                      "limit": 10000, "adjustment": "raw", "feed": feed, "sort": "asc"}):
+                                                      "limit": 10000, "adjustment": adjustment, "feed": feed, "sort": "asc"}):
             bars += page.get("bars") or []
         df = PA._frame(bars)
         if f.exists() and len(df):                       # a partial month pulled earlier: merge, newest wins
@@ -85,7 +90,8 @@ def pull_stock(sym, a, b, feed="sip", today=None, log=print):
         out["pulled"] += 1
         out["rows"] += len(df)
         if s0 == m0 and s1 == month_end and month_end < today:
-            done.write_text(json.dumps({"rows": len(df), "at": datetime.now().isoformat(timespec="seconds"), "feed": feed}))
+            done.write_text(json.dumps({"rows": len(df), "at": datetime.now().isoformat(timespec="seconds"), "feed": feed,
+                                        "adjustment": adjustment}))
         log(f"  {sym} {m0:%Y-%m}: {len(df)} bars")
     return out
 
@@ -133,9 +139,16 @@ def _fetch(path, syms, d, extra, kind):
 
 
 def pull_options(under, a, b, band=0.03, trades=False, trades_band=0.015, today=None, log=print):
-    """0DTE bars (and trades near the money) per session. Needs the stock bars in the cache first."""
+    """0DTE bars (and trades near the money) per session. Needs the stock bars in the cache first. Sessions before
+    periods.OPTIONS_START (2024-02-01, where Alpaca's option history begins) are never requested."""
     today = today or date.today()
-    out = {"days": 0, "skipped": 0, "no_stock_bars": [], "bars": 0, "trades": 0, "contracts": 0}
+    out = {"days": 0, "skipped": 0, "no_stock_bars": [], "bars": 0, "trades": 0, "contracts": 0, "before_option_history": 0}
+    if b < periods.OPTIONS_START:
+        out["before_option_history"] = len(sessions(a, b))
+        return out
+    if a < periods.OPTIONS_START:
+        out["before_option_history"] = len(sessions(a, periods.OPTIONS_START - timedelta(days=1)))
+        a = periods.OPTIONS_START
     stock = D.read_stock(under, a, b, PA.ROOT)
     by_day = {d: g for d, g in stock.groupby(stock["ts"].dt.date)} if stock is not None else {}
     for n, d in enumerate(sessions(a, b)):
@@ -178,6 +191,9 @@ def pull_options_next(under, a, b, band=0.03, today=None, log=print, max_ahead=5
     Cache: data/alpaca/options_next/<SYM>/<d>/bars.csv.gz (+ .done with the expiry used). Bars only, no trades."""
     today = today or date.today()
     out = {"days": 0, "skipped": 0, "no_stock_bars": [], "no_expiry_found": [], "bars": 0, "contracts": 0}
+    a = max(a, periods.OPTIONS_START)
+    if b < a:
+        return out
     stock = D.read_stock(under, a, b, PA.ROOT)
     by_day = {d: g for d, g in stock.groupby(stock["ts"].dt.date)} if stock is not None else {}
     for n, d in enumerate(sessions(a, b)):
@@ -268,8 +284,8 @@ def disk_mb(sym):
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Read-only Alpaca puller for the sprint (data.alpaca.markets only)")
     ap.add_argument("--symbols", default="SPY,QQQ,IWM")
-    ap.add_argument("--from", dest="a", required=True)
-    ap.add_argument("--to", dest="b", required=True)
+    ap.add_argument("--from", dest="a")
+    ap.add_argument("--to", dest="b")
     ap.add_argument("--band", type=float, default=0.03)
     ap.add_argument("--trades", action="store_true")
     ap.add_argument("--trades-band", type=float, default=0.015)
@@ -281,11 +297,28 @@ def main(argv=None):
     ap.add_argument("--daily", default="VIXY", help="symbols pulled as split-adjusted daily bars (default VIXY)")
     ap.add_argument("--daily-from", default="2023-01-01", help="first day of the daily pull (locked periods are cut out)")
     ap.add_argument("--root", default=None, help="cache root (default data/alpaca)")
+    ap.add_argument("--period", default=None, choices=["HIST"],
+                    help="HIST: stock bars only (split-adjusted) for --symbols + VIXY over 2015-11-01..2024-01-31, and the "
+                         "VIXY daily file 2014-11-01..2026-06-30 (L2 cut out); --from/--to default to that range")
+    ap.add_argument("--stock-bars-only", action="store_true", help="pull --symbols as stock bars only (no option requests)")
+    ap.add_argument("--adjustment", default=None, choices=["raw", "split"], help="stock bar adjustment (default raw; HIST: split)")
     ap.add_argument("--locked")
     ap.add_argument("--frozen")
     ap.add_argument("--spec")
     x = ap.parse_args(argv)
-    a, b = date.fromisoformat(x.a), date.fromisoformat(x.b)
+    hist = x.period == "HIST"
+    if hist:
+        a = date.fromisoformat(x.a) if x.a else periods.WARMUP["HIST"]
+        b = date.fromisoformat(x.b) if x.b else periods.HIST[1]
+        x.stock_bars_only = True
+        x.adjustment = x.adjustment or "split"
+        if x.daily_from == ap.get_default("daily_from"):
+            x.daily_from = periods.HIST_DAILY_FROM.isoformat()
+    else:
+        if not (x.a and x.b):
+            ap.error("--from and --to are required (or --period HIST)")
+        a, b = date.fromisoformat(x.a), date.fromisoformat(x.b)
+    adjustment = x.adjustment or "raw"
     try:
         periods.guard(a, b, x.locked, x.frozen, x.spec)
     except periods.LockedPeriod as e:
@@ -297,11 +330,15 @@ def main(argv=None):
     stock_only = [s.strip().upper() for s in (x.stock_only or "").split(",") if s.strip() and s.strip().upper() not in syms]
     out_dir = (Path(x.root).parent if x.root else HERE / "data") / "sprint"
     n_days = len(sessions(a, b))
-    print(f"sprint_pull: {','.join(syms)} {a}..{b} ({n_days} sessions), band {x.band:.1%}, trades {'on' if x.trades else 'off'}, "
-          f"stock bars only: {','.join(stock_only) or 'none'}, cache {PA.ROOT}", flush=True)
+    if x.stock_bars_only:
+        stock_only = syms + stock_only
+        syms = []
+    print(f"sprint_pull: {','.join(syms) or '-'} {a}..{b} ({n_days} sessions), band {x.band:.1%}, trades {'on' if x.trades else 'off'}, "
+          f"stock bars only: {','.join(stock_only) or 'none'} ({adjustment}), cache {PA.ROOT}"
+          + (f"; no option request before {periods.OPTIONS_START}" if a < periods.OPTIONS_START else ""), flush=True)
     for s in syms:
         if not x.gaps_only and not x.next_only:
-            print(s, "stocks", pull_stock(s, a, b, x.feed), flush=True)
+            print(s, "stocks", pull_stock(s, a, b, x.feed, adjustment=adjustment), flush=True)
             r = pull_options(s, a, b, x.band, x.trades, x.trades_band)
             print(s, "options", {k: (v if k != "no_stock_bars" else len(v)) for k, v in r.items()}, flush=True)
         if not x.gaps_only and (x.next_expiry or x.next_only):
@@ -316,13 +353,14 @@ def main(argv=None):
               f"{g['contracts_per_session']}, {disk_mb(s)} MB on disk -> {g.get('file')}", flush=True)
     for s in stock_only:
         if not x.gaps_only:
-            print(s, "stocks (no options)", pull_stock(s, a, b, x.feed), flush=True)
+            print(s, "stocks (no options)", pull_stock(s, a, b, x.feed, adjustment=adjustment), flush=True)
         g = gap_report(s, a, b, out_dir, options=False)
         print(f"{s}: {g['sessions']} sessions, {len(g['no_bars'])} weekdays without bars {g['no_bars'][:10]}, "
-              f"{len(g['short_sessions'])} short sessions, {disk_mb(s)} MB on disk -> {g.get('file')}", flush=True)
+              f"{len(g['short_sessions'])} short sessions {[x['day'] for x in g['short_sessions'][:5]]}, "
+              f"{len(g['early_closes'])} early closes, {disk_mb(s)} MB on disk -> {g.get('file')}", flush=True)
     for s in [x.strip().upper() for x in (x.daily or "").split(",") if x.strip()]:
         if not x.gaps_only:
-            r = pull_daily(s, date.fromisoformat(x.daily_from), b, x.feed)
+            r = pull_daily(s, date.fromisoformat(x.daily_from), max(b, periods.DEV[1]) if hist else b, x.feed)
             print(f"{s}: {r['rows']} daily bars (split-adjusted) over {', '.join(r['segments'])} (locked periods cut out)", flush=True)
     sm = SP.from_chains(HERE / "data" / "chains", set(syms))
     print("spread model for the runner:", sm.describe(), flush=True)

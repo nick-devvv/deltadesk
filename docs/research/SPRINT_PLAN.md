@@ -351,6 +351,15 @@ Also reported, not pass/fail: the 5% stress, the 95% interval, the deflated Shar
 - **Layer 1 fails:** the DEV result was most likely luck or one regime. The paper ledger keeps running for its 40 trades, with a "failed HIST" note.
 - **Validation fails:** Layer 2 says nothing for that strategy; only Layer 1 counts.
 
+### Build notes (2026-10-31, written while building, still before any HIST pull or run)
+
+These pin down details the text above left open. None comes from a result.
+- Matched random entries in Layer 1 keep the strategy's filters, checked at the random bar, exactly as the engine's random runs do. Random day-skips drop whole dates (all symbols of a date), as the engine's day-skip test does.
+- The 5% stress rerun of `hist_v1` skips the robustness pass (`--no-robust`): it only shows how the headline numbers move with costs.
+- Modeled tapes have a price every minute (at least $0.01). Real far out-of-the-money contracts can stop trading, and the real-tape engine drops such trades as VOID (12 next to otm_v1-010's 1,408 trades, 4 next to otm_v1-040's 1,418). This flatters the real far-OTM runs slightly next to the model; the validation bar is unchanged.
+- HIST stock bars and VIXY bars are split-adjusted; DEV's (already pulled) stay raw. The two never share a month file.
+- The HIST calendar: NYSE holidays and early closes for 2015-2023 in `sprint/periods.py`; sessions per year 252, 251, 251, 252, 253, 252, 251, 250 (2016-2023), checked against NYSE's published counts.
+
 ### Trials and run budget
 
 - Layer 2 adds 18 rows to the run log: 6 validation, 6 HIST, 6 HIST at 5%.

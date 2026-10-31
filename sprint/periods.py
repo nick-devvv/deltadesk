@@ -16,6 +16,13 @@ never a warning.
 DEV warm-up: July 2024 is inside L2, so it is never pulled for warm-up. The first sessions of August 2024 therefore
 have partial history (no prior-day levels on 2024-08-01, no prior-week levels in the first week, no 14-session
 averages until mid-August). Features that need missing history are None, never estimated.
+
+HIST = 2016-01-04 .. 2024-01-31 (SPRINT_PLAN Amendment 5): the free long-history check. Alpaca has stock 1-minute
+bars there but no option prices, so HIST runs use stock bars only (Layer 1) or MODELED option tapes (Layer 2,
+sprint/modeled.py). It ends the day before L2 starts, so the guard never has to make an exception for it. Its
+stock history starts at WARMUP["HIST"] = 2015-11-01 (prior-day levels, ATRs and the 20-session IV proxy on day one);
+the VIXY daily file starts at HIST_DAILY_FROM = 2014-11-01 (252 closes before 2016-01-04 for the VIXY percentile).
+Trades are only taken inside the period itself; warm-up sessions only feed indicators.
 """
 import hashlib
 import subprocess
@@ -27,11 +34,30 @@ REPO = Path(__file__).resolve().parents[1]
 DEV = (date(2024, 8, 1), date(2026, 6, 30))
 LOCKED = {"L1": (date(2026, 7, 1), date(2026, 10, 30)), "L2": (date(2024, 2, 1), date(2024, 7, 31))}
 NOT_SEEN_BY_OA = (date(2024, 8, 1), date(2025, 10, 29))    # inside DEV; the part of it Option Alpha never saw
-PERIODS = {"DEV": DEV, "NOT_SEEN_BY_OA": NOT_SEEN_BY_OA, **LOCKED}
-for _k, (_a, _b) in PERIODS.items():                        # every named non-locked period lies inside DEV
-    assert _k in LOCKED or (DEV[0] <= _a <= _b <= DEV[1]), _k
+HIST = (date(2016, 1, 4), date(2024, 1, 31))                # stock bars only (+ MODELED option tapes); before L2
+WARMUP = {"HIST": date(2015, 11, 1)}                        # history loaded before the period (indicators only)
+HIST_DAILY_FROM = date(2014, 11, 1)                         # VIXY daily bars: 252 closes before HIST starts
+OPTIONS_START = date(2024, 2, 1)                            # Alpaca has no option prices before this date
+PERIODS = {"DEV": DEV, "NOT_SEEN_BY_OA": NOT_SEEN_BY_OA, "HIST": HIST, **LOCKED}
+for _k, (_a, _b) in PERIODS.items():                        # every named non-locked period lies inside DEV, or is HIST
+    assert _k in LOCKED or (DEV[0] <= _a <= _b <= DEV[1]) or _k == "HIST", _k
+assert HIST[1] < LOCKED["L2"][0] and WARMUP["HIST"] < HIST[0] and HIST_DAILY_FROM < WARMUP["HIST"]
 STRETCHES = [("Aug-Dec 2024", date(2024, 8, 1), date(2024, 12, 31)), ("2025", date(2025, 1, 1), date(2025, 12, 31)),
              ("Jan-Jun 2026", date(2026, 1, 1), date(2026, 6, 30))]
+HIST_YEARS = list(range(2016, 2024))                        # the 8 full years counted by the pre-registered readings
+HIST_STRETCHES = ([(str(y), date(y, 1, 1), date(y, 12, 31)) for y in HIST_YEARS] +
+                  [("Jan 2024", date(2024, 1, 1), date(2024, 1, 31)),
+                   ("2018 Q1 vol spike", date(2018, 1, 1), date(2018, 3, 31)),
+                   ("2020 Feb-May", date(2020, 2, 1), date(2020, 5, 31)),
+                   ("2022 bear market", date(2022, 1, 3), date(2022, 10, 12))])
+
+
+def stretches_for(a=None, b=None):
+    """The stretches a report uses for a run over [a, b]: HIST's years and named stretches for a range inside HIST
+    (warm-up included), DEV's otherwise."""
+    if a is not None and b is not None and _d(b) <= HIST[1]:
+        return HIST_STRETCHES
+    return STRETCHES
 
 
 class LockedPeriod(RuntimeError):
@@ -127,11 +153,38 @@ HOLIDAYS_2024_2025 = {
 EARLY_2024_2025 = {"2024-07-03", "2024-11-29", "2024-12-24", "2025-07-03", "2025-11-28", "2025-12-24"}
 
 
+# 2015 (warm-up) to 2023, for HIST. Source: NYSE holiday and early-close calendars as published for each year,
+# including the 2018-12-05 national day of mourning (President G. H. W. Bush). The HIST gap report lists every
+# short session, so a missing early close shows up there.
+HOLIDAYS_2015_2023 = {
+    "2015-11-26", "2015-12-25",
+    "2016-01-01", "2016-01-18", "2016-02-15", "2016-03-25", "2016-05-30", "2016-07-04", "2016-09-05", "2016-11-24",
+    "2016-12-26",
+    "2017-01-02", "2017-01-16", "2017-02-20", "2017-04-14", "2017-05-29", "2017-07-04", "2017-09-04", "2017-11-23",
+    "2017-12-25",
+    "2018-01-01", "2018-01-15", "2018-02-19", "2018-03-30", "2018-05-28", "2018-07-04", "2018-09-03", "2018-11-22",
+    "2018-12-05", "2018-12-25",
+    "2019-01-01", "2019-01-21", "2019-02-18", "2019-04-19", "2019-05-27", "2019-07-04", "2019-09-02", "2019-11-28",
+    "2019-12-25",
+    "2020-01-01", "2020-01-20", "2020-02-17", "2020-04-10", "2020-05-25", "2020-07-03", "2020-09-07", "2020-11-26",
+    "2020-12-25",
+    "2021-01-01", "2021-01-18", "2021-02-15", "2021-04-02", "2021-05-31", "2021-07-05", "2021-09-06", "2021-11-25",
+    "2021-12-24",
+    "2022-01-17", "2022-02-21", "2022-04-15", "2022-05-30", "2022-06-20", "2022-07-04", "2022-09-05", "2022-11-24",
+    "2022-12-26",
+    "2023-01-02", "2023-01-16", "2023-02-20", "2023-04-07", "2023-05-29", "2023-06-19", "2023-07-04", "2023-09-04",
+    "2023-11-23", "2023-12-25",
+}
+EARLY_2015_2023 = {"2015-11-27", "2015-12-24", "2016-11-25", "2017-07-03", "2017-11-24", "2018-07-03", "2018-11-23",
+                   "2018-12-24", "2019-07-03", "2019-11-29", "2019-12-24", "2020-11-27", "2020-12-24", "2021-11-26",
+                   "2022-11-25", "2023-07-03", "2023-11-24"}
+
+
 def holidays():
     import core
-    return set(core.HOLIDAYS) | HOLIDAYS_2024_2025
+    return set(core.HOLIDAYS) | HOLIDAYS_2024_2025 | HOLIDAYS_2015_2023
 
 
 def early_closes():
     import core
-    return set(core.EARLY_CLOSE) | EARLY_2024_2025
+    return set(core.EARLY_CLOSE) | EARLY_2024_2025 | EARLY_2015_2023

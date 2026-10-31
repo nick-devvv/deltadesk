@@ -8,7 +8,9 @@ the run log says MEASURED-SPREAD):
   profit; the per-trade median is reported too), planned vs actual R:R (mean planned option R:R where a target
   existed; mean realized P/L / planned risk).
 Robustness (SPRINT_PLAN's list):
-  by stretch           Aug-Dec 2024, 2025, Jan-Jun 2026, each on its own
+  by stretch           Aug-Dec 2024, 2025, Jan-Jun 2026, each on its own (HIST runs: each year 2016-2023, Jan 2024, and
+                       the named stretches of SPRINT_PLAN Amendment 5; see periods.stretches_for)
+  weekday groups       Mon/Wed/Fri vs Tue/Thu (HIST's extra line: before Nov 2022 not every weekday listed a 0DTE expiry)
   without best 5       total and expectancy after removing the 5 best trades
   one-step nudges      each numeric parameter moved one step (engine re-runs them); min PF across nudges
   both sides           calls and puts separately
@@ -27,7 +29,7 @@ import statistics
 from collections import Counter, defaultdict
 from datetime import date
 
-from .periods import STRETCHES
+from .periods import stretches_for
 
 COLUMNS = ["run_id", "timestamp", "tool", "period_tag", "symbol", "setup", "side", "stop_rule", "tp_rule", "trail",
            "time_rule", "trend_rule", "filters", "contract_rule", "slippage", "trades", "win_rate", "avg_win", "avg_loss",
@@ -80,6 +82,7 @@ def summarize(trades, a=None, b=None):
     m["symbols"] = {s: metrics([t for t in tr if t["symbol"] == s]) for s in sorted({t["symbol"] for t in tr})}
     m["exit_reasons"] = dict(Counter(_reason(t["exit_reason"]) for t in tr).most_common())
     m["stretches"] = by_stretch(tr, a, b)
+    m["weekday_groups"] = weekday_groups(tr)
     m["blocks_2m"] = two_month_blocks(tr, a, b)
     m["without_best5"] = without_best(tr, 5)
     mfe = [t["opt_mfe_pct"] for t in tr]
@@ -106,13 +109,20 @@ def _reason(s):
 def by_stretch(trades, a=None, b=None):
     """SPRINT_PLAN's stretches, clipped to the run's period [a, b] (a stretch outside the period is left out)."""
     out = {}
-    for name, x, y in STRETCHES:
+    for name, x, y in stretches_for(a, b):
         if a is not None and (y < a or x > b):
             continue
         lo, hi = max(x, a) if a else x, min(y, b) if b else y
         sel = [t for t in trades if lo.isoformat() <= t["day"] <= hi.isoformat()]
         out[name if (lo, hi) == (x, y) else f"{name} ({lo:%b %d}-{hi:%b %d})"] = metrics(sel)
     return out
+
+
+def weekday_groups(trades):
+    """Mon/Wed/Fri vs Tue/Thu (by the session's weekday)."""
+    wd = lambda t: date.fromisoformat(str(t["day"])[:10]).weekday()
+    return {"Mon/Wed/Fri": metrics([t for t in trades if wd(t) in (0, 2, 4)]),
+            "Tue/Thu": metrics([t for t in trades if wd(t) in (1, 3)])}
 
 
 def two_month_blocks(trades, a=None, b=None):
