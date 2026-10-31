@@ -23,6 +23,12 @@ from test_v4_stocks import BASE, DAY, OptProv, World  # noqa: E402
 ET = core.ET
 
 
+def _local_open(req):
+    """Loopback requests only, never through an HTTP proxy from the environment."""
+    import urllib.request
+    return urllib.request.build_opener(urllib.request.ProxyHandler({})).open(req, timeout=10)
+
+
 def news_path(i):
     """Flat at 50 until 10:03, then a jump on the news (10:03 bar closes up), then drifting up."""
     if i < 33:
@@ -148,7 +154,7 @@ def test_news_drift_api_over_real_http(env, monkeypatch):
     th = threading.Thread(target=srv.serve_forever, daemon=True)
     th.start()
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{srv.server_address[1]}/api/v4/news_drift?day=2026-11-04") as r:
+        with _local_open(f"http://127.0.0.1:{srv.server_address[1]}/api/v4/news_drift?day=2026-11-04") as r:
             d = json.loads(r.read())
         assert d["rows"][0]["ticker"] == "ACME" and d["summary"]["events"] == 0 and d["version"] == ND.VERSION
     finally:

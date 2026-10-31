@@ -150,6 +150,26 @@ def void(pid, reason):
     return True
 
 
+ANNOTATE_PREFIXES = ("ctl_", "yard_")
+
+
+def annotate(pid, **kv):
+    """Research annotations on a position in ANY status (matched-random scores after the close). Only keys starting
+    with ctl_ / yard_ are accepted, so an annotation can never change a fill, an exit or a P/L."""
+    schema()
+    kv = {k: v for k, v in kv.items() if k.startswith(ANNOTATE_PREFIXES)}
+    if not kv:
+        return False
+    with store.tx():
+        r = store.q("SELECT plan FROM v4_positions WHERE id=?", (pid,))
+        if not r:
+            return False
+        plan = json.loads(r[0]["plan"] or "{}")
+        plan.update(kv)
+        store.x("UPDATE v4_positions SET plan=? WHERE id=?", (json.dumps(plan, default=str), pid))
+    return True
+
+
 def update_plan(pid, **kv):
     """Merge fields into an OPEN position's plan (marks, mfe/mae, pending-exit notes). Closed rows are never edited."""
     schema()

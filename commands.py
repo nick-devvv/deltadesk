@@ -134,8 +134,9 @@ def handle(text, selected="SPY"):
         return {"reply": "Paper entries paused. Open paper positions are still managed.", "handled": True}
     if re.search(r"\b(resume|start) paper\b", low):
         store.kv_set("paper_enabled", True)
-        store.event("paper", "PAPER ENTRIES RESUMED", "paper")
-        return {"reply": "Paper entries resumed.", "handled": True}
+        store.kv_set("v4_enabled", True)                 # v4: resuming paper resumes the v4 ledgers too
+        store.event("paper", "PAPER ENTRIES RESUMED (v4 ledgers included)", "paper")
+        return {"reply": "Paper entries resumed (the v4 ledgers too).", "handled": True}
 
     # ---------- check once / confirm & watch ----------
     once = bool(re.search(r"\b(check once|once|snapshot)\b", low))

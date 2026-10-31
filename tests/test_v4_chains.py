@@ -23,6 +23,12 @@ from test_v4_index import ChainFake, WED, flat_path  # noqa: E402
 ET = core.ET
 
 
+def _local_open(req):
+    """Loopback requests only, never through an HTTP proxy from the environment."""
+    import urllib.request
+    return urllib.request.build_opener(urllib.request.ProxyHandler({})).open(req, timeout=10)
+
+
 @pytest.fixture
 def env(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "DB", tmp_path / "desk.db")
@@ -143,7 +149,7 @@ def test_chain_status_over_http(env, monkeypatch):
     srv = ThreadingHTTPServer(("127.0.0.1", 0), server.H)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{srv.server_address[1]}/api/v4/chains") as r:
+        with _local_open(f"http://127.0.0.1:{srv.server_address[1]}/api/v4/chains") as r:
             d = json.loads(r.read())
         assert d["rows_today"] > 0 and d["caps"]["rows_per_day"] == CL.MAX_ROWS_DAY and d["version"] == CL.VERSION
     finally:

@@ -17,12 +17,9 @@ day and MAX_DIR_MB for the folder; when a cap is reached logging stops for the d
 import csv
 import gzip
 import io
-import os
 import threading
 import time
 from datetime import timedelta
-
-import pandas as pd
 
 import core
 import marketdata

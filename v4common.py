@@ -25,12 +25,14 @@ def enabled():
 
 
 def entries_blocked():
-    """Why new v4 entries are blocked right now (None = allowed): the v4 kill switch, the desk's emergency pause, a
-    stale stock feed measured by the engine."""
+    """Why new v4 entries are blocked right now (None = allowed): the v4 kill switch, the desk's emergency pause, the
+    Paper page's pause (or its kill switch), a stale stock feed measured by the engine."""
     if not enabled():
         return "v4 kill switch is on: no new v4 entries"
     if store.kv_get("paper_pause"):
         return "paper entries are paused (emergency pause)"
+    if not store.kv_get("paper_enabled", True):
+        return "paper entries are paused (Paper page)"
     try:
         import health
         b = health.entry_block()

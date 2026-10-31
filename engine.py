@@ -959,6 +959,12 @@ def kill_paper(reason="Nick pressed KILL"):
     n = stop_watch()
     real = len(store.positions(ledger="real", status="OPEN"))
     msg = f"KILL SWITCH: paper entries OFF, {closed} paper position(s) closed (simulated), {n} watch(es) stopped"
+    try:                                               # v4: the one big switch covers the v4 ledgers too
+        import v4risk
+        v4 = v4risk.kill(reason)
+        msg += f" | v4: {v4['closed']} closed, {v4['pending']} pending a quote, v4 entries OFF"
+    except Exception as e:
+        msg += f" | v4 kill failed ({type(e).__name__}): use the v4 kill switch on the Research page"
     if real:
         msg += f" | you have {real} real trade(s) open: close them yourself in Robinhood"
     store.event("paper", msg + f" ({reason})", "paper")

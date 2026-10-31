@@ -26,6 +26,12 @@ from test_v4_index import ChainFake, WED, FOMC, flat_path  # noqa: E402
 ET = core.ET
 
 
+def _local_open(req):
+    """Loopback requests only, never through an HTTP proxy from the environment."""
+    import urllib.request
+    return urllib.request.build_opener(urllib.request.ProxyHandler({})).open(req, timeout=10)
+
+
 @pytest.fixture
 def env(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "DB", tmp_path / "desk.db")
@@ -161,10 +167,10 @@ def test_kill_switch_never_touches_legacy_ledgers_and_runs_over_http(env, monkey
     try:
         req = urllib.request.Request(f"http://127.0.0.1:{srv.server_address[1]}/api/v4/kill", data=b'{"reason":"test"}',
                                      headers={"Content-Type": "application/json"}, method="POST")
-        with urllib.request.urlopen(req) as r:
+        with _local_open(req) as r:
             d = json.loads(r.read())
         assert d["ok"] and d["closed"] + d["pending"] == 1
-        with urllib.request.urlopen(f"http://127.0.0.1:{srv.server_address[1]}/api/v4/risk") as r:
+        with _local_open(f"http://127.0.0.1:{srv.server_address[1]}/api/v4/risk") as r:
             st = json.loads(r.read())
         assert st["v4_enabled"] is False and st["limits"]["desk_max_open"] == R.LIMITS["desk_max_open"]
     finally:
@@ -176,3 +182,17 @@ def test_kill_switch_never_touches_legacy_ledgers_and_runs_over_http(env, monkey
 def test_limits_are_code_not_config():
     src = (ROOT / "v4risk.py").read_text()
     assert "LIMITS = {" in src and "json.load" not in src and "kv_get(\"v4_limits" not in src
+
+
+def test_paper_page_pause_and_kill_cover_the_v4_ledgers(env):
+    import commands
+    import engine
+    _pos(1)
+    commands.handle("pause paper", "SPY")
+    assert "Paper page" in R.admit("sip_orb5", "stocks", "NEW", "long")
+    commands.handle("resume paper", "SPY")
+    assert R.admit("sip_orb5", "stocks", "NEW", "long") is None
+    msg = engine.kill_paper("test")
+    assert "v4: 1 closed" in msg and S.positions(status="OPEN") == [] and C.enabled() is False
+    commands.handle("resume paper", "SPY")
+    assert C.enabled() is True and R.admit("sip_orb5", "stocks", "NEW", "long") is None

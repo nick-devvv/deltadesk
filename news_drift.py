@@ -17,7 +17,7 @@ signed by the first bar's direction, and net of the half spread (None if the hor
 Holding time and any RV threshold are picked LATER on the first 2/3 of events and tested on the last 1/3 (plan 4.5).
 """
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 import numpy as np
 import pandas as pd

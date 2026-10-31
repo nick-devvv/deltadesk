@@ -80,6 +80,9 @@ def manage(now=None):
             mods[p["ledger"]].manage(p, now)
         except Exception as e:
             _err(f"manage {p['id']}", e)
+    for p in S.positions(status="OPEN"):                  # options shadows: managed by the stock worker, streamed too
+        if p["kind"] in ("option", "spread") and p["ledger"] not in LEDGERS:
+            syms += [l["symbol"] for l in p["legs"]]
     return syms
 
 

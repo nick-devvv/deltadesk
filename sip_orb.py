@@ -32,7 +32,6 @@ never through a known earnings date; shortest expiry first, then delta nearest 0
 bid when the share trade exits, $0.65/contract/side. If none qualifies, the reason is recorded.
 """
 import json
-import math
 import threading
 import time
 from datetime import date, datetime, timedelta
@@ -666,6 +665,16 @@ def _run():
                 news_drift.step()
         except Exception as e:
             _state["last_error"] = f"news_drift: {type(e).__name__}: {e}"[:200]
+        try:                                       # after the close: matched random entries for today's share trades
+            now = core.now_et()
+            if now.strftime("%H:%M") >= "16:10" and now.weekday() < 5 and not store.kv_get(f"v4_ctl:{now.date()}"):
+                import schwab
+                import v4report
+                with schwab.priority("research"):
+                    n = v4report.score_controls(now.date())
+                store.kv_set(f"v4_ctl:{now.date()}", {"scored": n, "at": store.ts()})
+        except Exception as e:
+            _state["last_error"] = f"controls: {type(e).__name__}: {e}"[:200]
         time.sleep(5)
 
 

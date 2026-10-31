@@ -14,8 +14,6 @@ max DD -$3,453; costs not modeled). Rules frozen 2026-10-31, before any result:
     bar closed; the entry is retried for 5 minutes, then recorded as missed. FOMC days: no entry (risk layer).
 Symbols: SPY, QQQ, and XSP when Schwab lists it that day.
 """
-from datetime import timedelta
-
 import pandas as pd
 
 import core

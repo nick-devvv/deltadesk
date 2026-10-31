@@ -233,6 +233,8 @@ details.defs{padding:0 16px 14px;font-size:12px;color:var(--ink-3)} details.defs
 .scanstat{display:flex;gap:18px;flex-wrap:wrap;font-size:12.5px;color:var(--ink-3);margin-bottom:14px} .scanstat b{color:var(--ink);font-weight:600}
 .scan table{min-width:860px} .scan td.st{font-size:12px;color:var(--ink-3);max-width:300px} .scan td.st.ok{color:var(--up)} .scan td .dir{font-weight:600} .scan td .dir.C{color:var(--up)} .scan td .dir.P{color:var(--down)}
 .cmp td,.cmp th{white-space:nowrap} .cmp td.why{white-space:normal;font-size:12px;color:var(--ink-3);min-width:220px}
+.cmp tr.sub td{color:var(--ink-2);font-size:12px} .cmp tr.sub td:first-child{padding-left:22px;color:var(--ink-3)} .cmp td small{color:var(--ink-3);font-size:11px;margin-left:6px}
+#v4Books .box{margin-bottom:16px} #v4Books .ph h2{white-space:normal;line-height:1.3}
 .alertlist{font-size:12.5px;display:grid;gap:12px} .alertlist b{color:var(--ink-2);font-weight:600;margin-right:6px}
 @media (max-width:1100px){.ledgers.five{grid-template-columns:1fr 1fr}}
 .ledger{padding:14px 18px;background:var(--glass);border:1px solid var(--line);border-radius:var(--r);min-width:0}
@@ -657,7 +659,7 @@ td.n,th.n{text-align:right;white-space:nowrap}
     <!-- PAPER -->
     <section class="view page" id="v-paper" hidden aria-label="Paper engine">
       <h1>Paper trading</h1>
-      <p class="lead">The main strategy, simulated on Schwab quotes by itself: it buys at the ask and sells at the bid, with costs. No broker and no orders. Rules v3 are frozen for the forward test; experiments live on the Research page.</p>
+      <p class="lead">The v3 main strategy, simulated on Schwab quotes: it buys at the ask and sells at the bid, with costs. No broker and no orders. It is retired in v4 and takes no new trades; the v4 lineup is on the Research page. Pause and Kill switch here cover the v4 ledgers too.</p>
       <div class="ledgers one" id="ledgers"></div>
       <section class="box" style="margin-bottom:16px"><div class="ph"><h2>Equity<small>main paper, closed trades</small></h2></div><canvas id="eq" style="width:100%;height:190px;display:block" aria-label="Paper equity curve"></canvas></section>
       <div class="toolbar"><button type="button" id="pauseBtn">Pause paper entries</button><button type="button" id="killBtn" style="border-color:rgba(255,90,78,.5);color:var(--down)">Kill switch</button><span class="m" id="paperBroker"></span></div>
@@ -752,14 +754,24 @@ td.n,th.n{text-align:right;white-space:nowrap}
     <!-- RESEARCH -->
     <section class="view page" id="v-lab" hidden aria-label="Research">
       <h1>Research</h1>
-      <p class="lead">Experiments run on paper next to the main strategy and never mix with it. Each one has its own ledger and version. Nothing gets promoted without forward results and a real sample, and win rate alone never decides.</p>
-      <div class="ledgers five" id="labCards"></div>
-      <div class="box"><div class="ph"><h2>Side by side<small id="labSince"></small></h2></div><div class="bd cmp" id="labTable" style="overflow:auto"></div></div>
+      <p class="lead">The v4 lineup. Every strategy trades on paper in its own ledger, grouped by book. Fills are simulated on live Schwab quotes, never real money. Under 30 trades is not evidence, and win rate alone never decides.</p>
+      <div class="toolbar"><span class="m" id="v4Risk">Loading the v4 desk…</span><span class="grow"></span><button type="button" id="v4Kill" style="border-color:rgba(255,90,78,.5);color:var(--down)">v4 kill switch</button></div>
+      <div id="v4Books"></div>
       <div class="grid2" style="margin-top:16px">
-        <div class="box"><div class="ph"><h2>Open experimental trades</h2></div><div class="bd" id="labOpen"></div></div>
-        <div class="box"><div class="ph"><h2>Research decisions today<small>v3 setups without the daily limits</small></h2></div><div class="bd cands" id="labCands" style="max-height:420px;overflow:auto"></div></div>
+        <div class="box"><div class="ph"><h2>Open v4 paper trades</h2></div><div class="bd" id="v4Open"></div></div>
+        <div class="box"><div class="ph"><h2>News drift<small>event study, no trades</small></h2></div><div class="bd" id="v4News"></div></div>
       </div>
-      <div class="box" style="margin-top:16px"><div class="ph"><h2>Diagnostics<small>latest backtest, modeled option prices</small></h2></div><div class="bd" id="labDiag"></div></div>
+      <details class="more" id="v4Archive" style="margin-top:18px"><summary>Retired ledgers (archive)</summary>
+        <p class="m" style="margin:10px 0 12px">These v3 ledgers take no new trades since v4. Their history stays here, and any trade still open is managed to its exit.</p>
+        <div class="box" style="margin-bottom:16px"><div class="ph"><h2>Retired, all time</h2></div><div class="bd cmp" id="v4Retired" style="overflow:auto"></div></div>
+        <div class="ledgers five" id="labCards"></div>
+        <div class="box"><div class="ph"><h2>Side by side<small id="labSince"></small></h2></div><div class="bd cmp" id="labTable" style="overflow:auto"></div></div>
+        <div class="grid2" style="margin-top:16px">
+          <div class="box"><div class="ph"><h2>Open experimental trades</h2></div><div class="bd" id="labOpen"></div></div>
+          <div class="box"><div class="ph"><h2>Research decisions today<small>v3 setups without the daily limits</small></h2></div><div class="bd cands" id="labCands" style="max-height:420px;overflow:auto"></div></div>
+        </div>
+        <div class="box" style="margin-top:16px"><div class="ph"><h2>Diagnostics<small>latest backtest, modeled option prices</small></h2></div><div class="bd" id="labDiag"></div></div>
+      </details>
     </section>
 
     <!-- JOURNAL -->
@@ -1723,7 +1735,7 @@ function histTable(rows, showDay=true){
 const metricRow = items => items.map(m=>`<div><small>${m[0]}</small><b class="${m[2]||""}">${m[1]}</b></div>`).join("");
 
 /* ---------- paper ---------- */
-const LEDGERS = [["paper","Main paper","The desk’s rules: 4 ideas a day, stops after the losing streak, flat by 15:25.", true]];
+const LEDGERS = [["paper","Main paper (retired)","Retired in v4: it takes no new trades. Its history and any open trade stay here. The v4 lineup is on the Research page.", true]];
 let candPf = "paper", CANDS = [], PF = null;
 const FAM = {ORB_BREAK:"ORB break", ORB_RETEST:"ORB retest", FAILED_BREAK:"Failed break", PDH_RETEST:"PDH retest", PDL_RETEST:"PDL retest",
              VWAP_RECLAIM:"VWAP reclaim", VWAP_MACD:"VWAP + MACD", LEVEL:"Your level"};
@@ -2097,9 +2109,58 @@ async function loadScanner(){
   $("#scanAlerts").innerHTML = al.length ? al.map(a => `<div><b>${esc(hhmm(a.ts))}</b>${esc(a.text)}</div>`).join("") : '<div class="m">No scanner alerts yet today.</div>';
 }
 
-/* ---------- research ---------- */
+/* ---------- research: the v4 lineup ---------- */
+const V4SINCE = "2026-11-02";
+const v4num = x => x != null ? money(x) : "—";
+function v4cells(m, rnd){
+  m = m || {};
+  return `<td class="n">${m.trades || 0}</td><td class="n">${m.win_rate != null ? m.win_rate + "%" : "—"}</td><td class="n">${v4num(m.avg_win)}</td>
+    <td class="n">${v4num(m.avg_loss)}</td><td class="n ${tone(m.expectancy)}">${v4num(m.expectancy)}</td><td class="n">${m.profit_factor ?? "—"}</td>
+    <td class="n">${m.max_drawdown != null ? money(-m.max_drawdown) : "—"}</td><td class="n">${rnd || "—"}</td>`;
+}
+function v4book(b){
+  const rows = b.ledgers.map(l => {
+    const rnd = l.random ? `${l.random.edge_r >= 0 ? "+" : "−"}${Math.abs(l.random.edge_r).toFixed(2)}R <small>n ${l.random.n}</small>` : "";
+    const notes = [l.open ? `${l.open} open` : "", l.risk_blocks ? `${l.risk_blocks} risk blocks` : "", l.trades && l.small_sample ? "under 30 trades" : ""].filter(Boolean).join(", ");
+    let h = `<tr><td><b>${esc(l.label)}</b><small>${esc(l.ledger)}</small></td>${v4cells(l, rnd)}<td class="why">${esc(notes || "")}</td></tr>`;
+    Object.entries(l.by_ticker || {}).forEach(([t, m]) => { if (m.trades || t === "SPY" || t === "QQQ") h += `<tr class="sub"><td>${esc(t)}</td>${v4cells(m)}<td></td></tr>`; });
+    if (l.shadow){ const s = l.shadow, nc = Object.entries(s.no_contract || {}).sort((a, c) => c[1] - a[1]).slice(0, 2).map(([w, n]) => `${w} ${n}`).join("; ");
+      h += `<tr class="sub"><td>options shadow</td>${v4cells(s)}<td class="why">${esc(nc ? "no contract: " + nc : (s.open ? s.open + " open" : ""))}</td></tr>`; }
+    return h; }).join("");
+  return `<section class="box"><div class="ph"><h2>${esc(b.title)}</h2></div><div class="bd cmp" style="overflow:auto"><table><thead><tr><th>Ledger</th><th class="n">Trades</th><th class="n">Won</th><th class="n">Avg win</th><th class="n">Avg loss</th><th class="n">Per trade</th><th class="n">Profit factor</th><th class="n">Max DD</th><th class="n">vs random</th><th>Notes</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
+}
+async function loadV4(){
+  let d; try { d = await api(`api/v4?since=${V4SINCE}`); } catch(e){ $("#v4Books").innerHTML = `<div class="d">Couldn’t load the v4 ledgers: ${esc(e.message)}</div>`; return; }
+  const r = d.risk || {}, o = r.open || {};
+  $("#v4Risk").textContent = `${r.v4_enabled ? "v4 entries on" : "v4 entries OFF (kill switch)"}${r.entries_blocked && r.v4_enabled ? `: ${r.entries_blocked}` : ""}. ${o.desk || 0} open of ${(r.limits || {}).desk_max_open} max. Today: ${Object.entries(r.pnl_today || {}).map(([b, v]) => `${b} ${money(v)}`).join(", ")}. FOMC today: ${r.fomc_today == null ? "unknown" : r.fomc_today ? "yes" : "no"}.`;
+  $("#v4Kill").textContent = r.v4_enabled ? "v4 kill switch" : "Turn v4 entries back on";
+  $("#v4Kill").dataset.on = r.v4_enabled ? "1" : "";
+  $("#v4Books").innerHTML = (d.books || []).map(v4book).join("") + `<p class="m" style="font-size:11.5px">${esc(d.note || "")} Since ${esc(d.since)}.</p>`;
+  const nd = d.news_drift || {}, hz = nd.by_horizon || {};
+  $("#v4News").innerHTML = `<p class="m">${nd.events || 0} resolved events. Net = the move in the first post-news bar’s direction minus half the spread.</p><table><tbody>${
+    ["15","30","60","120"].map(h => { const x = hz[h] || {}; return `<tr><td>+${h} min</td><td class="n">${x.n || 0} events</td><td class="n">${x.mean_net != null ? (x.mean_net * 100).toFixed(2) + "%" : "—"}</td><td class="n">${x.hit_rate != null ? Math.round(x.hit_rate * 100) + "% up" : "—"}</td></tr>`; }).join("")}</tbody></table>
+    <p class="m" style="font-size:11.5px">Chain log: ${esc((d.chains || {}).status || "—")}, ${(d.chains || {}).rows_today || 0} rows today. Stocks worker: ${esc((d.stocks_worker || {}).status || "—")}.</p>`;
+  const ret = (d.retired || {}).ledgers || [];
+  $("#v4Retired").innerHTML = ret.length ? `<table><thead><tr><th>Ledger</th><th class="n">Trades</th><th class="n">Won</th><th class="n">Avg win</th><th class="n">Avg loss</th><th class="n">Per trade</th><th class="n">Profit factor</th><th class="n">Max DD</th><th class="n">Open</th></tr></thead><tbody>${
+    ret.map(l => `<tr><td><b>${esc(l.ledger)}</b> <span class="m">retired</span></td>${v4cells(l, String(l.open || 0))}</tr>`).join("")}</tbody></table>` : '<div class="empty">No retired-ledger history in this database.</div>';
+  try { const op = await api("api/v4/positions?status=OPEN");
+    $("#v4Open").innerHTML = op.length ? op.map(p => `<div class="pos"><span class="who2 paper">${esc(p.ledger)}</span><b>${esc(p.ticker)} ${esc(p.desc)} @ ${p.kind === "spread" ? "credit " : ""}${usd(p.entry_px)}</b><span class="pl ${tone(p.mtm)}">${p.mtm != null ? money(p.mtm) : "—"}</span><span class="next">${esc(p.next || "")}</span></div>`).join("") : '<div class="empty">No open v4 paper trades.</div>';
+  } catch(e){ $("#v4Open").innerHTML = `<div class="d">${esc(e.message)}</div>`; }
+}
+$("#v4Kill").onclick = async () => {
+  const b = $("#v4Kill");
+  if (!b.dataset.on){ await api("api/v4/enable", {on: true}); return loadV4(); }
+  if (b.dataset.arm !== "1"){ b.dataset.arm = "1"; b.textContent = "Tap again: close ALL v4 paper trades"; setTimeout(() => { b.dataset.arm = ""; loadV4(); }, 4000); return; }
+  b.dataset.arm = ""; await api("api/v4/kill", {reason: "Nick pressed the v4 kill switch"}); loadV4();
+};
+$("#v4Archive").addEventListener("toggle", () => { if ($("#v4Archive").open) loadLabArchive(); });
+
 const LAB = ["research","exit31","noise","inplay","board","old"];
 async function loadLab(){
+  loadV4();
+  if ($("#v4Archive").open) loadLabArchive();
+}
+async function loadLabArchive(){
   let d; try { d = await api("api/research"); } catch(e){ $("#labTable").innerHTML = `<div class="d">${esc(e.message)}</div>`; return; }
   const L = d.ledgers || {}, v = d.variants || {};
   $("#labSince").textContent = "since " + d.since;
