@@ -168,8 +168,11 @@ main{min-width:0;min-height:0;overflow:hidden;display:flex;flex-direction:column
 .fhead h1{font:600 20px var(--disp);letter-spacing:.02em}
 .fhead h1 span{color:var(--ink-3);font-weight:500}
 .fhead .m{margin-left:auto;font-size:12px}
-.chartbox{position:relative;flex:1;min-height:0}
-.chartbox>#desk,.chartbox>#tv{position:absolute;inset:0}
+/* v3.5 chart sizing contract (both charts): the box takes its size from the frame's flex layout and never from its
+   content (contain:size), and the chart root fills the box absolutely. The Markets root (#mkDesk) was not covered
+   before, so the auto-sizing chart measured its own height and grew a little on every update. */
+.chartbox{position:relative;flex:1 1 0;min-height:160px;min-width:0;overflow:hidden;contain:size layout}
+.chartbox>#desk,.chartbox>#tv,.chartbox>#mkDesk,.chartbox>.chartroot{position:absolute;inset:0;overflow:hidden}
 .fhead .seg.tf button,.fhead .seg.src button{font-size:12.5px;padding:5px 7px}
 .fhead .src{margin-left:auto}
 .feedchip{display:inline-flex;align-items:center;gap:6px;font:500 12px var(--sans);color:var(--ink-2);white-space:nowrap}
@@ -604,7 +607,7 @@ td.n,th.n{text-align:right;white-space:nowrap}
             <div class="seg tf" role="group" aria-label="Candle size" id="tfSeg"><button type="button" data-tf="1">1m</button><button type="button" data-tf="2">2m</button><button type="button" data-tf="5">5m</button></div>
             <span class="feedchip" id="feedChip" role="status">Connecting</span>
             <div class="seg src" role="group" aria-label="Chart" id="srcSeg"><button type="button" data-src="desk" title="The desk's own chart, drawn from the same Schwab data the engine decides on">Desk</button><button type="button" data-src="tv" title="TradingView's chart and feed">TradingView</button></div></div>
-          <div class="chartbox"><div id="desk" aria-label="Desk chart"></div><div class="lgd" id="lgd" aria-hidden="true"></div><div id="tv" hidden></div>
+          <div class="chartbox"><div id="desk" class="chartroot" aria-label="Desk chart"></div><div class="lgd" id="lgd" aria-hidden="true"></div><div id="tv" hidden></div>
             <button type="button" class="golive" id="goLive" hidden title="Jump back to the newest candle">Back to live</button></div>
         </section>
       </div>
@@ -690,7 +693,7 @@ td.n,th.n{text-align:right;white-space:nowrap}
             <button type="button" class="extbtn" id="mkExt" aria-pressed="false" title="Show pre-market and after-hours candles. VWAP and the indicators stay regular-session.">Ext hours</button>
             <span class="feedchip" id="mkChip" role="status">—</span></div>
           <div class="chartstat" id="mkStat" aria-live="polite"></div>
-          <div class="chartbox"><div id="mkDesk" aria-label="Markets chart"></div><div class="lgd" id="mkLgd" aria-hidden="true"></div>
+          <div class="chartbox"><div id="mkDesk" class="chartroot" aria-label="Markets chart"></div><div class="lgd" id="mkLgd" aria-hidden="true"></div>
             <button type="button" class="golive" id="mkLive" hidden title="Jump back to the newest candle">Back to live</button></div>
         </section>
         <aside class="box mkread"><div class="ph"><h2 id="mkReadT">Desk read</h2><div class="r"><button type="button" data-side="C" class="mkchk">Check calls</button><button type="button" data-side="P" class="mkchk">Check puts</button></div></div>

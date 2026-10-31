@@ -657,3 +657,14 @@ def test_lab_protects_open_trades_before_slow_research(env, monkeypatch):
     assert seen[0][1] < 0.2 and lab._state["risk_s"] < 0.2 and lab._state["step_s"] >= 0.6
     import health
     assert health.workers()["lab"]["state"] == "ok"
+
+
+# ================================================================ C2 chart sizing (static contract; the browser run is in docs/checks)
+def test_both_chart_roots_share_one_bounded_sizing_contract():
+    import re
+    h = (ROOT / "index.html").read_text()
+    css = re.search(r"\.chartbox>#desk,\.chartbox>#tv,\.chartbox>#mkDesk,\.chartbox>\.chartroot\{([^}]*)\}", h)
+    assert css and "position:absolute" in css.group(1) and "inset:0" in css.group(1)
+    box = re.search(r"\.chartbox\{([^}]*)\}", h).group(1)
+    assert "contain:size" in box and "min-height:160px" in box and "overflow:hidden" in box
+    assert 'id="mkDesk" class="chartroot"' in h and 'id="desk" class="chartroot"' in h
