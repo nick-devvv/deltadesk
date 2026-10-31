@@ -207,12 +207,14 @@ def test_lab_exits_target_stop_premium_and_all_out(lw):
     store.x("DELETE FROM gate_setups")
     prov.q[sym] = (4.90, 5.00)
     marketdata._quotes.pop(sym, None)
-    s3 = dict(s, id=s["id"] + "b", b=s["b"])
+    s3 = dict(s, id=s["id"] + "b", b=s["b"] + timedelta(minutes=1))     # v3.5: a new idea (a reused idea id no longer overwrites)
     lab._state.update(att_t=None)
-    assert lab.paper_attempt(s3, now, dict(lab.cfg())).startswith("ORDER")
+    r3 = lab.paper_attempt(s3, now, dict(lab.cfg()))
+    assert r3.startswith("ORDER")
     clock.t = V.DAY.replace(hour=15, minute=26)
     assert lab.manage_all(clock()) == 1
-    assert "ALL OUT" in json.loads(store.q("SELECT plan FROM positions WHERE ledger='lab_orb_break' ORDER BY opened DESC")[0]["plan"])["exit_reason"]
+    assert "ALL OUT" in store.pos_get(r3.split()[1])["plan"]["exit_reason"]
+    assert len(store.q("SELECT id FROM positions WHERE ledger='lab_orb_break'")) == 2           # both trades kept, none overwritten
 
 
 def _tape_row(i, fam, t, day, r, ctl, cond):

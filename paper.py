@@ -97,8 +97,8 @@ def reserve_idea(portfolio, idea, ticker, side, cap=None):
 
 
 def release_idea(portfolio, idea, why):
-    """An idea that never filled does not count toward the cap."""
-    store.x("UPDATE ideas SET status='RELEASED' WHERE portfolio=? AND idea=?", (portfolio, idea))
+    """An idea that never filled does not count toward the cap. A FILLED idea is never released (v3.5)."""
+    store.x("UPDATE ideas SET status='RELEASED' WHERE portfolio=? AND idea=? AND status!='FILLED'", (portfolio, idea))
 
 
 def ideas_today(portfolio):
@@ -165,7 +165,7 @@ def buy(portfolio, idea, ticker, side, plan, qty, signal_t):
             plan = dict(plan, premium_stop=ceiling)                                 # tighten to the actual 20% line
     elif plan.get("premium_limit") and q["ask"] > plan["premium_limit"]:
         return None, f"ask {q['ask']:.2f} above the limit {plan['premium_limit']:.2f}: no chase"
-    pid = f"{portfolio[:2].upper()}-{idea}"
+    pid = f"{portfolio}:{idea}"            # v3.5: the FULL ledger id (two-letter prefixes could collide); old ids stay
     st = {"v": plan.get("v", 3), "symbol": sym, "entry_premium": fill, "fees_side": fee, "slip_at_entry": slip,
           "premium_stop": plan["premium_stop"], "stop_px": plan["stop_px"], "t1": plan["t1"], "t1_level": plan["t1_level"],
           "t1_px": plan["t1_px"], "be_trigger": plan["be_trigger"], "breakeven_net": plan["breakeven_net"],
@@ -184,19 +184,23 @@ def buy(portfolio, idea, ticker, side, plan, qty, signal_t):
     for k in ("noise_upper", "noise_lower", "orb_high", "orb_low", "atr14", "rvol", "contract_score", "scan_id", "expiry"):
         if plan.get(k) is not None:
             st[k] = plan[k]
-    store.pos_save({"id": pid, "ledger": portfolio, "date": core.now_et().strftime("%Y-%m-%d"), "ticker": ticker,
-                    "contract": plan["label"], "symbol": sym, "side": side, "qty_init": qty, "qty_open": qty, "fill": fill,
-                    "opened": store.ts(), "closed": None, "status": "OPEN", "setup_id": idea, "grade": plan.get("grade"),
-                    "setup": plan.get("family"), "plan": st, "realized": round(-fee * qty, 2), "mfe": 0, "mae": 0,
-                    "policy_version": plan.get("policy_version") or core.policy()["version"],
-                    "verified": f"sim fill on {q.get('provider')}", "notes": ""})
-    store.x("INSERT OR IGNORE INTO orders(client_id,position_id,ts,side,qty,status,broker_id,filled_qty,filled_price,reason) "
-            "VALUES(?,?,?,?,?,?,?,?,?,?)", (f"{pid}-B", pid, store.ts(), "buy", qty, "FILLED", "sim", qty, fill, plan.get("family")))
-    store.x("UPDATE ideas SET status='FILLED', position_id=? WHERE portfolio=? AND idea=?", (pid, portfolio, idea))
-    store.event(_ev_kind(portfolio, "paper_open"),
-                f"{_name(portfolio)} BUY {qty} {ticker} {plan['label']} sim fill ${fill:.2f} (ask {q['ask']:.2f} + {slip:.2f} slip) | "
-                f"stop {_px(plan.get('stop_px'))} underlying / ${plan['premium_stop']:.2f} premium | T1 {plan.get('t1') or 'none'} {_px(plan.get('t1_level'))}",
-                portfolio, pid, {"quote_age_s": q.get("age_s"), "provider": q.get("provider")})
+    # v3.5: position, order, idea and event are ONE transaction; a retry of the same idea can't fill twice
+    with store.tx():
+        if store.q("SELECT id FROM positions WHERE id=?", (pid,)):
+            return None, f"already filled as {pid} (a retry never fills twice)"
+        store.pos_insert({"id": pid, "ledger": portfolio, "date": core.now_et().strftime("%Y-%m-%d"), "ticker": ticker,
+                          "contract": plan["label"], "symbol": sym, "side": side, "qty_init": qty, "qty_open": qty, "fill": fill,
+                          "opened": store.ts(), "closed": None, "status": "OPEN", "setup_id": idea, "grade": plan.get("grade"),
+                          "setup": plan.get("family"), "plan": st, "realized": round(-fee * qty, 2), "mfe": 0, "mae": 0,
+                          "policy_version": plan.get("policy_version") or core.policy()["version"],
+                          "verified": f"sim fill on {q.get('provider')}", "notes": ""})
+        store.x("INSERT INTO orders(client_id,position_id,ts,side,qty,status,broker_id,filled_qty,filled_price,reason) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?)", (f"{pid}-B", pid, store.ts(), "buy", qty, "FILLED", "sim", qty, fill, plan.get("family")))
+        store.x("UPDATE ideas SET status='FILLED', position_id=? WHERE portfolio=? AND idea=?", (pid, portfolio, idea))
+        store.event(_ev_kind(portfolio, "paper_open"),
+                    f"{_name(portfolio)} BUY {qty} {ticker} {plan['label']} sim fill ${fill:.2f} (ask {q['ask']:.2f} + {slip:.2f} slip) | "
+                    f"stop {_px(plan.get('stop_px'))} underlying / ${plan['premium_stop']:.2f} premium | T1 {plan.get('t1') or 'none'} {_px(plan.get('t1_level'))}",
+                    portfolio, pid, {"quote_age_s": q.get("age_s"), "provider": q.get("provider")})
     return pid, None
 
 
@@ -236,19 +240,26 @@ def sell(p, qty, reason):
     slip, fee = strict_costs() if is_strict(p["ledger"]) else costs(q["ask"] - q["bid"])
     px = round(max(0.0, q["bid"] - slip), 4)
     pnl = round((px - p["fill"]) * 100 * qty - fee * qty, 2)
-    p["realized"] = round((p["realized"] or 0) + pnl, 2)
-    p["qty_open"] -= qty
-    if p["qty_open"] == 0:
-        p.update(status="CLOSED", closed=store.ts())
-        p["plan"]["exit_px"] = underlying_px(p["ticker"])
-        p["plan"]["exit_reason"] = reason
-    store.pos_save(p)
-    n = len(store.q("SELECT client_id FROM orders WHERE position_id=?", (p["id"],)))
-    store.x("INSERT INTO orders(client_id,position_id,ts,side,qty,status,broker_id,filled_qty,filled_price,reason) VALUES(?,?,?,?,?,?,?,?,?,?)",
-            (f"{p['id']}-S{n}", p["id"], store.ts(), "sell", qty, "FILLED", "sim", qty, px, reason))
-    store.event(_ev_kind(p["ledger"], "paper_exit"),
-                f"{_name(p['ledger'])} SELL {qty} {p['contract']} sim ${px:.2f} (bid {q['bid']:.2f} - {slip:.2f}): {reason} | "
-                f"trade P/L ${p['realized']:+.2f} net", p["ledger"], p["id"])
+    ux = underlying_px(p["ticker"]) if p["qty_open"] - qty == 0 else None
+    with store.tx():                               # v3.5: the exit, its order and its event commit together
+        cur = store.q("SELECT qty_open, status, realized FROM positions WHERE id=?", (p["id"],))
+        if cur and (cur[0]["status"] != "OPEN" or cur[0]["qty_open"] < qty):
+            return 0, "already exited (a retry never sells twice)"
+        if cur:
+            p["realized"], p["qty_open"] = cur[0]["realized"], cur[0]["qty_open"]
+        p["realized"] = round((p["realized"] or 0) + pnl, 2)
+        p["qty_open"] -= qty
+        if p["qty_open"] == 0:
+            p.update(status="CLOSED", closed=store.ts())
+            p["plan"]["exit_px"] = ux
+            p["plan"]["exit_reason"] = reason
+        store.pos_save(p)
+        n = len(store.q("SELECT client_id FROM orders WHERE position_id=?", (p["id"],)))
+        store.x("INSERT INTO orders(client_id,position_id,ts,side,qty,status,broker_id,filled_qty,filled_price,reason) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                (f"{p['id']}-S{n}", p["id"], store.ts(), "sell", qty, "FILLED", "sim", qty, px, reason))
+        store.event(_ev_kind(p["ledger"], "paper_exit"),
+                    f"{_name(p['ledger'])} SELL {qty} {p['contract']} sim ${px:.2f} (bid {q['bid']:.2f} - {slip:.2f}): {reason} | "
+                    f"trade P/L ${p['realized']:+.2f} net", p["ledger"], p["id"])
     return qty, px
 
 

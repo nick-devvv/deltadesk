@@ -10,6 +10,7 @@ Older rows from v2 (Alpaca paper fills, Yahoo/Alpaca data) keep their original p
 import json
 import sqlite3
 import threading
+from contextlib import contextmanager
 import time
 import uuid
 from pathlib import Path
@@ -59,6 +60,32 @@ def conn():
             _conn.execute("PRAGMA journal_mode=WAL")  # the Kronos test process writes too
             _conn.executescript(SCHEMA)
         return _conn
+
+
+_tx = threading.local()
+
+
+@contextmanager
+def tx():
+    """v3.5: one atomic unit. Everything inside commits together or not at all (a crash between a position, its
+    order, its idea and its event can no longer leave half a trade). Re-entrant: a nested tx() joins the outer one.
+    Holds the store lock for its duration, so other threads wait instead of interleaving."""
+    with _lock:
+        depth = getattr(_tx, "depth", 0)
+        c = conn()
+        if depth == 0:
+            c.execute("BEGIN IMMEDIATE")
+        _tx.depth = depth + 1
+        try:
+            yield c
+        except BaseException:
+            _tx.depth = depth
+            if depth == 0:
+                c.execute("ROLLBACK")
+            raise
+        _tx.depth = depth
+        if depth == 0:
+            c.execute("COMMIT")
 
 
 def q(sql, args=()):
@@ -140,13 +167,25 @@ def positions(ledger=None, status=None, day=None):
     return [_dec(p) for p in q(sql + " ORDER BY opened", a)]
 
 
+def pos_insert(p):
+    """v3.5: create a position; fails (IntegrityError) if the id already exists instead of overwriting it."""
+    d = dict(p)
+    d["plan"] = json.dumps(d.get("plan") or {}, default=_jd)
+    cols = list(d)
+    x(f"INSERT INTO positions({','.join(cols)}) VALUES({','.join('?' * len(cols))})", [d[c] for c in cols])
+    return p
+
+
 def pos_save(p):
     d = dict(p)
     d["plan"] = json.dumps(d.get("plan") or {}, default=_jd)
     cols = list(d)
+    # v3.5: a stale in-memory copy can never reopen a CLOSED trade or undo its exit (status/qty/realized/closed stick)
+    sticky = ("status", "qty_open", "closed", "realized")
+    sets = [f"{c}=CASE WHEN positions.status='CLOSED' THEN positions.{c} ELSE excluded.{c} END" if c in sticky else f"{c}=excluded.{c}"
+            for c in cols if c != "id"]
     x(f"INSERT INTO positions({','.join(cols)}) VALUES({','.join('?' * len(cols))}) "
-      f"ON CONFLICT(id) DO UPDATE SET {','.join(f'{c}=excluded.{c}' for c in cols if c != 'id')}",
-      [d[c] for c in cols])
+      f"ON CONFLICT(id) DO UPDATE SET {','.join(sets)}", [d[c] for c in cols])
     return p
 
 

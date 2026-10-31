@@ -246,8 +246,9 @@ def _open_paper(clock, fk, qty=2, side="C", stop_px=599.0, t1_px=603.0, t1_level
     plan = {"symbol": f"SPY261028{side}00600000", "label": f"600{side}", "premium_stop": 1.64, "stop_px": stop_px, "t1": "PDH",
             "t1_level": t1_level, "t1_px": t1_px, "be_trigger": 2.27, "breakeven_net": 2.07, "family": "TEST",
             "premium_limit": 3.0, "flat_by": "23:59"}
-    paper.reserve_idea("paper", "X", "SPY", side)
-    pid, why = paper.buy("paper", "X", "SPY", side, plan, qty, clock().isoformat())
+    idea = f"X-{clock().strftime('%H%M%S')}"        # v3.5: one idea = one position id; a reused idea no longer overwrites
+    paper.reserve_idea("paper", idea, "SPY", side)
+    pid, why = paper.buy("paper", idea, "SPY", side, plan, qty, clock().isoformat())
     assert pid, why
     return pid
 

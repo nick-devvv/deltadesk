@@ -219,13 +219,16 @@ def _open(idea, ticker, st, g, c):
     pid = f"OL-{idea}"
     plan = dict(ex, v=2, invalidation=st["invalidation"], be_hit=False, t1_done=False, trail=None, last_bid=q["bid"],
                 entry_px=paper.underlying_px(ticker))
-    store.pos_save({"id": pid, "ledger": "old", "date": core.now_et().strftime("%Y-%m-%d"), "ticker": ticker,
-                    "contract": f"{int(c['symbol'][-8:]) / 1000:g}{c['symbol'][-9]}", "symbol": c["symbol"], "side": st["side"],
-                    "qty_init": qty, "qty_open": qty, "fill": fill, "opened": store.ts(), "closed": None, "status": "OPEN",
-                    "setup_id": idea, "grade": g, "setup": st["family"], "plan": plan, "realized": round(-fee * qty, 2),
-                    "mfe": 0, "mae": 0, "policy_version": P()["version"], "verified": "sim fill (old-policy shadow)", "notes": st["note"]})
-    store.x("UPDATE ideas SET status='FILLED', position_id=? WHERE portfolio='old' AND idea=?", (pid, idea))
-    store.event("old", f"OLD-POLICY BUY {qty} {ticker} {plan.get('window')} {st['family']} sim ${fill:.2f}", "old", pid)
+    with store.tx():                                   # v3.5: one atomic unit, and a retry never overwrites a fill
+        if store.q("SELECT id FROM positions WHERE id=?", (pid,)):
+            return None
+        store.pos_insert({"id": pid, "ledger": "old", "date": core.now_et().strftime("%Y-%m-%d"), "ticker": ticker,
+                          "contract": f"{int(c['symbol'][-8:]) / 1000:g}{c['symbol'][-9]}", "symbol": c["symbol"], "side": st["side"],
+                          "qty_init": qty, "qty_open": qty, "fill": fill, "opened": store.ts(), "closed": None, "status": "OPEN",
+                          "setup_id": idea, "grade": g, "setup": st["family"], "plan": plan, "realized": round(-fee * qty, 2),
+                          "mfe": 0, "mae": 0, "policy_version": P()["version"], "verified": "sim fill (old-policy shadow)", "notes": st["note"]})
+        store.x("UPDATE ideas SET status='FILLED', position_id=? WHERE portfolio='old' AND idea=?", (pid, idea))
+        store.event("old", f"OLD-POLICY BUY {qty} {ticker} {plan.get('window')} {st['family']} sim ${fill:.2f}", "old", pid)
     return pid
 
 

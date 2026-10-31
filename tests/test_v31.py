@@ -52,8 +52,9 @@ def _open31(clock, fk, qty=2, t1_px=600.5, t1_level=600.6, stop_px=599.0, ledger
             "t1_level": t1_level, "t1_px": t1_px, "be_trigger": 2.27, "breakeven_net": 2.07, "family": "TEST",
             "exit_profile": "v31", "variant": "exit31", "policy_version": "2026-10-30.v3.1-exit31",
             "flat_by": (clock() + timedelta(minutes=15)).strftime("%H:%M")}
-    paper.reserve_idea(ledger, "X31", "SPY", "C")
-    pid, why = paper.buy(ledger, "X31", "SPY", "C", plan, qty, clock().isoformat())
+    idea = f"X31-{clock().strftime('%H%M%S')}"
+    paper.reserve_idea(ledger, idea, "SPY", "C")
+    pid, why = paper.buy(ledger, idea, "SPY", "C", plan, qty, clock().isoformat())
     assert pid, why
     return pid
 
