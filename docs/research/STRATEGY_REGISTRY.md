@@ -182,5 +182,24 @@ Each ledger's exact rules, parameters, cost model and version id are frozen in i
 | `earn_day` | 2026-11-02.v4-sip1 | `sip_orb.py` | as `sip_orb5_x`, first session after an 8-K 2.02 (C) | as above |
 | `news_drift` (event study, no trades) | 2026-11-02.v4-newsdrift1 | `news_drift.py` | STRATEGY_PLAN 4.5 (C) | moves net of half the spread at entry |
 | `old` (legacy forward test, not from a published source) | policy 2026-10-28.3 | `policy_old.py` | none: Nick's earlier desk rules, kept active by Nick | SPY/QQQ 0DTE options, exec1 |
+| `fb_or` (sprint forward test, not promoted) | 2026-11-02.v4-sprint_paper1 | `sprint_paper.py` | sprint backtest setups_v2-012 (in-sample) | SPY/QQQ 0DTE calls at the ask, sold at the bid, $0.65/contract/side |
+| `otm_put` (sprint forward test, not promoted) | 2026-11-02.v4-sprint_paper1 | `sprint_paper.py` | sprint backtest otm_v1-011 (in-sample; idea from Option Alpha's Top Backtests, heavily selected) | as `fb_or`, puts |
+| `otm_bounce` (sprint forward test, WATCH-ONLY) | 2026-11-02.v4-sprint_paper1 | `sprint_paper.py` | sprint backtest otm_v1-042 (in-sample, 44 trades, one episode) | as `fb_or`, calls |
 
 Variants tried before the forward test: none run on data yet. Count every later variant for the deflated Sharpe.
+
+## Sprint paper ledgers: forward tests of in-sample backtests (registered 2026-11-02, before any forward trade)
+
+Nick said yes on 2026-10-31. These are paper-only twins of the sprint's best near-misses. Their rules are the backtest runs' own rules: `sprint_paper.py` reads them from the sprint specs, pinned by sha256, and computes signals, filters and contracts with the sprint code. Full rules, parity method and deviations: `docs/STRATEGY_PLAN.md` section 7.
+
+| Ledger | Source run (spec sha256) | Rules | Backtest (in-sample, DEV, MODELED 2% half-spread, SPY+QQQ+IWM) | Failed robustness checks |
+|---|---|---|---|---|
+| `fb_or` | setups_v2-012 (`2b3d90478447`) | `failed_break_or` calls (OR15L/OR30L; close below by > $0.01, back above within 5 bars, probe <= 0.5 x ATR(14, 5m)); BS-EST delta 0.40-0.55 nearest 0.45; premium ceiling by entry window 20/12/10% held for the trade (time rule b); no target; all out 15:25 | 429 trades, win 10.5%, +$18.57/trade, PF 1.785, PF 2x 1.268, max DD -$1,452.16 | Aug-Dec 2024 stretch lost (-$609.27, PF 0.71); positive without the best 5 (+$688) |
+| `otm_put` | otm_v1-011 (`ece0232e5457`) | `time_1030` puts; filters vixy_pctl_le40 + vixy_not_rising + day_up + wed_fri + skip_opex; delta 0.06-0.15 nearest 0.10; -95% stop, +9900% target; all out 15:25 | 375 trades, win 13.1%, +$10.20/trade, PF 1.655, PF 2x 1.52, max DD -$1,690.48 | Jan-Jun 2026 stretch lost (-$1,514.19, PF 0.29); negative without the best 5; 2 of 11 two-month blocks up |
+| `otm_bounce` (WATCH-ONLY) | otm_v1-042 (`ece0232e5457`) | `time_1100` calls; filters vixy_pctl_ge60 + day_down + skip_opex; delta 0.03-0.12 nearest 0.07; exit as `otm_put` | 44 trades, win 6.8%, +$130.48/trade, PF 10.34, PF 2x 9.44, max DD -$533.92 | under 60 trades, all in 2 two-month blocks (one high-volatility episode) |
+
+- **Trials:** setups_v2 counted 2,827 trials and otm_v1 3,187 for the deflated Sharpe, which is 0.000 for all three runs. Any later variant adds to that count.
+- **Status: forward test, NOT promoted.** Promotion needs CLAUDE.md step 5: pre-registered thresholds passed on data the rules were never tuned on, plus at least 40 forward paper trades whose fills match the model.
+- **What the forward test measures** (fixed now): entry and exit half-spreads actually paid vs the 2% model; the share of signals filled; then, after 40 trades, expectancy after costs, PF, max drawdown and a session-bootstrap 95% interval. Under 30 trades is not evidence.
+- **Deviations from the backtest:** SPY+QQQ only (no IWM snapshot); Schwab bars, chain mids and live bid/ask instead of Alpaca bars, last trades and a modeled spread; VIXY from Schwab; the v4 risk layer can block entries (recorded).
+

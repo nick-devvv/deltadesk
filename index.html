@@ -2121,7 +2121,8 @@ function v4cells(m, rnd){
 function v4book(b){
   const rows = b.ledgers.map(l => {
     const rnd = l.random ? `${l.random.edge_r >= 0 ? "+" : "−"}${Math.abs(l.random.edge_r).toFixed(2)}R <small>n ${l.random.n}</small>` : "";
-    const notes = [l.open ? `${l.open} open` : "", l.risk_blocks ? `${l.risk_blocks} risk blocks` : "", l.trades && l.small_sample ? "under 30 trades" : ""].filter(Boolean).join(", ");
+    const notes = [l.source_run ? `${l.evidence || "PAPER"}: forward test of in-sample backtest ${l.source_run}, not promoted${l.watch_only ? ", WATCH-ONLY" : ""}${l.enabled === false ? " (switched off)" : ""}` : "",
+      l.open ? `${l.open} open` : "", l.risk_blocks ? `${l.risk_blocks} risk blocks` : "", l.trades && l.small_sample ? "under 30 trades" : ""].filter(Boolean).join(", ");
     let h = `<tr><td><b>${esc(l.label)}</b><small>${esc(l.ledger)}</small></td>${v4cells(l, rnd)}<td class="why">${esc(notes || "")}</td></tr>`;
     Object.entries(l.by_ticker || {}).forEach(([t, m]) => { if (m.trades || t === "SPY" || t === "QQQ") h += `<tr class="sub"><td>${esc(t)}</td>${v4cells(m)}<td></td></tr>`; });
     if (l.shadow){ const s = l.shadow, nc = Object.entries(s.no_contract || {}).sort((a, c) => c[1] - a[1]).slice(0, 2).map(([w, n]) => `${w} ${n}`).join("; ");

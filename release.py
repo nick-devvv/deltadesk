@@ -43,7 +43,8 @@ def component_versions():
                        ("news_momentum", ("VERSION",)), ("underlying_first", ("VERSION",)), ("learning", ("SCHEMA_VERSION",)),
                        ("retire", ("VERSION",)), ("noise_v2", ("VERSION",)), ("noise_trend", ("VERSION",)),
                        ("orb_credit", ("VERSION",)), ("ic_20d", ("VERSION",)), ("sip_orb", ("VERSION",)),
-                       ("news_drift", ("VERSION",)), ("chain_logger", ("VERSION",)), ("v4risk", ("VERSION",))):
+                       ("news_drift", ("VERSION",)), ("chain_logger", ("VERSION",)), ("v4risk", ("VERSION",)),
+                       ("sprint_paper", ("VERSION", "SPRINT_VERSION"))):
         try:
             m = __import__(mod)
             for a in attrs:

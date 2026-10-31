@@ -10,6 +10,9 @@ Checks, in order, for every new v4 entry (admit):
   6. per-book daily paper loss limit: realized today + open marks; when it is hit, no new entries in that book today
 Option shadows (<ledger>_opt) mirror a share trade that was already admitted: they are exempt from 3-6 (so the
 comparison shares vs options is never biased by a cap) but are closed by the kill switch like everything else.
+Isolated books (the "sprint" book of sprint_paper.py, added 2026-11-02): their positions count only inside their own book
+(book cap, per-symbol cap, same-direction cap, daily loss) plus the desk cap for their own entries; no other ledger's
+check ever counts them, so adding them changes nothing for the ledgers that were already running.
 
 The limits are circuit breakers sized so they rarely bind on a normal day (each ledger is a separate forward
 experiment and shared caps would distort the comparison); every block is recorded as a decision with its reason, so
@@ -20,14 +23,15 @@ import store
 import v4common as C
 import v4store as S
 
-VERSION = "2026-10-31.v4-risk1"
+VERSION = "2026-11-02.v4-risk2"
 LIMITS = {
     "desk_max_open": 50,
-    "book_max_open": {"index": 4, "premium": 6, "stocks": 40, "catalyst": 8},
+    "book_max_open": {"index": 4, "premium": 6, "stocks": 40, "catalyst": 8, "sprint": 6},
     "symbol_max_open": 4,
-    "book_max_same_direction": {"index": 4, "premium": 4, "stocks": 25, "catalyst": 6},
-    "book_daily_loss_usd": {"index": 600.0, "premium": 800.0, "stocks": 2000.0, "catalyst": 800.0},
+    "book_max_same_direction": {"index": 4, "premium": 4, "stocks": 25, "catalyst": 6, "sprint": 6},
+    "book_daily_loss_usd": {"index": 600.0, "premium": 800.0, "stocks": 2000.0, "catalyst": 800.0, "sprint": 600.0},
     "selling_ledgers": ("orb_credit", "ic_20d"),
+    "isolated_books": ("sprint",),
 }
 
 
@@ -68,7 +72,14 @@ def admit(ledger, book, ticker, direction, now=None):
         return f"{ledger} already has an open {ticker} position (one per symbol per ledger)"
     if is_shadow(ledger):
         return None
-    prim = [p for p in opens if not is_shadow(p["ledger"])]
+    iso = LIMITS["isolated_books"]
+    allprim = [p for p in opens if not is_shadow(p["ledger"])]
+    if book in iso:                                       # an isolated book: the desk cap over everything, the rest in-book
+        if len(allprim) >= LIMITS["desk_max_open"]:
+            return f"v4 desk cap: {len(allprim)} open positions (max {LIMITS['desk_max_open']})"
+        prim = [p for p in allprim if p["book"] == book]
+    else:                                                 # every other book never counts isolated positions
+        prim = [p for p in allprim if p["book"] not in iso]
     if len(prim) >= LIMITS["desk_max_open"]:
         return f"v4 desk cap: {len(prim)} open positions (max {LIMITS['desk_max_open']})"
     inbook = [p for p in prim if p["book"] == book]

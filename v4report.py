@@ -8,6 +8,9 @@ SAME entries; share ledgers also show matched random entries (same stock, day, s
 entered at a random bar's next open, $0.02/share, 50 paths, fixed seed), scored after the close by score_controls().
 The `noise` reference ledger and the `old` ledger (legacy forward test, not from a published source; Nick kept it
 active) live in the v3 positions table, unchanged, and are shown in the index book with the same metrics.
+The sprint book (sprint_paper.py) rows also carry their evidence label ("PAPER (simulated fills)"), status ("forward
+test of an in-sample backtest (not promoted)"), the source backtest run id and that backtest's own numbers (labeled
+BACKTEST in-sample), split SPY vs QQQ.
 """
 import hashlib
 
@@ -23,13 +26,19 @@ BOOKS = [
     ("premium", "Index premium selling: paper credit spreads (SPY / QQQ / XSP)", ["orb_credit", "ic_20d"]),
     ("stocks", "Stocks in play: shares, with an options shadow on the same entries", ["sip_orb5", "sip_orb5_x", "sip_orb15"]),
     ("catalyst", "Catalysts: earnings-day breakouts and the news-drift event study", ["earn_day"]),
+    ("sprint", "Sprint forward tests: PAPER (simulated fills) twins of in-sample backtests, SPY / QQQ 0DTE options, not promoted",
+     ["fb_or", "otm_put", "otm_bounce"]),
 ]
+SPRINT_LEDGERS = ("fb_or", "otm_put", "otm_bounce")
 LEGACY_TABLE = ("noise", "old")             # ledgers kept in the v3 positions table, read-only here
 LABELS = {"old": "Old rules (Oct 28): legacy forward test (not from a published source)",
           "noise": "Noise band (reference, unchanged)", "noise_v2": "Noise band v2 (paper exits, -50% stop)",
           "noise_trend": "Noise band on trend days", "orb_credit": "Opening-range credit spread", "ic_20d": "20-delta iron condor",
           "sip_orb5": "Stocks in play, 5-min ORB", "sip_orb5_x": "Stocks in play, RV 5x / ATR $2", "sip_orb15": "Stocks in play, 15-min ORB",
-          "earn_day": "Earnings day, RV 5x / ATR $2"}
+          "earn_day": "Earnings day, RV 5x / ATR $2",
+          "fb_or": "Failed-break calls, opening-range lows (forward test of setups_v2-012)",
+          "otm_put": "Far-OTM 10:30 puts, calm up days (forward test of otm_v1-011)",
+          "otm_bounce": "Far-OTM 11:00 calls, stressed down days (forward test of otm_v1-042, WATCH-ONLY)"}
 SHARE_LEDGERS = ("sip_orb5", "sip_orb5_x", "sip_orb15", "earn_day")
 
 
@@ -97,7 +106,13 @@ def ledger_row(ledger, book, since):
     row = {"ledger": ledger, "label": LABELS.get(ledger, ledger), "book": book, "open": _open_count(ledger), **metrics(tr)}
     if retire.legacy_label(ledger):
         row["legacy"] = retire.legacy_label(ledger)
-    if book in ("index", "premium"):
+    if ledger in SPRINT_LEDGERS:
+        try:
+            import sprint_paper
+            row.update({k: v for k, v in sprint_paper.report_meta(ledger).items() if k != "label"})
+        except Exception as e:
+            row["sprint_error"] = type(e).__name__
+    if book in ("index", "premium", "sprint"):
         tick = sorted({t["ticker"] for t in tr} | {"SPY", "QQQ"})
         row["by_ticker"] = {t: metrics(get(ledger, since, t)) for t in tick}
     if ledger in SHARE_LEDGERS:

@@ -1,11 +1,15 @@
-"""v4index.py - runs the v4 index book (noise_v2, noise_trend) and premium book (orb_credit, ic_20d) from the engine
-tick. Management (manage) runs FIRST each tick inside the engine's risk-priority block; entries (tick, tick_extra)
-run after. Each ledger is independent; one failing never stops the others (errors are kept in _state)."""
+"""v4index.py - runs the v4 index book (noise_v2, noise_trend), the premium book (orb_credit, ic_20d) and the sprint
+book (fb_or, otm_put, otm_bounce: paper forward tests of sprint backtests, sprint_paper.py) from the engine tick.
+Management (manage) runs FIRST each tick inside the engine's risk-priority block; entries (tick, tick_extra) run after.
+Each ledger is independent; one failing never stops the others (errors are kept in _state). The sprint ledgers run
+after every existing ledger in the tick, in their own isolated risk book (v4risk.LIMITS["isolated_books"])."""
 import core
 import store
 import v4store as S
 
-LEDGERS = {"noise_v2": "index", "noise_trend": "index", "orb_credit": "premium", "ic_20d": "premium"}
+LEDGERS = {"noise_v2": "index", "noise_trend": "index", "orb_credit": "premium", "ic_20d": "premium",
+           "fb_or": "sprint", "otm_put": "sprint", "otm_bounce": "sprint"}
+SPRINT = ("fb_or", "otm_put", "otm_bounce")
 _state = {"last_error": None, "errors": 0}
 
 
@@ -35,6 +39,11 @@ def tick(ticker, snap, chain_rows_fn, now=None):
             ic_20d.tick(ticker, now)
         except Exception as e:
             _err(f"ic_20d {ticker}", e)
+    try:                                                  # sprint forward tests (paper), after every existing ledger
+        import sprint_paper
+        sprint_paper.tick(ticker, snap, chain_rows_fn, now)
+    except Exception as e:
+        _err(f"sprint_paper {ticker}", e)
 
 
 def tick_extra(now=None):
@@ -70,6 +79,11 @@ def manage(now=None):
     import noise_v2
     import orb_credit
     mods = {"noise_v2": noise_v2, "noise_trend": noise_trend, "orb_credit": orb_credit, "ic_20d": ic_20d}
+    try:                                                  # a broken sprint module can never stop the others' management
+        import sprint_paper
+        mods.update({k: sprint_paper for k in SPRINT})
+    except Exception as e:
+        _err("sprint_paper import", e)
     syms = []
     import v4exec
     for p in S.positions(status="OPEN", ledgers=list(LEDGERS)):

@@ -193,3 +193,40 @@ What to send Nick:
 - whether `$XSP` was available (the `kind=data` line) and whether the VIX condition was known (in the `noise_trend` checks: `filter.inputs.vix`).
 
 Every number is a paper result (simulated fills on live quotes), not real money.
+
+## 10. Sprint paper ledgers: update on Chart (added 2026-11-02)
+
+**What's new.** Three PAPER (simulated fills) ledgers in a new `sprint` book. Each one is a forward test of an in-sample sprint backtest. None is promoted.
+- `fb_or` = setups_v2-012: failed-break calls at the opening-range lows.
+- `otm_put` = otm_v1-011: far out-of-the-money 10:30 puts on calm up days.
+- `otm_bounce` = otm_v1-042: far out-of-the-money 11:00 calls on stressed down days. **WATCH-ONLY** (44 backtest trades from one episode).
+
+Rules, backtest numbers, the parity method and the deviations (SPY + QQQ only, Schwab quotes, VIXY from Schwab) are in `docs/STRATEGY_PLAN.md` section 7.
+- Code: `sprint_paper.py`, wired through `v4index.py`, `v4risk.py` (an isolated `sprint` book), `v4report.py`, `v4api.py` (`GET /api/v4/sprint`), `index.html`, `config/v4.json` (`sprint_paper` switches) and `release.py`.
+- Tests: `tests/test_sprint_paper.py`.
+- Unchanged: the frozen files (`strategy.py`, `exits.py`, `optionmath.py`, `config/policy.json`), every Chart-only file, and every existing ledger. The sprint book is isolated, so its positions never count toward another ledger's caps.
+- The ledgers reuse the `sprint/` package, which is tracked in git, so `update.sh` brings it along.
+
+**Update.** Once the branch `desk/sprint-paper` is merged into `main`, Nick sends Chart this after 4:15 PM ET:
+
+```
+Update the desk: run ~/desk/deploy/update.sh and show me the whole output.
+```
+
+**First-session checks** (Chart, after the close; the token stays in the variable):
+
+```
+K=$(cat ~/desk/DESK_TOKEN.txt); B=http://127.0.0.1:8765
+curl -s "$B/api/v4/sprint?k=$K" | python3 -m json.tool | head -60          # 3 ledgers, enabled, rules (run ids), no last_error
+curl -s "$B/api/v4/decisions?k=$K&ledger=otm_put" | python3 -m json.tool | head -40    # 10:30: ORDER or FILTERED with the reason
+curl -s "$B/api/v4/decisions?k=$K&ledger=otm_bounce" | python3 -m json.tool | head -40 # 11:00: same
+curl -s "$B/api/v4/decisions?k=$K&ledger=fb_or" | python3 -m json.tool | head -40      # each failed break, and the DAY summary
+curl -s "$B/api/v4/positions?k=$K&ledger=fb_or" | python3 -m json.tool | head -40
+```
+
+What to send Nick:
+- whether VIXY was known: check the `otm_*` decisions for reasons like "no VIXY bars" or "VIXY percentile unknown";
+- every `last_error`;
+- the count of ORDER, MISSED and SKIP decisions.
+
+Every number is PAPER (simulated fills), not real money.

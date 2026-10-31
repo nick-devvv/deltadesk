@@ -92,3 +92,79 @@ Sample sizes: 55% vs 50% win rate ≈ 271 trades (one-sided) / 385 (two-sided); 
 - **Schwab** (connected): SPY/QQQ 1-minute bars, live quotes and chains, no option history. Log 0DTE chains every minute from now on to measure real spreads.
 - **Alpaca** (paper key on the desk): option bars and trades from Feb 2024, expired contracts included, no historical quotes. The free plan's option feed may be Alpaca's derived "indicative" feed; compare against Schwab quotes on the first pull. Known gaps reported on 2024-02-26 and 2024-03-15.
 - Claude's cloud workspace cannot reach data.alpaca.markets (proxy 403, checked 2026-10-31), so history pulls and backtests run on Chart's computer.
+
+## 7. Sprint paper ledgers (forward tests)
+
+Added 2026-11-02. Nick said yes (2026-10-31) to paper-only forward tests of the sprint's best near-misses. **These three ledgers are NOT promoted.** Each one failed at least one of its pre-registered robustness checks. Promotion still needs every gate in CLAUDE.md step 5:
+- a pass on data the rules were never tuned on;
+- at least 40 forward paper trades;
+- a multiple-testing haircut (the sprint tried 3,187 variants; the deflated Sharpe of every run below is 0.000).
+
+**Labels.** Forward results are **PAPER (simulated fills)** on live Schwab quotes, never real money. The backtest numbers below are **BACKTEST, in-sample** (DEV, Aug 2024 to Jun 2026, Alpaca 1-minute prices, MODELED 2% half-spread, $0.65 per contract per side, 1 contract, SPY + QQQ + IWM pooled).
+
+**Where.** Module `sprint_paper.py`, book `sprint`, symbols SPY and QQQ, 1 contract per trade. Each ledger can be switched off in `config/v4.json` (`sprint_paper`). Off stops new entries only; open trades are still managed to their exit.
+
+| Ledger | Source run | Backtest: trades / exp $ / PF / PF 2x / max DD | Failed checks |
+|---|---|---|---|
+| `fb_or` | setups_v2-012 | 429 / +18.57 / 1.78 / 1.27 / -$1,452 | Aug-Dec 2024 lost (-$609, PF 0.71). Positive without the best 5 (+$688). |
+| `otm_put` | otm_v1-011 | 375 / +10.20 / 1.655 / 1.52 / -$1,690 | Jan-Jun 2026 lost (-$1,514, PF 0.29); negative without the best 5; 2 of 11 two-month blocks up. |
+| `otm_bounce` (**WATCH-ONLY**) | otm_v1-042 | 44 / +130.48 / 10.34 / 9.44 / -$534 | Under 60 trades, all from one high-volatility episode (April 2025 dominates). |
+
+### Rules (identical to the backtest runs)
+
+The code reads each ledger's rules from its sprint spec (`sprint/specs/setups_v2.json`, `sprint/specs/otm_v1.json`), pinned by sha256. If a spec file changes, the ledger refuses new entries and records why.
+
+1. **`fb_or`** (setups_v2-012): failed-break calls at the opening-range lows.
+   - Levels: OR15L and OR30L (the low of the first 15 / 30 minutes).
+   - Break: a finished 1-minute close more than $0.01 below a level.
+   - Signal: within 5 bars, a finished close back above it, with the lowest low since the break no more than 0.5 x ATR(14, 5-minute) below the level.
+   - One signal per level per day. Signal bars 09:45 to the bar finishing 15:15.
+   - Contract: today's 0DTE call with BS-EST |delta| 0.40-0.55, nearest 0.45.
+   - Exit: a premium-loss stop fixed at the entry window's value: 20% if the signal bar ends 09:45-11:30, 12% for 11:30-14:00, 10% for 14:00-15:30 (time rule b, no tightening). No breakeven, no target. All out 15:25.
+2. **`otm_put`** (otm_v1-011): far out-of-the-money puts at 10:30 on calm up days.
+   - Signal: the bar finishing 10:30, every session, if all filters pass:
+     - VIXY percentile <= 40%: the share of the last 252 daily VIXY closes, up to the prior session, that are at or below the prior close;
+     - VIXY not rising: VIXY's last finished 1-minute close at the signal bar <= its prior close x 1.01;
+     - day up: the underlying's close at the signal bar >= its prior close;
+     - Wednesday to Friday only;
+     - skip the third Friday (monthly expiration).
+   - Contract: |delta| 0.06-0.15, nearest 0.10.
+   - Exit: a -95% stop on the debit (practically: hold). The backtest's +9900% target is kept. All out 15:25.
+3. **`otm_bounce`** (otm_v1-042), WATCH-ONLY: far out-of-the-money calls at 11:00 on stressed down days.
+   - Signal: the bar finishing 11:00, if VIXY percentile >= 60%, the underlying is below its prior close, and it isn't the third Friday.
+   - Contract: |delta| 0.03-0.12, nearest 0.07. Exit as `otm_put`.
+
+An unknown input (no VIXY bars, no VIXY daily closes, no prior close) means no trade, and the reason is recorded.
+
+### How live stays identical to the backtest
+
+- **Signals:** the engine's finished 1-minute bars become the sprint's own day context, and the sprint code (`sprint.entries.signals`) finds the signals. A bar counts only after its minute has ended.
+- **Filters:** the sprint code too (`sprint.engine._filters_ok`), with VIXY supplied the way the backtest supplied it.
+- **Contract:** the sprint picker (`sprint.contracts.pick`). Each contract's price is the live chain mid; the backtest used the last trade. BS-EST delta uses the underlying's close at the signal bar and the minutes to 16:00 from that bar's end. The chain's own delta is recorded next to it.
+- **Entry:** the fill needs an executable quote dated after the signal bar, inside the backtest's 3-minute entry window. A signal not filled by then is MISSED, and recorded. Buy at the ask, $0.65 per contract. One position per symbol per ledger; a signal while busy is skipped and recorded.
+- **Exit triggers, as `sprint/sim.py` computes them:**
+  - ceiling (`fb_or`): cost = ask + $0.0065. Stop when the bid, net of $0.0065, falls to cost x (1 - ceiling).
+  - fixed (`otm_*`): stop when the mid falls to the fill x 0.05; target when the mid reaches the fill x 100. The sim triggers on the traded price, the mid's stand-in.
+  - Exits sell at the bid. With no quote, the exit waits (PENDING) and retries every tick.
+- **Recorded on every trade:** the sprint's entry features, every filter input, the contract choice (mid, bid, ask, spread, BS-EST delta and IV, chain delta), the signal and the source run id.
+- **Recorded on every signal:** a decision (ORDER, SKIP, FILTERED, BLOCKED-RISK, MISSED, NO SIGNAL), with its reason.
+- **Restart-safe:** decision and position ids are fixed per signal, so a restart never enters twice.
+
+### Deviations from the backtest
+
+- SPY and QQQ only. The backtests pooled SPY, QQQ and IWM, but the engine has no IWM snapshot (`config/policy.json` is frozen).
+- Schwab bars and live quotes replace Alpaca bars, last trades and the modeled spread. This is what the forward test measures.
+- VIXY comes from Schwab: 1-minute bars, and daily closes for the percentile. All of the last 252 closes count; the backtest's file skipped the never-pulled locked months.
+- Features that need long history (daily ATR over 60 sessions) see the engine's ~30 days. They are recorded only; no entry or exit rule uses them.
+- The v4 risk layer can block an entry the backtest would take (kill switch, sprint-book caps, a $600 sprint-book daily paper loss limit). Every block is recorded.
+- On 1 PM early-close days, the desk's 12:30 last entry is stricter than the backtest's 12:50.
+- Not a deviation from the backtest, but from the desk-wide 20% premium line (section 1): `otm_put` and `otm_bounce` use their backtest's -95% stop instead, the way `noise_v2` uses -50%. The most either can lose is its debit (cheap far out-of-the-money options) plus fees. `fb_or`'s ceilings are 20% or tighter.
+
+### What the forward test measures (fixed before any forward trade)
+
+- **Fills vs the model:** the half-spread actually paid at entry and exit vs the backtest's 2% assumption, and how many signals the live desk filled.
+- **Results, after 40 trades per ledger:** trades, win rate, average win and loss, expectancy after costs, profit factor, max drawdown and a session-bootstrap 95% interval (`/api/v4`, Research page).
+- Under 30 trades is not evidence. A forward test can show the live fills match the model, but 40 trades cannot prove an edge built on 20-30 big days.
+- No rule changes during the test. A change ships as a new versioned ledger, and this one keeps running.
+
+**Risk book `sprint`** (`v4risk.py`): at most 6 open, at most 6 in one direction, and a $600 daily paper loss limit. The book is **isolated**: its positions never count toward any other ledger's caps, so the existing ledgers behave exactly as before. The v4 kill switch blocks its entries; exits are never blocked.

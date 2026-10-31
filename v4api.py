@@ -9,7 +9,11 @@ GET  /api/v4?since=           the v4 lineup by book: trades, win rate, avg win/l
                               SPY vs QQQ, shares vs options shadow, matched random entries; risk; retired archive
 GET  /api/v4/positions?status=&ledger=&day=   v4 paper positions with a one-line description and the last mark
 GET  /api/v4/decisions?day=&ledger=&kind=     every v4 decision (checks, entries, skips, risk blocks, rankings)
+GET  /api/v4/sprint           the sprint forward-test ledgers (fb_or, otm_put, otm_bounce): PAPER (simulated fills), their
+                              source backtest runs and numbers (in-sample), the rules read from the pinned specs, switches,
+                              deviations from the backtest
 """
+SPRINT = ("fb_or", "otm_put", "otm_bounce")
 
 
 def _one(q, k, default=None):
@@ -32,6 +36,9 @@ def get(path, q):
         st = _one(q, "status")
         rows = S.positions(status=st if st in ("OPEN", "CLOSED", "VOID") else None, ledger=_one(q, "ledger"), day=_one(q, "day"))
         return [view(p) for p in rows][-500:]
+    if path == "/api/v4/sprint":
+        import sprint_paper
+        return sprint_paper.status()
     if path == "/api/v4/decisions":
         import v4store as S
         lim = max(1, min(2000, int(_one(q, "limit", 300) or 300)))
@@ -52,11 +59,17 @@ def view(p):
         desc = (p["legs"][0].get("label") if p["legs"] else "") + (" (options shadow)" if str(p["ledger"]).endswith("_opt") else "")
         nxt = (f"premium stop {pl.get('premium_stop')} ({pl.get('premium_stop_rule')})" if pl.get("premium_stop") else "exits with the share trade") \
             if p["status"] == "OPEN" else p.get("exit_reason")
+    extra = {}
+    if p["ledger"] in SPRINT:                       # sprint forward tests: label, source run, exit rule
+        if p["status"] == "OPEN":
+            nxt = pl.get("exit_rule") or nxt
+        extra = {"label": pl.get("label"), "status_label": pl.get("status"), "source_run": pl.get("source_run"),
+                 "watch_only": pl.get("watch_only")}
     if pl.get("pending_exit"):
         nxt = f"EXIT PENDING: {pl['pending_exit'].get('reason')} ({pl['pending_exit'].get('why')})"
     return {k: p.get(k) for k in ("id", "ledger", "book", "kind", "date", "ticker", "direction", "side", "qty", "entry_px", "entry_t",
                                   "exit_px", "exit_t", "exit_reason", "status", "realized", "fees", "risk_usd", "max_loss", "r_mult",
-                                  "legs", "version", "parent_id")} | {"desc": desc, "next": nxt, "mtm": pl.get("mtm")}
+                                  "legs", "version", "parent_id")} | {"desc": desc, "next": nxt, "mtm": pl.get("mtm")} | extra
 
 
 def post(path, body):
