@@ -57,7 +57,19 @@ Written 2026-10-31. Source document: "DeltaDesk 0DTE quant rebuild" (Claude Docs
 
 ## 4. Stock books (stocks in play, catalysts)
 
-Rules come from `docs/research/CATALYST_EVIDENCE.md` (added with the catalyst research). Shared rules: shares are the measuring stick for every signal; options only through the contract filter (max spread % of premium, min open interest and volume, nearest liquid expiry 0-7 days, never through an earnings report); flat by 15:55 ET; one position per symbol per ledger.
+Evidence: `docs/research/CATALYST_EVIDENCE.md`. No public rule set survives realistic costs yet (all grade C), so shares are the measuring stick for every stock-book signal and options are added only after the share version is positive after slippage. Flat by 15:55 ET; one position per symbol per ledger; 1 unit per trade on paper.
+
+1. **`sip_orb5`** (Zarattini, Barbon & Aziz 2024, published rules): universe = price > $5, 14-day average volume >= 1M shares, 14-day ATR > $0.50. RV = 09:30-09:35 volume / its 14-day average; trade the top 20 with RV >= 100%. First 5-min candle green -> buy-stop at its high only; red -> sell-stop at its low only; doji -> no trade. Stop = 10% of 14-day ATR; otherwise exit 15:55. (Claimed 2016-2023: Sharpe 2.81, 48.4% wins, +0.08R/trade for RV > 100%, +0.38R for RV > 30x; no slippage modeled.)
+2. **`sip_orb5_x`**: as `sip_orb5` with RV >= 5x, ATR >= $2 (stop >= $0.20), entry on a finished bar's close with a next-bar fill, after-hours prints excluded. Results bucketed by stop size in cents.
+3. **`sip_orb15`**: published 15-minute alternate (paper Sharpe 1.43).
+4. **`earn_day`**: `sip_orb5_x` restricted to the first session after an earnings report (EDGAR 8-K Item 2.02 or calendar).
+5. **`news_drift`** (event study first, then a ledger): verified catalyst timestamp (EDGAR 8-K acceptance time, or a headline fetched and verified by the desk); 5-minute RV >= 3x after it; direction = first finished post-news 1-minute bar; entry next bar. Measure 15/30/60/120-minute moves net of half the spread, 2016-2026. Pick the holding time on the first 2/3 of events; it becomes a ledger only if it holds on the last 1/3.
+6. **`earn_runup`** (research only, multi-day): delta-neutral ATM straddle bought 1-3 days before a scheduled report, sold the day before (Gao, Xing & Zhang 2018: +1.9-2.6% per window at mids, 1996-2013, no costs; edge concentrated in wide-spread names). Test on Alpaca option prices only.
+
+**Option rules for stock books (hypotheses, tested like everything else):**
+- Only names on the current quarterly "Qualifying Securities" list (Mon/Wed/Fri expiries; Q3 2026 per MIAX: AMD, GOOGL, AMZN, AAPL, AVGO, XLF, INTC, META, MU, MSFT, NVDA, TSLA, SMH; verify against Cboe/Nasdaq) and penny-program names.
+- Skip if spread > 10% of mid, or if the round-trip spread exceeds half the trade's expected edge (in option terms via delta).
+- In-the-money, delta about 0.6-0.8, 0-7 DTE. Never hold through an earnings report.
 
 ## 5. Gates (every ledger)
 
