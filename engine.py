@@ -1044,6 +1044,11 @@ def _manage_open():
                 archive_quote(p["symbol"], q)
             except Exception as e:                # one bad position must not stop the others from being protected
                 _state["last_error"] = f"manage {p['id']}: {type(e).__name__}: {e}"[:200]
+        try:                                      # v4: index + premium ledgers (own tables), same risk priority
+            import v4index
+            want += v4index.manage()
+        except Exception as e:
+            _state["last_error"] = f"v4 manage: {type(e).__name__}: {e}"[:200]
     return want
 
 
@@ -1074,6 +1079,11 @@ def tick():
                     noiseband.tick(t, s, chain_rows)       # half-hour checks: manages open noise trades, enters if allowed
                 except Exception as e:
                     _state["last_error"] = f"noise: {type(e).__name__}: {e}"
+                try:                                       # v4: noise_v2, noise_trend, orb_credit, ic_20d (after noise)
+                    import v4index
+                    v4index.tick(t, s, chain_rows)
+                except Exception as e:
+                    _state["last_error"] = f"v4 index: {type(e).__name__}: {e}"[:200]
                 if sess["entries_allowed"] and not retire.is_retired("old"):    # v4: old shadow retired (saves 4 chain calls a tick)
                     if core.policy()["v3"]["old_policy_shadow"]["enabled"]:
                         try:
@@ -1087,6 +1097,11 @@ def tick():
                         alerts.move_check(t, v3["b5"])
                 except Exception:
                     pass
+            try:
+                import v4index
+                v4index.tick_extra()                       # v4: XSP for the premium ledgers when Schwab lists it
+            except Exception as e:
+                _state["last_error"] = f"v4 xsp: {type(e).__name__}: {e}"[:200]
             try:
                 import schwab_stream
                 schwab_stream.want_options(want)
