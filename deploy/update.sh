@@ -5,6 +5,7 @@
 #   ~/desk/deploy/update.sh --check    only show what would change
 #   ~/desk/deploy/update.sh --rollback go back to the commit that ran before the last update
 #   add --force to run during market hours, or over local edits to tracked files
+#   tests run with $PYTHON if set, else the desk's own ~/desk/.venv/bin/python if it exists, else python3
 #
 # Safety:
 #   * Refuses 09:25-16:05 ET on weekdays (open paper trades are managed by the running server).
@@ -17,7 +18,9 @@
 set -euo pipefail
 
 DESK="${DESK_DIR:-$HOME/desk}"
-PY="${PYTHON:-python3}"
+if [ -n "${PYTHON:-}" ]; then PY="$PYTHON"                # explicit choice wins
+elif [ -x "$DESK/.venv/bin/python" ]; then PY="$DESK/.venv/bin/python"   # the desk's own environment (has pytest)
+else PY=python3; fi
 BRANCH="${DESK_BRANCH:-main}"
 FORCE=0; MODE=update
 for a in "$@"; do
