@@ -230,3 +230,11 @@ What to send Nick:
 - the count of ORDER, MISSED and SKIP decisions.
 
 Every number is PAPER (simulated fills), not real money.
+
+## 11. Fresh-start view (added 2026-10-31)
+
+Nick asked for a clean way to judge the strategies without one ever-growing total. The Research page now opens with **Fresh start**: each active strategy scored as its own paper account from a start date. The default is **Monday, Nov 2 2026, $10,000 per strategy**. It shows trades, P/L, % return, account now, today's P/L, max drawdown, profit factor and open trades, plus an "All strategies" total.
+- Settings: `config/v4.json` `"tracking": {"start": "2026-11-02", "account_usd": 10000}`. Changing them changes only the view, never the trades or the journal.
+- API: `GET /api/v4/tracking?start=YYYY-MM-DD&account=N` for a one-off view.
+- Every number is PAPER (simulated fills on live quotes), closed trades only. Under 30 trades is not evidence.
+- The desk sends no orders to Alpaca. Its paper trades live in the desk's own journal, so resetting the Alpaca paper account changes nothing here (and Alpaca's reset makes new API keys).

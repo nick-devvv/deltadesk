@@ -7,6 +7,8 @@ POST /api/v4/kill             {"reason"}: v4 entries OFF and every open v4 paper
 POST /api/v4/enable           {"on": true|false}: v4 entries back on (or off without closing anything)
 GET  /api/v4?since=           the v4 lineup by book: trades, win rate, avg win/loss, expectancy, profit factor, max DD,
                               SPY vs QQQ, shares vs options shadow, matched random entries; risk; retired archive
+GET  /api/v4/tracking?start=&account=   the fresh-start view: each strategy as its own paper account (default from
+                              config/v4.json "tracking": Nov 2 2026, $10,000), P/L and % return since then, books, desk
 GET  /api/v4/positions?status=&ledger=&day=   v4 paper positions with a one-line description and the last mark
 GET  /api/v4/decisions?day=&ledger=&kind=     every v4 decision (checks, entries, skips, risk blocks, rankings)
 GET  /api/v4/sprint           the sprint forward-test ledgers (fb_or, otm_put, otm_bounce): PAPER (simulated fills), their
@@ -31,6 +33,15 @@ def get(path, q):
     if path == "/api/v4":
         import v4report
         return v4report.overview(str(_one(q, "since", "2026-11-02"))[:10])
+    if path == "/api/v4/tracking":
+        import v4report
+        acct = _one(q, "account")
+        try:
+            acct = float(acct) if acct else None
+        except ValueError:
+            acct = None
+        st = _one(q, "start")
+        return v4report.tracking(str(st)[:10] if st else None, acct if acct and acct > 0 else None)
     if path == "/api/v4/positions":
         import v4store as S
         st = _one(q, "status")

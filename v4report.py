@@ -185,12 +185,77 @@ def overview(since="2026-11-02"):
         idx = v4index.status()
     except Exception as e:
         idx = {"error": type(e).__name__}
-    return {"since": since, "books": books, "risk": v4risk.status(), "news_drift": nd, "chains": ch, "stocks_worker": sip,
+    try:
+        trk = tracking()
+    except Exception as e:
+        trk = {"error": type(e).__name__}
+    return {"since": since, "books": books, "tracking": trk, "risk": v4risk.status(), "news_drift": nd, "chains": ch, "stocks_worker": sip,
             "index_engine": idx,
             "retired": {"list": retire.retired_list(), "ledgers": retired_rows("2000-01-01")},
             "void": [{k: p[k] for k in ("id", "ledger", "date", "exit_reason")} for p in S.positions(status="VOID")],
             "note": ("Paper only: simulated fills on live Schwab quotes, never real money. Under 30 trades is not evidence. "
                      "Each ledger is its own forward test; promotion needs the gates in docs/STRATEGY_PLAN.md section 5.")}
+
+
+# ---------------------------------------------------------------- fresh-start tracker (Nick, 2026-10-31)
+TRACK_DEFAULT = {"start": "2026-11-02", "account_usd": 10000.0}
+
+
+def tracking_cfg():
+    """config/v4.json "tracking": {"start": "YYYY-MM-DD", "account_usd": n}. Each strategy is scored as its own account
+    of that size from that date (paper, simulated fills). Bad or missing values fall back to Nov 2 2026 and $10,000."""
+    try:
+        t = retire.cfg().get("tracking") or {}
+    except Exception:
+        t = {}
+    start = str(t.get("start") or TRACK_DEFAULT["start"])[:10]
+    try:
+        import datetime as _dt
+        _dt.date.fromisoformat(start)
+    except (TypeError, ValueError):
+        start = TRACK_DEFAULT["start"]
+    try:
+        acct = float(t.get("account_usd") or TRACK_DEFAULT["account_usd"])
+    except (TypeError, ValueError):
+        acct = TRACK_DEFAULT["account_usd"]
+    return {"start": start, "account_usd": acct if acct > 0 else TRACK_DEFAULT["account_usd"]}
+
+
+def _track_row(ledger, book, start, acct, today):
+    legacy = ledger in LEGACY_TABLE
+    tr = (_legacy_trades if legacy else _v4_trades)(ledger, start)
+    m = metrics(tr)
+    net = float(m.get("net") or 0.0)
+    today_pl = round(sum(float(t["realized"] or 0) for t in tr if t["date"] == today), 2)
+    opens = store.positions(ledger=ledger, status="OPEN") if legacy else S.positions(ledger=ledger, status="OPEN")
+    marks = [float((p.get("plan") or {}).get("mtm")) for p in opens if not legacy and (p.get("plan") or {}).get("mtm") is not None]
+    open_mark = round(sum(marks), 2) if marks else None
+    return {"ledger": ledger, "label": LABELS.get(ledger, ledger), "book": book, "trades": m["trades"],
+            "win_rate": m.get("win_rate"), "profit_factor": m.get("profit_factor"), "expectancy": m.get("expectancy"),
+            "net": round(net, 2), "return_pct": round(100 * net / acct, 2), "equity": round(acct + net, 2),
+            "max_drawdown": m.get("max_drawdown"), "max_drawdown_pct": round(100 * float(m.get("max_drawdown") or 0) / acct, 2),
+            "today": today_pl, "open": len(opens), "open_mark": open_mark, "small_sample": m.get("small_sample", True)}
+
+
+def tracking(start=None, account_usd=None):
+    """The fresh-start view: every active strategy as its own paper account of `account_usd`, counted from `start`
+    (closed trades; open trades shown as a count and, for v4 ledgers, their last mark). Plus each book and the desk."""
+    c = tracking_cfg()
+    start = str(start or c["start"])[:10]
+    acct = float(account_usd or c["account_usd"])
+    today = core.now_et().date().isoformat()
+    rows = [_track_row(l, b, start, acct, today) for b, _, leds in BOOKS for l in leds]
+    def total(rs, n_acct):
+        net = round(sum(r["net"] for r in rs), 2)
+        return {"trades": sum(r["trades"] for r in rs), "net": net, "today": round(sum(r["today"] for r in rs), 2),
+                "open": sum(r["open"] for r in rs), "accounts": n_acct, "capital": round(acct * n_acct, 2),
+                "return_pct": round(100 * net / (acct * n_acct), 2) if n_acct else None}
+    books = {b: total([r for r in rows if r["book"] == b], len(leds)) for b, _, leds in BOOKS}
+    return {"start": start, "account_usd": acct, "today": today, "ledgers": rows, "books": books,
+            "desk": total(rows, len(rows)),
+            "note": (f"Fresh start: each strategy is scored as its own ${acct:,.0f} paper account from {start} "
+                     "(simulated fills on live quotes, never real money). Closed trades only; open trades are listed with "
+                     "their last mark. Under 30 trades is not evidence. Change the date or size in config/v4.json \"tracking\".")}
 
 
 # ---------------------------------------------------------------- matched random entries for share trades (after the close)

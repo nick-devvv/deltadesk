@@ -169,3 +169,33 @@ def test_page_script_parses(tmp_path):
     p.write_text("\n".join(scripts))
     res = subprocess.run(["node", "--check", str(p)], capture_output=True, text=True, timeout=60)
     assert res.returncode == 0, res.stderr[:2000]
+
+
+def test_fresh_start_tracker_scores_each_strategy_as_its_own_account(env, monkeypatch):
+    import retire
+    monkeypatch.setattr(retire, "cfg", lambda: {"tracking": {"start": "2026-11-02", "account_usd": 5000}})
+    _closed(1, "noise_v2", 120.0, "SPY", day="2026-11-03")
+    _closed(2, "noise_v2", -40.0, "QQQ", day="2026-11-04")                        # today (the clock is Nov 4)
+    _closed(3, "noise_v2", 999.0, "SPY", day="2026-10-30")                        # before the fresh start: not counted
+    _closed(4, "fb_or", 300.0, "SPY", day="2026-11-04", book="sprint")
+    S.open_position({"id": "otm_put:o", "ledger": "otm_put", "book": "sprint", "kind": "option", "date": "2026-11-04",
+                     "ticker": "SPY", "direction": "long", "side": "P", "qty": 1, "entry_px": 0.12, "entry_t": store.ts(),
+                     "legs": [{"symbol": "SPY261104P00700000", "action": "buy", "qty": 1}], "plan": {"mtm": -3.5}})
+    t = RP.tracking()
+    assert t["start"] == "2026-11-02" and t["account_usd"] == 5000.0 and t["today"] == "2026-11-04"
+    r = {x["ledger"]: x for x in t["ledgers"]}
+    assert r["noise_v2"]["trades"] == 2 and r["noise_v2"]["net"] == pytest.approx(80.0)
+    assert r["noise_v2"]["return_pct"] == pytest.approx(1.6) and r["noise_v2"]["equity"] == pytest.approx(5080.0)
+    assert r["noise_v2"]["today"] == pytest.approx(-40.0) and r["noise_v2"]["max_drawdown"] == pytest.approx(40.0)
+    assert r["fb_or"]["net"] == pytest.approx(300.0) and r["otm_put"]["open"] == 1 and r["otm_put"]["open_mark"] == -3.5
+    assert r["noise"]["trades"] == 0 and r["noise"]["return_pct"] == 0.0             # legacy table, nothing since Nov 2
+    n = len(t["ledgers"])
+    assert t["desk"]["net"] == pytest.approx(380.0) and t["desk"]["capital"] == pytest.approx(5000.0 * n)
+    assert t["books"]["sprint"]["net"] == pytest.approx(300.0) and t["books"]["sprint"]["accounts"] == 3
+    assert RP.tracking("2026-10-01", 1000)["ledgers"][[x["ledger"] for x in t["ledgers"]].index("noise_v2")]["net"] == pytest.approx(1079.0)
+    assert "tracking" in RP.overview("2026-11-02")
+    monkeypatch.setattr(retire, "cfg", lambda: {"tracking": {"start": "not a date", "account_usd": -5}})
+    assert RP.tracking_cfg() == {"start": "2026-11-02", "account_usd": 10000.0}       # bad values fall back
+    import v4api
+    j = v4api.get("/api/v4/tracking", {"start": ["2026-11-03"], "account": ["2500"]})
+    assert j["start"] == "2026-11-03" and j["account_usd"] == 2500.0

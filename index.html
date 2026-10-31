@@ -756,6 +756,7 @@ td.n,th.n{text-align:right;white-space:nowrap}
       <h1>Research</h1>
       <p class="lead">The v4 lineup. Every strategy trades on paper in its own ledger, grouped by book. Fills are simulated on live Schwab quotes, never real money. Under 30 trades is not evidence, and win rate alone never decides.</p>
       <div class="toolbar"><span class="m" id="v4Risk">Loading the v4 desk…</span><span class="grow"></span><button type="button" id="v4Kill" style="border-color:rgba(255,90,78,.5);color:var(--down)">v4 kill switch</button></div>
+      <div id="v4Track"></div>
       <div id="v4Books"></div>
       <div class="grid2" style="margin-top:16px">
         <div class="box"><div class="ph"><h2>Open v4 paper trades</h2></div><div class="bd" id="v4Open"></div></div>
@@ -2130,6 +2131,13 @@ function v4book(b){
     return h; }).join("");
   return `<section class="box"><div class="ph"><h2>${esc(b.title)}</h2></div><div class="bd cmp" style="overflow:auto"><table><thead><tr><th>Ledger</th><th class="n">Trades</th><th class="n">Won</th><th class="n">Avg win</th><th class="n">Avg loss</th><th class="n">Per trade</th><th class="n">Profit factor</th><th class="n">Max DD</th><th class="n">vs random</th><th>Notes</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
 }
+function v4track(t){
+  if (!t.ledgers) return t.error ? `<div class="d">Fresh-start view unavailable: ${esc(t.error)}</div>` : "";
+  const pc = v => v == null ? "—" : (v > 0 ? "+" : "") + v.toFixed(2) + "%";
+  const rows = t.ledgers.map(r => `<tr><td><b>${esc(r.label)}</b><small>${esc(r.ledger)}</small></td><td class="n">${r.trades}</td><td class="n ${tone(r.net)}">${r.trades ? money(r.net) : "—"}</td><td class="n ${tone(r.return_pct)}">${r.trades ? pc(r.return_pct) : "—"}</td><td class="n">${usd(r.equity)}</td><td class="n ${tone(r.today)}">${r.today ? money(r.today) : "—"}</td><td class="n">${r.max_drawdown ? "−$" + r.max_drawdown.toFixed(2) : "—"}</td><td class="n">${r.profit_factor != null ? r.profit_factor : "—"}</td><td class="why">${[r.open ? `${r.open} open${r.open_mark != null ? " (" + money(r.open_mark) + ")" : ""}` : "", r.trades && r.small_sample ? "under 30 trades" : ""].filter(Boolean).join(", ")}</td></tr>`).join("");
+  const dk = t.desk || {};
+  return `<section class="box"><div class="ph"><h2>Fresh start<small>each strategy as its own ${usd(t.account_usd)} paper account since ${esc(t.start)}</small></h2></div><div class="bd cmp" style="overflow:auto"><table><thead><tr><th>Strategy</th><th class="n">Trades</th><th class="n">P/L</th><th class="n">Return</th><th class="n">Account now</th><th class="n">Today</th><th class="n">Max DD</th><th class="n">Profit factor</th><th>Notes</th></tr></thead><tbody>${rows}<tr><td><b>All strategies</b><small>${dk.accounts || 0} accounts, ${usd(dk.capital)}</small></td><td class="n">${dk.trades || 0}</td><td class="n ${tone(dk.net)}">${money(dk.net)}</td><td class="n ${tone(dk.return_pct)}">${pc(dk.return_pct)}</td><td class="n"></td><td class="n ${tone(dk.today)}">${dk.today ? money(dk.today) : "—"}</td><td></td><td></td><td class="why">${dk.open ? dk.open + " open" : ""}</td></tr></tbody></table><p class="m" style="font-size:11.5px">${esc(t.note || "")}</p></div></section>`;
+}
 async function loadV4(){
   let d; try { d = await api(`api/v4?since=${V4SINCE}`); } catch(e){ $("#v4Books").innerHTML = `<div class="d">Couldn’t load the v4 ledgers: ${esc(e.message)}</div>`; return; }
   const r = d.risk || {}, o = r.open || {};
@@ -2137,6 +2145,7 @@ async function loadV4(){
   $("#v4Kill").textContent = r.v4_enabled ? "v4 kill switch" : "Turn v4 entries back on";
   $("#v4Kill").dataset.on = r.v4_enabled ? "1" : "";
   $("#v4Books").innerHTML = (d.books || []).map(v4book).join("") + `<p class="m" style="font-size:11.5px">${esc(d.note || "")} Since ${esc(d.since)}.</p>`;
+  $("#v4Track").innerHTML = v4track(d.tracking || {});
   const nd = d.news_drift || {}, hz = nd.by_horizon || {};
   $("#v4News").innerHTML = `<p class="m">${nd.events || 0} resolved events. Net = the move in the first post-news bar’s direction minus half the spread.</p><table><tbody>${
     ["15","30","60","120"].map(h => { const x = hz[h] || {}; return `<tr><td>+${h} min</td><td class="n">${x.n || 0} events</td><td class="n">${x.mean_net != null ? (x.mean_net * 100).toFixed(2) + "%" : "—"}</td><td class="n">${x.hit_rate != null ? Math.round(x.hit_rate * 100) + "% up" : "—"}</td></tr>`; }).join("")}</tbody></table>

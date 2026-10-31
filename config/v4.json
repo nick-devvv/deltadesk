@@ -10,6 +10,8 @@
  "retired_why": "docs/STRATEGY_PLAN.md section 1: no edge over matched random entries on the desk's own data (v3, ORBX, lab families), or rules that pay the IV crush (earn_pre). Code and history are kept; open trades are still managed to their exit.",
  "kronos_enabled": false,
  "kronos_why": "Kronos forecasts are off by default in v4 (STRATEGY_PLAN section 1). The KRONOS=1 environment switch alone no longer starts it; this flag must also be true.",
+ "tracking": {"start": "2026-11-02", "account_usd": 10000},
+ "tracking_why": "Nick, 2026-10-31: a fresh-start view. Each strategy is scored as its own paper account of account_usd from start (Research page, GET /api/v4/tracking). Changing it changes only the view, never the trades or the journal.",
  "sprint_paper": {"fb_or": true, "otm_put": true, "otm_bounce": true},
  "sprint_paper_why": "Nick, 2026-10-31: paper-only forward tests of the sprint's near-miss backtests (fb_or = setups_v2-012, otm_put = otm_v1-011, otm_bounce = otm_v1-042, watch-only). Simulated fills on live quotes, never real money. Not promoted: promotion needs CLAUDE.md step 5. false stops a ledger's new entries; open trades are still managed to their exit.",
  "fomc_decision_days": ["2026-01-28", "2026-03-18", "2026-04-29", "2026-06-17", "2026-07-29", "2026-09-16", "2026-10-28", "2026-12-09"],
