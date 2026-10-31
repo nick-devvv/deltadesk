@@ -1,0 +1,19 @@
+{
+ "release": "2026-10-31.v3.5",
+ "kind": "baseline before the v4 build (git 62d0b15)",
+ "created_utc": "2026-10-31T06:59:25+00:00",
+ "tests": {
+  "passed": 227,
+  "skipped": 1,
+  "env": "pandas 3.0.5, python3 -m pytest -q tests/",
+  "skip": "optional TA-Lib parity check"
+ },
+ "frozen_sha256": {
+  "strategy.py": "15de7de7938d37a7e722f6f099fc286485fdad9a8db81ff0e42aac70807a0fae",
+  "exits.py": "d1f191b73d46ca8f34466a85c1db9f51ed23280a6e961d126af835c98916c42f",
+  "optionmath.py": "6d7a6c8c3d80a652b7f6f87f008a5a5c313ff20b906bf4837d382d9947d8bede",
+  "noiseband.py": "e55a190e090ae15955fb9f9672b0e5423f44b4e7e2e9f2d2b31d6db352743c8f",
+  "config/policy.json": "4cf8b1b9631e47258a603fb36681c4f2190e3a6a1972e3cd4e34baceb2e8784c"
+ },
+ "noise_golden": "tests/fixtures/noise_golden_v35.json (generated from this baseline by tests/test_v4_noise_regression.py)"
+}

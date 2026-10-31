@@ -2,6 +2,11 @@
 
 Written 2026-10-31. Source document: "DeltaDesk 0DTE quant rebuild" (Claude Docs). All rules below are provisional, frozen before testing, and unvalidated until they pass the gates in section 5.
 
+**Scope (v4, from 2026-10-31): day trading in general.** Everything opens and closes in the same session.
+- **Core:** 0DTE SPY and QQQ options.
+- **Everything else:** any liquid US stock or ETF, day-traded in shares, or in options of any expiry that are opened and closed the same session.
+- **Never:** futures, or anything held overnight.
+
 **Four books, one engine, one risk layer.** Index momentum (SPY, QQQ, IWM, XSP; liquid ETFs as research candidates), index premium selling (SPX/XSP first, then SPY/QQQ), stocks in play (the day's top stocks by opening relative volume, option-liquid only), and catalysts (any stock with a verified news/earnings/filing catalyst and a measured reaction). Each strategy x instrument x timeframe x version is its own ledger. Each family runs on its published timeframe plus at most two alternates chosen before testing; every alternate counts as a trial for the deflated Sharpe.
 
 ## 1. What stays, what goes
