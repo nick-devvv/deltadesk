@@ -966,11 +966,15 @@ def step(now=None):
 
 
 def _run():
+    import health
     while not _state["stop"]:
+        t0 = time.time()
         try:
             step()
+            health.beat("catalysts", True, _state["status"], round(time.time() - t0, 2))
         except Exception as e:
             _state["last_error"] = f"{type(e).__name__}: {e}"[:200]
+            health.beat("catalysts", False, _state["last_error"], round(time.time() - t0, 2))
         time.sleep(15)
 
 

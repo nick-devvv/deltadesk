@@ -8,6 +8,15 @@ Only PAPER QUALIFIED strategies can reach a paper fill or an alert through the r
 today every route ends in SHADOW (recorded with the reason, nothing filled) or a rejection. RESEARCH ONLY strategies
 keep running in their own research ledgers elsewhere; the router just never presents them as entries.
 Each decision stores the exact qualification record (id, spec hash, status) and the versions that existed then.
+
+v3.5 (router2): two separate steps, and every unknown input fails closed.
+  route()      ELIGIBILITY only: ELIGIBLE / SHADOW / REJECT. ELIGIBLE is not an entry and never alerts.
+  authorize()  the only path to a specialist paper fill: re-reads the ELIGIBLE decision from the database, re-checks the
+               qualification and the clock at fill time, evaluates the shared entry gate itself (ENTRY CONDITIONS MET
+               is never taken from the caller), checks the contract quote (executable, fresh, not future-dated, a
+               feasible 20% line), re-checks shared portfolio limits, then fills the spec_ ledger. One authorization per
+               decision: a retry returns the first result and never fills twice.
+A required regime that is unknown, a bar whose completeness is unknown, or unknown warmup is a rejection, not a pass.
 """
 import json
 from datetime import datetime
@@ -16,9 +25,11 @@ import core
 import store
 import strategy_registry as SR
 
-VERSION = "2026-10-30.router1"
+VERSION = "2026-10-31.router2"
 SCHEMA = ("CREATE TABLE IF NOT EXISTS router_decisions(id TEXT PRIMARY KEY, ts TEXT, date TEXT, ticker TEXT, side TEXT, family TEXT, "
           "decision TEXT, reasons TEXT, record TEXT, versions TEXT)")
+AUTH_SCHEMA = ("CREATE TABLE IF NOT EXISTS router_authorizations(id TEXT PRIMARY KEY, ts TEXT, date TEXT, ticker TEXT, side TEXT, "
+               "family TEXT, decision TEXT, reasons TEXT, gate TEXT, contract TEXT, ledger TEXT, position_id TEXT, versions TEXT)")
 REASONS = ("outside setup window", "wrong regime", "insufficient warmup", "incomplete bar", "stale data", "no eligible contract",
            "too extended", "insufficient remaining reward/risk", "expired setup", "loss-streak stop", "research-only status",
            "no qualified strategy", "session closed", "conflicting signals")
@@ -47,12 +58,17 @@ def admit(family, ticker, side, now=None, ctx=None):
     if not _in_windows(hm, windows):
         reasons.append(f"outside setup window ({hm} not in {windows or '09:45-15:15'})")
     req = ((exp or {}).get("spec") or {}).get("requires") or {}
-    if req.get("regime") and ctx.get("regime") is not None and ctx["regime"] not in req["regime"]:
-        reasons.append(f"wrong regime ({ctx['regime']} not in {req['regime']})")
-    if req.get("min_warmup_bars") and (ctx.get("warmup_bars") or 0) < req["min_warmup_bars"]:
-        reasons.append(f"insufficient warmup ({ctx.get('warmup_bars') or 0} of {req['min_warmup_bars']} bars)")
-    if ctx.get("bar_complete") is False:
-        reasons.append("incomplete bar")
+    if req.get("regime"):                                   # v3.5: a required regime that is unknown fails closed
+        if ctx.get("regime") is None:
+            reasons.append(f"wrong regime (regime unknown; needs {req['regime']})")
+        elif ctx["regime"] not in req["regime"]:
+            reasons.append(f"wrong regime ({ctx['regime']} not in {req['regime']})")
+    if req.get("min_warmup_bars"):
+        wb = ctx.get("warmup_bars")
+        if wb is None or wb < req["min_warmup_bars"]:
+            reasons.append(f"insufficient warmup ({'unknown' if wb is None else wb} of {req['min_warmup_bars']} bars)")
+    if ctx.get("bar_complete") is not True:                 # v3.5: only a bar known to be finished counts
+        reasons.append("incomplete bar" if ctx.get("bar_complete") is False else "incomplete bar (bar state unknown)")
     if ctx.get("fresh") is not True:
         reasons.append("stale data" if ctx.get("fresh") is False else "stale data (freshness unknown)")
     if not rec["actionable"]:
@@ -90,7 +106,7 @@ def route(cand, now=None):
         return {"id": rid, "decision": "DUPLICATE", "reasons": ["the same setup was already routed"]}
     if a["allowed"]:
         lim = portfolio_admission()
-        decision = "ADMIT" if not lim else "REJECT"
+        decision = "ELIGIBLE" if not lim else "REJECT"        # v3.5: eligibility only; authorize() decides an entry
         reasons = [] if not lim else [lim]
     else:
         research_only = all(r.startswith("research-only") for r in a["reasons"])
@@ -106,6 +122,88 @@ def route(cand, now=None):
                                             cand.get("side"), cand.get("family"), decision, json.dumps(reasons),
                                             json.dumps(a["record"], default=str), json.dumps(versions)))
     return {"id": rid, "decision": decision, "reasons": reasons, "record": a["record"], "versions": versions}
+
+
+def ledger_for(record):
+    """The isolated paper ledger of one qualified specialist (full id, never a prefix)."""
+    return "spec_" + "".join(ch if ch.isalnum() else "_" for ch in str(record.get("id") or "unknown").lower())
+
+
+def authorize(rid, gate_id, snap, contract, plan, now=None, qty=1):
+    """Final entry authorization for an ELIGIBLE decision, then the specialist paper fill. Returns
+    {decision: AUTHORIZED|NOT AUTHORIZED|DUPLICATE, reasons, gate, position_id}. Nothing here places a real order."""
+    import entrygate
+    import paper
+    store.x(SCHEMA)
+    store.x(AUTH_SCHEMA)
+    now = now or core.now_et()
+    old = store.q("SELECT * FROM router_authorizations WHERE id=?", (rid,))
+    if old:
+        o = old[0]
+        return {"id": rid, "decision": "DUPLICATE", "first": o["decision"], "reasons": ["already authorized or refused once"],
+                "position_id": o["position_id"]}
+    reasons = []
+    d = store.q("SELECT * FROM router_decisions WHERE id=?", (rid,))
+    d = d[0] if d else None
+    if not d or d["decision"] != "ELIGIBLE":
+        reasons.append(f"no ELIGIBLE routing decision ({d['decision'] if d else 'none'})")
+    rec = SR.status_for(d["family"], d["ticker"]) if d else {"actionable": False, "status": "unknown"}
+    if d and not rec.get("actionable"):
+        reasons.append(f"research-only status now ({rec.get('status')})")
+    if d:
+        a = admit(d["family"], d["ticker"], d["side"], now, {"fresh": snap.get("fresh"), "bar_complete": snap.get("bar_complete"),
+                                                             "regime": snap.get("regime"), "warmup_bars": snap.get("warmup_bars")})
+        reasons += [r for r in a["reasons"] if not r.startswith("research-only") and r not in reasons]
+    g = entrygate._load(gate_id) if gate_id else None
+    ev = None
+    if not g:
+        reasons.append("no stored entry-gate setup")
+    elif d and (g["ticker"] != d["ticker"] or g["side"] != d["side"]):
+        reasons.append("the gate setup is for a different stock or side")
+    else:
+        ev = entrygate.evaluate(g, snap)                       # evaluated HERE, never trusted from the caller
+        if ev["state"] != "ENTRY CONDITIONS MET":
+            reasons.append(f"gate {ev['state']}: {ev.get('rejected')}")
+    k = dict(contract or {})
+    k.setdefault("symbol", plan.get("symbol"))
+    if plan.get("symbol") and k["symbol"] != plan["symbol"]:
+        reasons.append("the quoted contract is not the planned contract")
+    try:
+        import contract_lab
+        age = contract_lab.quote_age(k.get("quote_time"), now)
+    except Exception:
+        age = None
+    if not k.get("symbol") or not k.get("executable"):
+        reasons.append("no executable contract quote")
+    elif age is None or age < -5 or age > core.policy()["data"].get("max_opt_quote_age_s", 20):
+        reasons.append("contract quote " + ("time unknown" if age is None else "dated in the future" if age < 0 else f"stale ({age:.0f}s)"))
+    elif plan.get("premium_stop") is None or k.get("bid") is None or plan["premium_stop"] >= k["bid"]:
+        reasons.append("the 20% planned-loss line is not below the bid: infeasible")
+    if not reasons:
+        lim = portfolio_admission(now.strftime("%Y-%m-%d"))
+        if lim:
+            reasons.append(lim)
+    led = ledger_for(rec) if d else None
+    pid = None
+    if not reasons:
+        idea = rid
+        ok, why = paper.reserve_idea(led, idea, d["ticker"], d["side"])
+        if not ok:
+            reasons.append(f"idea not reserved: {why}")
+        else:
+            pid, why = paper.buy(led, idea, d["ticker"], d["side"], dict(plan, policy_version=VERSION, variant=led), qty,
+                                 plan.get("signal_t") or now.isoformat())
+            if not pid:
+                paper.release_idea(led, idea, why)
+                reasons.append(f"no simulated fill: {why}")
+    decision = "AUTHORIZED" if pid else "NOT AUTHORIZED"
+    versions = {"router": VERSION, "registry": SR.load().get("version"), "policy": core.policy()["version"], "gate": entrygate.VERSION}
+    store.x("INSERT OR IGNORE INTO router_authorizations(id, ts, date, ticker, side, family, decision, reasons, gate, contract, ledger, "
+            "position_id, versions) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (rid, now.isoformat(timespec="seconds"), now.strftime("%Y-%m-%d"), d["ticker"] if d else None, d["side"] if d else None,
+             d["family"] if d else None, decision, json.dumps(reasons), json.dumps(ev, default=str),
+             json.dumps({x: k.get(x) for x in ("symbol", "bid", "ask", "quote_time")}, default=str), led, pid, json.dumps(versions)))
+    return {"id": rid, "decision": decision, "reasons": reasons, "gate": ev, "position_id": pid, "ledger": led}
 
 
 def today(limit=200):

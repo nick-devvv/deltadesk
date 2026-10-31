@@ -77,7 +77,7 @@ def test_a_qualified_specialist_still_obeys_shared_limits_and_versions_are_recor
     real = SR.status_for
     mp.setattr(SR, "status_for", lambda fam, t: dict(real(fam, t), status="PAPER QUALIFIED", actionable=True))
     r = RT.route({"ticker": "NVDA", "side": "C", "family": "ORB_BREAK", "fresh": True, "bar_complete": True, "setup_id": "q1"})
-    assert r["decision"] == "ADMIT" and r["versions"]["gate"] and r["versions"]["router"] == RT.VERSION
+    assert r["decision"] == "ELIGIBLE" and r["versions"]["gate"] and r["versions"]["router"] == RT.VERSION
     for i in range(2):                                                    # two open positions in two DIFFERENT specialists
         store.pos_save({"id": f"S{i}", "ledger": f"spec_x{i}", "date": "2026-10-28", "ticker": "AMD", "contract": "1C", "symbol": "S",
                         "side": "C", "qty_init": 1, "qty_open": 1, "fill": 1.0, "opened": "2026-10-28T10:00:00-04:00", "closed": None,

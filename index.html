@@ -2010,7 +2010,7 @@ async function loadStrategies(){
   const q = d.qualified || [];
   $("#stratQ").textContent = q.length ? `${q.length} qualified` : "none qualified"; $("#stratQ").className = "pill " + (q.length ? "up" : "warn");
   const routed = d.routed_today || [], shadow = routed.filter(r => r.decision === "SHADOW").length;
-  $("#stratTable").innerHTML = `<p class="m" style="margin:0 0 8px">${esc(d.qualified_note || "")} Routed today: ${routed.length} setups, ${shadow} logged as research only, ${routed.filter(r => r.decision === "ADMIT").length} admitted.</p>
+  $("#stratTable").innerHTML = `<p class="m" style="margin:0 0 8px">${esc(d.qualified_note || "")} Routed today: ${routed.length} setups, ${shadow} logged as research only, ${routed.filter(r => r.decision === "ELIGIBLE" || r.decision === "ADMIT").length} eligible (eligible is not an entry).</p>
     <table><thead><tr><th>Strategy</th><th>Status</th><th>Type</th><th>Where / when</th><th>Evidence so far</th><th>Why</th></tr></thead><tbody>${
     (d.experiments || []).map(e => `<tr><td><b>${esc(e.id)}</b><div class="m" style="font-size:11px">${esc(e.family || "")}${e.policy ? " · " + esc(e.policy) : ""}</div></td>
       <td><span class="pill ${SCLS[e.status] || "dim"}">${esc(e.status)}</span>${e.status_note ? `<div class="d" style="font-size:11px">${esc(e.status_note)}</div>` : ""}</td>

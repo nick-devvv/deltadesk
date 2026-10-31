@@ -41,6 +41,7 @@ Main endpoints:
 Real money: only Nick, in Robinhood. This server sends NO orders anywhere: paper trading is simulated internally
 on Schwab quotes. Schwab access is market data only (trading/account endpoints are refused in code).
 """
+import hmac
 import json
 import math
 import os
@@ -49,7 +50,7 @@ import threading
 import time
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -277,9 +278,22 @@ class H(BaseHTTPRequestHandler):
     def _ok(self, q):
         if not DESK_TOKEN:
             return True
-        if q.get("k", [""])[0] == DESK_TOKEN:
+        if hmac.compare_digest(q.get("k", [""])[0].encode(), DESK_TOKEN.encode()):
             return True
-        return f"desk_k={DESK_TOKEN}" in (self.headers.get("Cookie") or "")
+        for part in (self.headers.get("Cookie") or "").split(";"):          # v3.5: a real cookie parse, constant-time compare
+            k, _, v = part.strip().partition("=")
+            if k == "desk_k" and hmac.compare_digest(v.encode(), DESK_TOKEN.encode()):
+                return True
+        return False
+
+    def _same_origin(self):
+        """v3.5: a browser POST must come from this desk's own page (CSRF). Tools with no Origin header (Chart's API
+        calls, curl) are unaffected; they still need the token."""
+        o = self.headers.get("Origin")
+        if not o or o == "null":
+            return o is None
+        host = (self.headers.get("X-Forwarded-Host") or self.headers.get("Host") or "").split(",")[0].strip()
+        return urlparse(o).netloc == host
 
     def _body(self):
         n = int(self.headers.get("Content-Length", 0))
@@ -294,15 +308,24 @@ class H(BaseHTTPRequestHandler):
     def do_GET(self):
         u = urlparse(self.path)
         q = parse_qs(u.query)
+        if u.path == "/healthz":                  # v3.5: liveness for an uptime checker - no data, no token needed
+            return self._json({"alive": True})
+        if u.path == "/readyz":                   # readiness: yes/no + short reasons, nothing secret or personal
+            import health
+            ready, why = health.readiness()
+            return self._json({"ready": ready, "reasons": why}, 200 if ready else 503)
         if not self._ok(q):
             return self._send(403, "Forbidden: open the full link Chart gave you (with ?k=...).", "text/plain")
         if u.path in ("/", "/index.html"):
+            if DESK_TOKEN and "k" in q:           # v3.5: swap the link's token for a cookie and drop it from the address bar
+                rest = urlencode([(k, v) for k, vs in q.items() if k != "k" for v in vs])
+                return self._send(302, b"", "text/plain", {
+                    "Set-Cookie": f"desk_k={DESK_TOKEN}; Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax"
+                                  + ("; Secure" if (self.headers.get("X-Forwarded-Proto") or "") == "https" else ""),
+                    "Location": "/" + (f"?{rest}" if rest else "")})
             with open(os.path.join(HERE, "index.html"), "rb") as f:
                 data = f.read()
-            extra = {}
-            if DESK_TOKEN and q.get("k", [""])[0] == DESK_TOKEN:
-                extra["Set-Cookie"] = f"desk_k={DESK_TOKEN}; Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax"
-            return self._send(200, data, "text/html; charset=utf-8", extra)
+            return self._send(200, data, "text/html; charset=utf-8")
         if u.path == "/vendor/lwc.js":            # TradingView Lightweight Charts 5.2.1 (Apache-2.0), served locally: no CDN needed
             with open(os.path.join(HERE, "vendor", "lightweight-charts-5.2.1.js"), "rb") as f:
                 return self._send(200, f.read(), "application/javascript; charset=utf-8")
@@ -310,6 +333,9 @@ class H(BaseHTTPRequestHandler):
             with open(os.path.join(HERE, "index_legacy.html"), "rb") as f:
                 return self._send(200, f.read(), "text/html; charset=utf-8")
         try:
+            if u.path == "/api/health":            # v3.5: workers, feed, clock skew, rate budget, memory (no secrets)
+                import health
+                return self._json(clean(health.summary()))
             if u.path == "/api/state":
                 return self._json(state(int(q.get("since", ["0"])[0] or 0)))
             if u.path == "/api/journal":
@@ -516,6 +542,8 @@ class H(BaseHTTPRequestHandler):
         u = urlparse(self.path)
         if not self._ok(parse_qs(u.query)):
             return self._json({"error": "forbidden"}, 403)
+        if not self._same_origin():
+            return self._json({"error": "forbidden: cross-site request"}, 403)
         b = self._body()
         try:
             if u.path == "/api/command":

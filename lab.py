@@ -1253,20 +1253,31 @@ def step(now=None):
         _state["status"] = "waiting for Schwab (the lab never records delayed data)"
         return
     hm = now.strftime("%H:%M")
-    if "04:00" <= hm <= "15:55":
-        _pull_history(now, c)
-    base_all = store.kv_get(f"scan_base:{day}")
-    if c["tape"] and base_all and "09:31" <= hm <= "16:05":
-        scan(now, base_all, c)
-        _state["status"] = "recording"
-    elif not base_all:
-        _state["status"] = "waiting for the 08:30 baselines"
-    manage_all(now)
-    try:
-        import contract_lab
-        contract_lab.poll(now)
-    except Exception as e:
-        _state["last_error"] = f"contracts poll: {type(e).__name__}: {e}"[:200]
+    import health
+    import schwab
+    # v3.5: protect open lab trades FIRST (risk priority on the shared Schwab budget), then research
+    with schwab.priority("risk"):
+        try:
+            manage_all(now)
+        except Exception as e:
+            _state["last_error"] = f"manage: {type(e).__name__}: {e}"[:200]
+    _state["risk_s"] = round(time.time() - t0, 2)
+    with schwab.priority("research"):
+        try:
+            import contract_lab
+            contract_lab.poll(now)
+            health.beat("contracts", True)
+        except Exception as e:
+            _state["last_error"] = f"contracts poll: {type(e).__name__}: {e}"[:200]
+            health.beat("contracts", False, _state["last_error"])
+        if "04:00" <= hm <= "15:55":
+            _pull_history(now, c)
+        base_all = store.kv_get(f"scan_base:{day}")
+        if c["tape"] and base_all and "09:31" <= hm <= "16:05":
+            scan(now, base_all, c)
+            _state["status"] = "recording"
+        elif not base_all:
+            _state["status"] = "waiting for the 08:30 baselines"
     if hm >= c["resolve_after"] and time.time() - (_state.get("resolve_t") or 0) > 120:
         _state["resolve_t"] = time.time()
         resolve(str(day), now, c)
@@ -1289,6 +1300,7 @@ def step(now=None):
     if time.time() - _state["saved_at"] > 60:
         _persist(day)
     _state["step_s"] = round(time.time() - t0, 2)
+    health.beat("lab", True, _state.get("status"), _state["step_s"])
 
 
 def _run():

@@ -124,6 +124,10 @@ def buy(portfolio, idea, ticker, side, plan, qty, signal_t):
     sym = plan["symbol"]
     if store.kv_get("paper_pause"):
         return None, "paper entries are paused (emergency pause on the Markets page)"
+    import health
+    blk = health.entry_block()                 # v3.5: a feed the engine just measured as stale blocks NEW entries
+    if blk:
+        return None, blk
     q, err = sim_quote(sym)
     if not q:
         return None, f"no simulated fill: {err}"

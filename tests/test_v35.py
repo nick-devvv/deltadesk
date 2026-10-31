@@ -443,3 +443,217 @@ def test_contract_dedupe_and_budget_survive_a_restart_and_the_day_rollover(env):
     CL.poll(nxt.replace(hour=9, minute=50))                                          # next morning
     assert CL._tracked(str(nxt.date())) == []
     assert not store.q("SELECT 1 FROM lab_contracts WHERE day='2026-10-28' AND status='TRACKING'")
+
+
+# ================================================================ C5 router: fail closed, eligibility vs authorization
+def _qualified(env, family="ORB_BREAK"):
+    import strategy_registry as SR
+    real = SR.status_for
+    env.setattr(SR, "status_for", lambda fam, t: dict(real(fam, t), status="PAPER QUALIFIED", actionable=True)
+                if fam == family else real(fam, t))
+
+
+def test_router_fails_closed_on_unknown_regime_bar_and_warmup(env):
+    import strategy_router as RT
+    import strategy_registry as SR
+    store.conn()
+    env.setattr(core, "now_et", lambda: DAY.replace(hour=10, minute=30))
+    real = SR.status_for
+    env.setattr(SR, "status_for", lambda fam, t: dict(real(fam, t), status="PAPER QUALIFIED", actionable=True, id="X-REQ"))
+    env.setattr(SR, "get", lambda i: {"spec": {"requires": {"regime": ["trend"], "min_warmup_bars": 20}}})
+    a = RT.admit("ORB_BREAK", "SPY", "C", None, {"fresh": True})
+    txt = " | ".join(a["reasons"])
+    assert not a["allowed"] and "regime unknown" in txt and "warmup (unknown" in txt and "bar state unknown" in txt
+    a = RT.admit("ORB_BREAK", "SPY", "C", None, {"fresh": True, "bar_complete": True, "regime": "trend", "warmup_bars": 30})
+    assert a["allowed"], a["reasons"]
+
+
+def _e2e_world(env):
+    import entrygate
+    import strategy_router as RT
+    clock, fk = _world(env)
+    clock.t = DAY.replace(hour=10, minute=30)
+    engine._cache.clear()
+    _qualified(env)
+    sn = entrygate.snap_from(engine.snapshot("SPY"))
+    sn["bar_complete"] = True
+    g = entrygate.define("SPY", "C", "orb_break", 599.95, 599.5, 602.0, "test level", sn, "1m close above 599.95",
+                         confirmed_at=clock().isoformat(timespec="seconds"), scope="spec_test")
+    return clock, fk, RT, sn, g
+
+
+def test_end_to_end_candidate_to_paper_fill_only_through_authorize(env):
+    import strategy_router as RT
+    clock, fk, RT, sn, g = _e2e_world(env)
+    r = RT.route({"ticker": "SPY", "side": "C", "family": "ORB_BREAK", "fresh": True, "bar_complete": True, "setup_id": "e2e"})
+    assert r["decision"] == "ELIGIBLE" and not store.positions()                    # eligible is not an entry
+    q, _ = marketdata.option_quote("SPY261028C00600000")
+    plan = dict(_plan(), premium_stop=1.60, signal_t=(clock() - timedelta(seconds=5)).isoformat())
+    out = RT.authorize(r["id"], g["id"], sn, q, plan, clock())
+    assert out["decision"] == "AUTHORIZED", out["reasons"]
+    assert out["gate"]["state"] == "ENTRY CONDITIONS MET" and out["ledger"].startswith("spec_")
+    p = store.pos_get(out["position_id"])
+    assert p["ledger"] == out["ledger"] and p["status"] == "OPEN" and p["qty_open"] == 1
+    again = RT.authorize(r["id"], g["id"], sn, q, plan, clock())
+    assert again["decision"] == "DUPLICATE" and len(store.positions()) == 1           # a retry never fills twice
+
+
+def test_authorize_refuses_without_the_full_verified_sequence(env):
+    import entrygate
+    clock, fk, RT, sn, g = _e2e_world(env)
+    q, _ = marketdata.option_quote("SPY261028C00600000")
+    plan = dict(_plan(), premium_stop=1.60, signal_t=(clock() - timedelta(seconds=5)).isoformat())
+    assert RT.authorize("R-none", g["id"], sn, q, plan, clock())["decision"] == "NOT AUTHORIZED"   # never routed
+    r = RT.route({"ticker": "SPY", "side": "C", "family": "ORB_BREAK", "fresh": True, "bar_complete": True, "setup_id": "s1"})
+    stale = dict(q, quote_time=pd.Timestamp(clock()) - pd.Timedelta(seconds=90))
+    o1 = RT.authorize(r["id"], g["id"], sn, stale, plan, clock())
+    assert o1["decision"] == "NOT AUTHORIZED" and any("stale" in x for x in o1["reasons"])
+    r2 = RT.route({"ticker": "SPY", "side": "C", "family": "ORB_BREAK", "fresh": True, "bar_complete": True, "setup_id": "s2"})
+    o2 = RT.authorize(r2["id"], g["id"], dict(sn, fresh=None), q, plan, clock())   # freshness unknown -> the gate says no
+    assert o2["decision"] == "NOT AUTHORIZED" and o2["gate"]["state"] == "NO TRADE"
+    r3 = RT.route({"ticker": "SPY", "side": "C", "family": "ORB_BREAK", "fresh": True, "bar_complete": True, "setup_id": "s3"})
+    o3 = RT.authorize(r3["id"], g["id"], dict(sn, bar_complete=None), q, plan, clock())
+    assert o3["decision"] == "NOT AUTHORIZED" and any("bar state unknown" in x for x in o3["reasons"])
+    r4 = RT.route({"ticker": "SPY", "side": "C", "family": "ORB_BREAK", "fresh": True, "bar_complete": True, "setup_id": "s4"})
+    o4 = RT.authorize(r4["id"], g["id"], sn, q, dict(plan, premium_stop=2.5), clock())
+    assert o4["decision"] == "NOT AUTHORIZED" and any("20%" in x for x in o4["reasons"])
+    r5 = RT.route({"ticker": "SPY", "side": "C", "family": "ORB_BREAK", "fresh": True, "bar_complete": True, "setup_id": "s5"})
+    other = entrygate.define("SPY", "P", "orb_break", 600.05, 600.5, 598.0, "t", sn, "x", scope="spec_test")
+    o5 = RT.authorize(r5["id"], other["id"], sn, q, plan, clock())
+    assert o5["decision"] == "NOT AUTHORIZED" and any("different stock or side" in x for x in o5["reasons"])
+    assert not store.positions()
+    research = RT.route({"ticker": "SPY", "side": "C", "family": "VWAP_RECLAIM", "fresh": True, "bar_complete": True, "setup_id": "s6"})
+    assert research["decision"] in ("SHADOW", "REJECT")
+    o6 = RT.authorize(research["id"], g["id"], sn, q, plan, clock())
+    assert o6["decision"] == "NOT AUTHORIZED" and not store.positions()
+
+
+# ================================================================ C7 / hosting: health endpoints, token hygiene, CSRF
+@pytest.fixture
+def http(env, monkeypatch):
+    import http.client
+    import threading
+    from http.server import ThreadingHTTPServer
+    import server
+    monkeypatch.setattr(server, "DESK_TOKEN", "tok-test-123")
+    store.conn()
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), server.H)
+    th = threading.Thread(target=srv.serve_forever, daemon=True)
+    th.start()
+
+    def req(method, path, headers=None, body=None):
+        c = http.client.HTTPConnection("127.0.0.1", srv.server_address[1], timeout=10)
+        c.request(method, path, body=body, headers=headers or {})
+        r = c.getresponse()
+        out = (r.status, dict(r.getheaders()), r.read())
+        c.close()
+        return out
+    yield req
+    srv.shutdown()
+
+
+def test_link_token_becomes_a_cookie_and_leaves_the_address_bar(http):
+    st, h, _ = http("GET", "/?k=tok-test-123&tab=markets")
+    assert st == 302 and h["Location"] == "/?tab=markets" and "tok-test-123" not in h["Location"]
+    assert "desk_k=tok-test-123" in h["Set-Cookie"] and "HttpOnly" in h["Set-Cookie"]
+    st, _, body = http("GET", "/", {"Cookie": "other=1; desk_k=tok-test-123"})
+    assert st == 200 and b"<html" in body.lower()
+    assert http("GET", "/", {"Cookie": "xdesk_k=tok-test-123"})[0] == 403                # a look-alike cookie is not the token
+    assert http("GET", "/api/health")[0] == 403
+
+
+def test_health_endpoints_need_no_token_and_leak_nothing(http):
+    import health
+    st, _, body = http("GET", "/healthz")
+    assert st == 200 and json.loads(body) == {"alive": True}
+    st, _, body = http("GET", "/readyz")
+    d = json.loads(body)
+    assert st in (200, 503) and set(d) == {"ready", "reasons"}
+    health.beat("engine", True, "test", 0.1)
+    st, _, body = http("GET", "/api/health", {"Cookie": "desk_k=tok-test-123"})
+    d = json.loads(body)
+    assert st == 200 and d["workers"]["engine"]["state"] == "ok" and "tok-test-123" not in body.decode()
+    assert "schwab_rate" in d and "by_priority" in d["schwab_rate"]
+
+
+def test_cross_site_posts_are_refused_but_tools_without_origin_work(http):
+    ck = {"Cookie": "desk_k=tok-test-123", "Content-Type": "application/json"}
+    st, _, _ = http("POST", "/api/reply", dict(ck, Origin="https://evil.example", Host="desk.example"), b'{"reply":"x"}')
+    assert st == 403
+    st, _, _ = http("POST", "/api/reply", dict(ck, Origin="https://desk.example", Host="desk.example"), b'{"reply":"x"}')
+    assert st == 200
+    st, _, _ = http("POST", "/api/reply?k=tok-test-123", {"Content-Type": "application/json"}, b'{"reply":"from Chart"}')
+    assert st == 200
+
+
+def test_risk_calls_keep_budget_when_research_has_used_its_share(env, monkeypatch):
+    import schwab
+    import time as _t
+    monkeypatch.setattr(schwab, "_calls", [])
+    monkeypatch.setattr(schwab, "RATE_PER_MIN", 10)
+    sleeps = []
+    monkeypatch.setattr(schwab.time, "sleep", lambda s: sleeps.append(s) or (_ for _ in ()).throw(TimeoutError()))
+    with schwab.priority("research"):
+        for _ in range(7):
+            schwab._throttle()                                     # research may use 70%
+        with pytest.raises(TimeoutError):
+            schwab._throttle()                                     # the 8th research call would wait
+    with schwab.priority("risk"):
+        for _ in range(3):
+            schwab._throttle()                                     # open-trade protection still gets through at once
+    assert len(schwab._calls) == 10 and schwab.current_priority() == "normal"
+
+
+def test_open_trades_are_managed_before_any_scan(env, monkeypatch):
+    clock, fk = _world(env)
+    order = []
+    monkeypatch.setattr(engine, "_manage_open", lambda: order.append("manage") or [])
+    monkeypatch.setattr(engine, "paper_scan", lambda t: order.append("scan"))
+    monkeypatch.setattr(engine.noiseband, "tick", lambda *a: order.append("noise"))
+    engine.tick()
+    assert order and order[0] == "manage" and "scan" in order
+
+
+def test_a_stale_feed_blocks_new_entries_but_not_exits(env):
+    import health
+    clock, fk = _world(env)
+    paper.reserve_idea("paper", "S1", "SPY", "C")
+    pid, _ = paper.buy("paper", "S1", "SPY", "C", _plan(), 1, clock().isoformat())
+    health.set_feed(False, "SPY bars stale")
+    try:
+        paper.reserve_idea("paper", "S2", "SPY", "C")
+        p2, why = paper.buy("paper", "S2", "SPY", "C", _plan(), 1, clock().isoformat())
+        assert p2 is None and "stale" in why
+        assert paper.sell(store.pos_get(pid), 1, "exit while stale")[0] == 1
+    finally:
+        health.set_feed(True)
+
+
+def test_lab_protects_open_trades_before_slow_research(env, monkeypatch):
+    """Worst case measured: a history pull that hangs for 0.6 s (a slow provider) no longer delays open-trade exits."""
+    import time as _t
+    import contract_lab
+    import lab
+    store.conn()
+    lab._schema()
+    now = DAY.replace(hour=10, minute=30)
+    monkeypatch.setattr(core, "now_et", lambda: now)
+    seen = []
+
+    class F:
+        def ready(self):
+            return True
+    t0 = _t.time()
+    monkeypatch.setattr(lab, "_fetch", lambda: F())
+    monkeypatch.setattr(lab, "manage_all", lambda n=None: seen.append(("manage", _t.time() - t0)) or 0)
+    monkeypatch.setattr(contract_lab, "poll", lambda n=None: seen.append(("contracts", _t.time() - t0)) or 0)
+    monkeypatch.setattr(lab, "_pull_history", lambda n, c: _t.sleep(0.6) or seen.append(("history", _t.time() - t0)))
+    monkeypatch.setattr(lab, "scan", lambda *a: seen.append(("scan", _t.time() - t0)) or [])
+    store.kv_set(f"scan_base:{now.date()}", {"SPY": {}})
+    lab._state.update(day=None)
+    lab.step(now)
+    names = [s[0] for s in seen]
+    assert names[0] == "manage" and names.index("history") > names.index("manage")
+    assert seen[0][1] < 0.2 and lab._state["risk_s"] < 0.2 and lab._state["step_s"] >= 0.6
+    import health
+    assert health.workers()["lab"]["state"] == "ok"

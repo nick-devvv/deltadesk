@@ -259,17 +259,51 @@ _rate_lock = threading.Lock()
 STATS = {"calls": 0, "waited_s": 0.0, "http_errors": 0}
 
 
+# v3.5: the budget is shared, but research can't take all of it. Calls made while protecting open trades ("risk")
+# may use the full budget; normal calls up to 90%; research calls (history pulls, contract-lab chains) up to 70%.
+# So a busy lab can never leave an open position waiting for a quote.
+PRIORITY_SHARE = {"risk": 1.0, "normal": 0.9, "research": 0.7}
+PRIORITY_STATS = {"risk": 0, "normal": 0, "research": 0, "research_waits": 0}
+_prio = threading.local()
+
+
+class priority:
+    """with schwab.priority("risk"): ...  (thread-local; nests)."""
+
+    def __init__(self, level):
+        self.level = level if level in PRIORITY_SHARE else "normal"
+
+    def __enter__(self):
+        self.prev = getattr(_prio, "level", None)
+        _prio.level = self.level
+        return self
+
+    def __exit__(self, *a):
+        _prio.level = self.prev
+        return False
+
+
+def current_priority():
+    return getattr(_prio, "level", None) or "normal"
+
+
 def _throttle():
+    lvl = current_priority()
+    cap = max(1, int(RATE_PER_MIN * PRIORITY_SHARE[lvl]))
     while True:
         with _rate_lock:
             now = time.time()
             while _calls and now - _calls[0] > 60:
                 _calls.pop(0)
-            if len(_calls) < RATE_PER_MIN:
+            if len(_calls) < cap:
                 _calls.append(now)
                 STATS["calls"] += 1
+                PRIORITY_STATS[lvl] += 1
                 return
-            wait = 60 - (now - _calls[0]) + 0.05
+            k = len(_calls) - cap                      # wait until enough old calls age out for THIS level
+            wait = 60 - (now - _calls[k]) + 0.05
+        if lvl == "research":
+            PRIORITY_STATS["research_waits"] += 1
         STATS["waited_s"] += wait
         time.sleep(min(wait, 5))
 

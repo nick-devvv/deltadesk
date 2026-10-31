@@ -7,6 +7,7 @@ reported trades: the desk only advises; it never places or infers a real fill.
 Chart (Grok) only explains what this produces.
 """
 import json
+import time
 import re
 import threading
 from datetime import datetime, timedelta
@@ -1006,10 +1007,47 @@ def archive_quote(symbol, q):
 _state = {"last_tick": None, "errors": 0, "last_error": None}
 
 
+def _manage_open():
+    """v3.5: open-position protection runs FIRST every tick, at risk priority on the shared Schwab budget."""
+    import schwab
+    want = []
+    with schwab.priority("risk"):
+        for p in store.positions(status="OPEN"):
+            want.append(p["symbol"])
+            if str(p["ledger"]).startswith("lab_"):
+                continue                          # v3.4: the lab manages its own trades with one batched quote call
+            try:
+                if p["ledger"] in ("earn_post", "earn_pre", "board"):
+                    import autopilot
+                    autopilot.manage(p)
+                elif p["ledger"] == "noise":
+                    noiseband.manage(p)
+                elif p["ledger"] == "inplay":
+                    scanner.manage(p)
+                elif p["plan"].get("v") == 3:
+                    exits.evaluate(p, snapshot(p["ticker"]).get("v3") or {})
+                else:
+                    policy_old.manage(p, snapshot(p["ticker"]), lambda sym: marketdata.option_quote(sym))
+                q, _ = marketdata.option_quote(p["symbol"])
+                archive_quote(p["symbol"], q)
+            except Exception as e:                # one bad position must not stop the others from being protected
+                _state["last_error"] = f"manage {p['id']}: {type(e).__name__}: {e}"[:200]
+    return want
+
+
 def tick():
+    import health
+    t0 = time.time()
     sess = core.session_info()
     try:
         if sess["state"] in ("OPEN", "NO NEW ENTRIES", "ALL OUT", "ORB FORMING"):
+            want = _manage_open()
+            _state["risk_s"] = round(time.time() - t0, 2)
+            try:                                  # v3.5: measure the stock feed once per tick (the entry block reads it)
+                s0 = snapshot(core.policy()["instruments"][0])
+                health.set_feed(not s0.get("stale") and (s0.get("v3") or {}).get("ok", False), "SPY bars stale" if s0.get("stale") else None)
+            except Exception:
+                pass
             for t in core.policy()["instruments"]:
                 s = snapshot(t)
                 archive(t, s.get("m1"))
@@ -1032,24 +1070,6 @@ def tick():
                         alerts.move_check(t, v3["b5"])
                 except Exception:
                     pass
-            want = []
-            for p in store.positions(status="OPEN"):
-                want.append(p["symbol"])
-                if str(p["ledger"]).startswith("lab_"):
-                    continue                          # v3.4: the lab manages its own trades with one batched quote call
-                if p["ledger"] in ("earn_post", "earn_pre", "board"):
-                    import autopilot
-                    autopilot.manage(p)
-                elif p["ledger"] == "noise":
-                    noiseband.manage(p)
-                elif p["ledger"] == "inplay":
-                    scanner.manage(p)
-                elif p["plan"].get("v") == 3:
-                    exits.evaluate(p, snapshot(p["ticker"]).get("v3") or {})
-                else:
-                    policy_old.manage(p, snapshot(p["ticker"]), lambda sym: marketdata.option_quote(sym))
-                q, _ = marketdata.option_quote(p["symbol"])
-                archive_quote(p["symbol"], q)
             try:
                 import schwab_stream
                 schwab_stream.want_options(want)
@@ -1064,9 +1084,11 @@ def tick():
             todo = [p for p in store.positions(ledger="real", day=sess["date"]) if p["status"] == "CLOSED" and not (p.get("notes") or "").strip("{} ")]
             store.event("journal", f"Journal for {sess['date']} written (real, main paper, research, old policy)." +
                         (f" {len(todo)} of your trades need a quick review." if todo else ""), "", sess["date"])
-        _state.update(last_tick=store.ts(), errors=0)
+        _state.update(last_tick=store.ts(), errors=0, tick_s=round(time.time() - t0, 2))
+        health.beat("engine", True, None, _state["tick_s"])
     except Exception as e:
         _state.update(errors=_state["errors"] + 1, last_error=f"{type(e).__name__}: {e}")
+        health.beat("engine", False, _state["last_error"], round(time.time() - t0, 2))
         if _state["errors"] in (1, 10):
             store.event("error", f"ENGINE ERROR: {_state['last_error']}")
     return _state
