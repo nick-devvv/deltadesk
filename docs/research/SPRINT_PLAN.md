@@ -367,6 +367,40 @@ These pin down details the text above left open. None comes from a result.
 - All of them count as trials.
 - Nothing else runs on HIST. No rule or number changes after seeing HIST results; any change would be a new amendment, labeled in-sample.
 
+## Amendment 6, 2026-10-31: why the ideas lose in some years. Regime rules found on 2016-2019, tested on 2020-2023 (written before any 2020-2023 look)
+
+**Discovery set:** HIST 2016-2019 only, from run 4's trade file (`trades_hist_v1_2026-10-31.csv.gz`). Option P/L is MODELED (BS, calibrated IV); every feature is known at entry (sprint/features.py). Only feature-by-tercile tables were looked at, and nothing from 2020 on.
+- **Failed-break calls lose in calm regimes.** VIXY percentile low/mid tercile: PF 0.17-0.56. High tercile: 0.93-1.08.
+- **Failed-break calls do better after a down prior day.** fb_or, prior-day return low tercile: PF 1.17 vs 0.49-0.62. This matches DEV's learner weights and Chart's v2-034 look.
+- **Far-OTM 0DTE options pay only on days that are already moving.** Range so far vs ATR, high tercile: PF 1.48 (10:30 puts), 1.62 (11:00 calls); low tercile 0.28 / 0.34. Relative volume, high tercile: PF 1.43 / 1.98.
+  - The calm-day put filter (otm_put) points the opposite way, which fits its failure on 2016-2023.
+- **Known model bias:** the model uses one flat IV per day (20-session realized vol x a multiplier). On days that are already moving, real 0DTE IV rises and the model doesn't, so it may flatter these rules. That is why DEV's real option prices are the deciding test.
+
+**Nine candidate rules** (the thresholds are the discovery-set tercile cuts, frozen here). Each is a filter on the unfiltered run's trades; all nine count as trials.
+
+| id | strategy (run) | rule |
+|---|---|---|
+| A | fb_or (hist_v1-002 / setups_v2-012) | f_vixy_pctl >= 0.443 |
+| B | fb_or | f_prev_ret <= 0 (side-signed: the prior session closed down) |
+| C | fb_or | A and B |
+| D | 10:30 far-OTM puts, unfiltered (hist_v1-003 / otm_v1-010) | f_range_atr >= 0.52 |
+| E | same | f_rvol >= 1.05 |
+| F | same | D and E |
+| G | 11:00 far-OTM calls, unfiltered (hist_v1-005 / otm_v1-040) | f_range_atr >= 0.61 |
+| H | same | f_rvol >= 1.06 |
+| I | same | G and H |
+
+**Holdout 1: HIST 2020-01-01 to 2024-01-31, MODELED, evaluated once.** A rule passes only if all of these hold:
+- at least 60 trades;
+- PF >= 1.25 and PF at 2x slippage > 1.0;
+- profitable in at least 3 of the 4 years 2020-2023 (years with 10+ trades);
+- still positive without its best 5 trades;
+- its total beats removing the same number of trades by random whole days (2,000 draws, seed 17), p < 0.05.
+
+**Holdout 2: DEV 2024-08 to 2026-06, real option prices (Chart),** only for rules that pass holdout 1. It runs on the run-1-3 trade files, which carry the same features. Pass: PF >= 1.25, PF 2x > 1.0, at least 40 trades, and beats random day-skips p < 0.10.
+
+A rule that passes both becomes a frozen finalist for L1/L2 (each run once). If none passes, the report says so and nothing changes on the desk.
+
 ## Limits
 
 - Backtests only.
