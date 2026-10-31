@@ -59,12 +59,44 @@ def event(ticker, lookup=None):
     return rec
 
 
+def norm_call_time(v, d):
+    """v3.5.1: a call time as sent ("2026-11-02T09:00:00-05:00", "09:00 ET", "9:00 AM ET", "8:30am") -> ISO ET on date d.
+    Unreadable input -> None (stored as a note, never as a value that breaks /api/earnings)."""
+    if not v:
+        return None
+    t = str(v).strip()
+    try:
+        x = datetime.fromisoformat(t.replace("Z", "+00:00"))
+        return (x if x.tzinfo else x.replace(tzinfo=core.ET)).astimezone(core.ET).isoformat(timespec="minutes")
+    except ValueError:
+        pass
+    import re
+    m = re.fullmatch(r"(\d{1,2}):(\d{2})\s*(am|pm|a\.m\.|p\.m\.)?\s*(et|est|edt|eastern)?", t.lower())
+    if not m:
+        return None
+    hh, mm = int(m.group(1)), int(m.group(2))
+    ap = (m.group(3) or "").replace(".", "")
+    if ap == "pm" and hh < 12:
+        hh += 12
+    if ap == "am" and hh == 12:
+        hh = 0
+    if hh > 23 or mm > 59:
+        return None
+    try:
+        return datetime.fromisoformat(f"{d}T{hh:02d}:{mm:02d}").replace(tzinfo=core.ET).isoformat(timespec="minutes")
+    except ValueError:
+        return None
+
+
 def confirm(ticker, d, timing=None, source_url=None, call_time=None):
     """A sourced confirmation of the date / timing (only a primary or reporting source upgrades it)."""
     import catalysts
     rec = _get(ticker, d) or {"ticker": ticker, "date": d, "results": None, "call_notes": [], "released_at": None}
     kind = catalysts.source_kind(source_url) if source_url else None
-    rec.update(timing=timing or rec.get("timing"), call_time=call_time or rec.get("call_time"))
+    ct = norm_call_time(call_time, d)
+    if call_time and not ct:
+        rec["call_time_note"] = f"unreadable call time {str(call_time)[:40]!r}: not stored"
+    rec.update(timing=timing or rec.get("timing"), call_time=ct or norm_call_time(rec.get("call_time"), d))
     if kind in ("primary", "reporting"):
         rec.update(status="confirmed", date_source=source_url)
     else:
@@ -129,8 +161,9 @@ def phase(rec, now=None):
     d = date.fromisoformat(rec["date"])
     if rec.get("released_at"):
         rel = datetime.fromisoformat(str(rec["released_at"]).replace("Z", "+00:00")).astimezone(core.ET)
-        if rec.get("call_time"):
-            ct = datetime.fromisoformat(rec["call_time"]).astimezone(core.ET)
+        ctv = norm_call_time(rec.get("call_time"), rec["date"])     # v3.5.1: old bad values ("09:00 ET") no longer crash
+        if ctv:
+            ct = datetime.fromisoformat(ctv)
             if ct <= now <= ct + timedelta(minutes=90):
                 return "CALL"
         nxt = next_session_after(rel)

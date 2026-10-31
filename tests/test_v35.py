@@ -985,3 +985,18 @@ def test_repeated_wrong_tokens_are_paused(http, monkeypatch):
         assert http("GET", "/api/health?k=wrong", {"X-Forwarded-For": "198.51.100.7"})[0] == 403
     assert http("GET", "/api/health?k=tok-test-123", {"X-Forwarded-For": "198.51.100.7"})[0] == 403   # paused even with the right one
     assert http("GET", "/api/health?k=tok-test-123", {"X-Forwarded-For": "198.51.100.8"})[0] == 200
+
+
+def test_earnings_call_time_like_09_00_ET_is_normalized_and_old_bad_values_dont_crash(env):
+    import earnings as E
+    store.conn()
+    assert E.norm_call_time("09:00 ET", "2026-11-02") == "2026-11-02T09:00-05:00"          # after the DST change
+    assert E.norm_call_time("8:30 am", "2026-10-28") == "2026-10-28T08:30-04:00"
+    assert E.norm_call_time("4:30 PM ET", "2026-10-28") == "2026-10-28T16:30-04:00"
+    assert E.norm_call_time("2026-10-28T13:00:00Z", "2026-10-28") == "2026-10-28T09:00-04:00"
+    assert E.norm_call_time("before the bell", "2026-10-28") is None
+    rec = E.confirm("ABBV", "2026-10-28", "before open", None, "09:00 ET")
+    assert rec["call_time"] == "2026-10-28T09:00-04:00"
+    bad = dict(rec, call_time="09:00 ET", released_at="2026-10-28T07:00:00-04:00")         # a record stored before the fix
+    assert E.phase(bad, DAY.replace(hour=9, minute=30)) == "CALL"
+    assert E.confirm("ABBV", "2026-10-28", None, None, "sometime")["call_time"] == "2026-10-28T09:00-04:00"
