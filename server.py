@@ -35,6 +35,7 @@ Main endpoints:
   GET  /api/research         every paper ledger side by side: expectancy, avg win/loss, drawdown, stock move vs option
   GET  /api/diagnostics      the latest diagnostics report from backtest.py
   GET  /legacy               the old desk page (custom indicator chart)
+  GET  /api/v4/news_drift?day=&since=  v4 news-drift event study (research only, never trades)
   GET  /api/lab[/report?by=&cond=&exits=|/signals|/contracts]  v3.4 strategy lab: signal tape, lab paper ledgers, what works
        where, and (3.4.2) which option contract converts the same signals
   Legacy: /api/read /api/bars /api/last /api/plan /api/chat
@@ -548,6 +549,12 @@ class H(BaseHTTPRequestHandler):
                                          "variants": core.policy().get("research_variants"),
                                          "note": "Each ledger is separate. Under 30 trades is not evidence. Option results of the variants are "
                                                  "simulated fills on live Schwab quotes; replays and backtests use MODELED option prices."}))
+            if u.path == "/api/v4/news_drift":      # v4: news-drift event study rows (research only, no trades)
+                import news_drift
+                day = q.get("day", [None])[0]
+                lim = max(1, min(2000, int(q.get("limit", ["300"])[0] or 300)))
+                return self._json(clean({"rows": news_drift.rows(day=day[:10] if day else None, limit=lim),
+                                         "summary": news_drift.summary(q.get("since", [None])[0]), "version": news_drift.VERSION}))
             if u.path == "/api/diagnostics":
                 files = sorted((core.HERE / "reports").glob("diagnostics_*.json")) if (core.HERE / "reports").exists() else []
                 return self._json(json.loads(files[-1].read_text()) if files else {"none": "no diagnostics run yet: python3 backtest.py --from ... --to ..."})
