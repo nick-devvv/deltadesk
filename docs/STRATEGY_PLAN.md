@@ -18,7 +18,8 @@ Written 2026-10-31. Source document: "DeltaDesk 0DTE quant rebuild" (Claude Docs
 - Desk-wide rules for long-premium ledgers: 20% planned premium-loss line, entries 09:45–15:15 ET, all out 15:25 ET.
 
 **Retire** (stop new entries, keep code and history, manage any open position to its exit)
-- SPY/QQQ: `paper` (main v3), `research`, `exit31`, `gated`, `orbx_swing`, `orbx_atr`, `orbx_2r`, `orbx_ormid`, `old`.
+- SPY/QQQ: `paper` (main v3), `research`, `exit31`, `gated`, `orbx_swing`, `orbx_atr`, `orbx_2r`, `orbx_ormid`.
+- Exception (Nick, 2026-10-31): `old` (policy_old.py, frozen 2026-10-28.3 rules) stays ACTIVE as a legacy forward test (not from a published source), shown next to the v4 ledgers with the same metrics. Its behavior is unchanged (tests/test_v4_old_regression.py).
 - `earn_pre` (holds options through the report: pays the IV crush, no stop protects the gap).
 
 **Rebuild on published rules** (stop the current versions, replace with new versioned ledgers in section 4): `news_mom`, `inplay`, `board`, `earn_post`.

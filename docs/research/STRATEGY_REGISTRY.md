@@ -166,3 +166,21 @@ The other entries (day-trader-skill, QuantRocket first-last, QC stocks-in-play r
 - No regime-filter study specific to avoiding intraday chop beyond volatility, relative-volume, NR4/NR7 and gamma conditioning.
 
 Future searches should start from these gaps and from the JSON registry.
+
+## v4 forward paper ledgers (pre-registered 2026-10-31, before any result)
+
+Each ledger's exact rules, parameters, cost model and version id are frozen in its module docstring (the code that runs it) and summarized in `docs/STRATEGY_PLAN.md` sections 3-4. Pass/fail for every ledger is `docs/STRATEGY_PLAN.md` section 5: held-out expectancy > 0 after costs, a profit-factor 95% session-bootstrap interval above 1.0, a deflated Sharpe when more than one variant was tried, then 40 forward paper trades whose fills match the backtest's. Forward data starts Mon 2026-11-02. Anything changed after a result gets a new version id and starts over.
+
+| Ledger | Version | Module | Source (grade) | Instrument and costs |
+|---|---|---|---|---|
+| `noise` (reference, unchanged) | 2026-10-30.v3.1-noise | `noiseband.py` | Zarattini, Aziz & Barbon 2024 (A) | SPY/QQQ 0DTE options, exec1 |
+| `noise_v2` | 2026-11-02.v4-noise_v2 | `noise_v2.py` | same paper's exit rule (A) | as `noise`; exit only at half-hour checks, -50% disaster stop |
+| `noise_trend` | 2026-11-02.v4-noise_trend | `noise_trend.py` | Gao, Han, Li & Zhou 2018 conditions (A) | as `noise`; trades when >= 2 known trend-day conditions are true |
+| `orb_credit` | 2026-11-02.v4-orb_credit | `orb_credit.py` | Option Alpha ORB 0DTE 2025 (B, costs not modeled) | $2 credit spreads, shorts at bid / longs at ask, $0.65/contract/side |
+| `ic_20d` | 2026-11-02.v4-ic_20d | `ic_20d.py` | tastytrade 0DTE IC study via StockWire 2026 (B) | $2-wing iron condor, 2x-credit stop, same pricing |
+| `sip_orb5`, `sip_orb5_x`, `sip_orb15` | 2026-11-02.v4-sip1 | `sip_orb.py` | Zarattini, Barbon & Aziz 2024 (B, no slippage modeled) | shares: ask + $0.01 / bid - $0.01, $100 risk; options shadow at bid/ask + $0.65 |
+| `earn_day` | 2026-11-02.v4-sip1 | `sip_orb.py` | as `sip_orb5_x`, first session after an 8-K 2.02 (C) | as above |
+| `news_drift` (event study, no trades) | 2026-11-02.v4-newsdrift1 | `news_drift.py` | STRATEGY_PLAN 4.5 (C) | moves net of half the spread at entry |
+| `old` (legacy forward test, not from a published source) | policy 2026-10-28.3 | `policy_old.py` | none: Nick's earlier desk rules, kept active by Nick | SPY/QQQ 0DTE options, exec1 |
+
+Variants tried before the forward test: none run on data yet. Count every later variant for the deflated Sharpe.

@@ -9,8 +9,8 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-RELEASE = "3.5"
-RELEASE_ID = "2026-10-31.v3.5"
+RELEASE = "4.0"
+RELEASE_ID = "2026-11-02.v4"
 HERE = Path(__file__).resolve().parent
 SOURCE_GLOBS = ("*.py", "index.html", "config/*.json", "grok/*.md", "grok/*.json")
 
@@ -40,7 +40,10 @@ def component_versions():
                        ("strategy_router", ("VERSION",)), ("research", ("VERSION",)), ("diagnostics", ("FRAME_VERSION",)),
                        ("replay", ("REPLAY_VERSION",)), ("scanner", ("BACKTEST_VERSION",)), ("noiseband", ("VERSION",)),
                        ("scanner_setups", ("VERSION",)), ("autopilot", ("BOARD_VERSION",)), ("orb_retest", ("VERSION",)),
-                       ("news_momentum", ("VERSION",)), ("underlying_first", ("VERSION",)), ("learning", ("SCHEMA_VERSION",))):
+                       ("news_momentum", ("VERSION",)), ("underlying_first", ("VERSION",)), ("learning", ("SCHEMA_VERSION",)),
+                       ("retire", ("VERSION",)), ("noise_v2", ("VERSION",)), ("noise_trend", ("VERSION",)),
+                       ("orb_credit", ("VERSION",)), ("ic_20d", ("VERSION",)), ("sip_orb", ("VERSION",)),
+                       ("news_drift", ("VERSION",)), ("chain_logger", ("VERSION",)), ("v4risk", ("VERSION",))):
         try:
             m = __import__(mod)
             for a in attrs:
