@@ -951,3 +951,214 @@ Columns: stop/tgt % is the stop (% of debit or credit) and the profit target (% 
 | 077 | G7 | SPY | ORB60 | call | 15/45 | VIX 20 or above | 16 | 31.3% | 99 | -30 | 1.51 |  | $167 | -169 | +181 / -61 / +47 / 0 |
 | 078 | G7 | SPY | ORB60 | call | 15/45 | SPY > SMA20 | 48 | 37.5% | 47 | -20 | 1.40 |  | $240 | -136 | +63 / +133 / -112 / +156 |
 | 079 | G7 | SPY | ORB60 | call | 15/45 | skip FOMC and CPI days | 70 | 34.3% | 59 | -23 | 1.35 |  | $369 | -160 | +60 / +54 / +6 / +249 |
+
+## Optimizer (Strategy Optimizer on Stage 1 runs, 2026-10-31)
+
+All numbers here are **backtest, in-sample**: DEV window 2025-11-03 to 2026-06-30, with the 88 locked dates excluded. Fills are MODELED by Option Alpha, and P/L excludes fees.
+
+The Strategy Optimizer does not run new backtests. It filters the trades a backtest already has, and every filter range it suggests was chosen by looking at those same trades. The only new backtests are the "Apply Filters" runs (080-087) and the locked copy of T1a (088). They are all logged in `oa_stage1_runs.csv`.
+
+**Settings.** On every run the optimizer was set to: Optimize for Return on DD, Level Balanced, Min trades 30% (the panel's defaults). Each run was started with the "Run Optimizer" button. "View N Additional Results" was opened every time it appeared.
+
+**What it was run on.** 19 base runs: 001, 003, 015, 016, 017, 020, 022, 023, 024, 025, 030, 036, 045, 046, 047, 051, 054, 065, and 088 (in place of T1a).
+- **Scope changes:** the run list changed twice during the task (first to PF >= 1.25 only, then to every run with P/L above $0). The final list was used.
+- **030 added:** its P/L is +$2, which meets the rule. It was not on the coordinator's list.
+- **Not run:** 031-033 and 037 (duplicates) and 068-079 (already filtered).
+- **023:** rerun so its Apply Filters buttons could be used. The results match the coordinator's numbers exactly.
+
+**T1a.** T1a (ZT31793434719013510129) has no excluded dates, so its trades run through Oct 2026. Optimizing it would have tuned filters on the locked Jul-Oct 2026 period.
+- Instead, T1a's exact settings were rerun through the form with the 88 locked dates excluded. That run is OA-S1-088 (75 trades, PF 1.55, P/L $1,619), and the optimizer was run on it.
+- The original T1a was not optimized.
+
+**How "Apply Filters" works.** This was read from the app's own script (`bots.v2587.js`, `applyFilters` / `genOpts`).
+- The button copies the base backtest's stored settings, adds the suggested filters, and offers three choices:
+  - "Edit this backtest with the new filters"
+  - "Create a new backtest with these filters"
+  - "Compare these filters to the original backtest"
+- Only "Create a new backtest" was used, so no saved run was edited.
+- That choice asks for a description and then starts the run directly. There is no settings form and no "Run Backtest" step.
+- So the 88 locked dates could not be checked before the run started. Instead, each new run's stored settings were opened in a variation form *before its results were read*, then the form was closed without running. All 8 Apply Filters runs showed 88 excluded dates (2025-10-30 to 2026-10-30), with the filter values as suggested.
+- When a variation is shown under several labels (for example "Best · Simplest · Most Consistent"), Simplest and Most consistent are the same filters. For 047 and 054 they were, so each got one backtest (086, 087). That gives 8 Apply Filters runs instead of 10.
+
+### Optimizer suggestions (all variations shown, including "Additional")
+
+Variation labels are shortened ("Best" = Best Return on Drawdown, "Highest RoDD" = Highest Return on Drawdown). Every variation on every run was labeled **Low Confidence**. "Kept" is OA's "% of trades retained".
+
+| Base run | Variation | Conf. | Trades | WR | PF | P/L | Max DD | RoDD | Kept | Filters (exact) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 023 SPY ORB60 call 20/60 (base 75 tr, PF 1.33, P/L $484, DD -$268) | Best + Most consistent | Low | 46 | 43.5% | 2.18 | $784 | -$110 | 713% | 61% | VIX CHANGE -3 to -0.01; OPEN CHG % 0% to 0.75%; STOCH(14,3,3) 20 or greater |
+|  | Highest RoDD | Low | 31 | 48.4% | 2.40 | $575 | -$69 | 833% | 41% | VIX CHANGE % 0.99% or less; IV RANK 39.99 or less; CHANGE % -0.25% to 2%; OPEN CHG % 0.5% or less |
+|  | Simplest | Low | 50 | 40% | 1.75 | $622 | -$110 | 565% | 67% | VIX CHANGE -3 to -0.01 |
+|  | Additional 1 | Low | 48 | 41.7% | 1.98 | $720 | -$110 | 655% | 64% | VIX CHANGE -3 to -0.01; OPEN CHG % 0% to 0.75% |
+|  | Additional 2 | Low | 46 | 43.5% | 2.18 | $784 | -$110 | 713% | 61% | VIX CHANGE -3 or greater; VIX CHANGE % -0.01% or less; OPEN CHG % 0% to 0.75%; STOCH(14,3,3) 20 or greater |
+|  | Additional 3 | Low | 37 | 45.9% | 2.25 | $618 | -$93 | 665% | 49% | VIX CHANGE % 0.99% or less; IV RANK 39.99 or less; CHANGE % -0.25% to 2%; OPEN CHG % 0.75% or less; MFI(14) 30 or greater |
+|  | Additional 4 | Low | 37 | 45.9% | 2.25 | $618 | -$93 | 665% | 49% | VIX CHANGE % 0.99% or less; IV RANK 39.99 or less; CHANGE % -0.25% to 2%; OPEN CHG % 0.75% or less; MFI(14) 30 to 89.99 |
+|  | Additional 5 | Low | 48 | 41.7% | 1.98 | $720 | -$110 | 655% | 64% | VIX CHANGE -3 or greater; VIX CHANGE % -0.01% or less; OPEN CHG % 0% to 0.75% |
+| 024 SPY ORB60 call 15/45 (base 75 tr, PF 1.33, P/L $384, DD -$165) | Best + Highest RoDD + Most consistent | Low | 34 | 44.1% | 2.45 | $629 | -$66 | 953% | 45% | DAY OF WEEK Mon/Wed/Thu/Fri; CHANGE % -1% to 2%; OPEN CHG % 0% to 0.75%; MACD(12,26,9) -10 to 9.99; MOMENTUM(10) -20 to 39.99 |
+|  | Simplest | Low | 55 | 43.6% | 2.09 | $754 | -$103 | 732% | 73% | CHANGE % -1% to 1.75%; OPEN CHG % 0% to 0.75%; MOMENTUM(10) -20 to 29.99 |
+|  | Additional 1 | Low | 43 | 44.2% | 2.24 | $684 | -$98 | 698% | 57% | CHANGE % -1% to 1.75%; OPEN CHG % 0% to 0.75%; MOMENTUM(10) -20 to 19.99; RSI(14) 69.99 or less |
+|  | Additional 2 | Low | 53 | 43.4% | 2.03 | $685 | -$103 | 665% | 71% | CHANGE % -1% to 1.75%; OPEN CHG % 0% to 0.75%; MOMENTUM(10) -30 to 29.99; RSI(14) 40 or greater |
+|  | Additional 3 | Low | 49 | 44.9% | 2.15 | $665 | -$103 | 646% | 65% | CHANGE % -1% to 1.75%; OPEN CHG % 0% to 0.75%; MOMENTUM(10) -30 to 29.99; RSI(14) 40 or greater; STOCH RSI(14,14,3,3) 20 or greater |
+|  | Additional 4 | Low | 35 | 45.7% | 2.63 | $684 | -$98 | 698% | 47% | CHANGE % -1% to 1.75%; OPEN CHG % 0% to 0.75%; MOMENTUM(10) -20 to 19.99; RSI(14) 59.99 or less |
+|  | Additional 5 | Low | 51 | 41.2% | 1.94 | $642 | -$103 | 623% | 68% | DAY OF WEEK Mon/Wed/Thu/Fri; IV RANK 10 to 49.99; CHANGE % -1% to 2%; OPEN CHG % 0.75% or less |
+| 025 SPY ORB60 call 10/30 (base 75 tr, PF 1.30, P/L $257, DD -$131) | Best + Most consistent | Low | 35 | 42.9% | 1.96 | $258 | -$101 | 255% | 47% | VIX 19.99 or less; VIX CHANGE % 0.99% or less; IV RANK 39.99 or less; OPEN CHG % 0.75% or less |
+|  | Highest RoDD | Low | 45 | 42.2% | 1.77 | $293 | -$101 | 290% | 60% | VIX 19.99 or less; VIX CHANGE % 0.99% or less; OPEN CHG % 0% to 0.75% |
+|  | Simplest | Low | 37 | 40.5% | 1.69 | $215 | -$101 | 213% | 49% | VIX 19.99 or less; VIX CHANGE % 0.99% or less; IV RANK 39.99 or less |
+|  | Additional 1 | Low | 39 | 41% | 1.82 | $249 | -$101 | 247% | 52% | VIX 19.99 or less; VIX CHANGE % 2.99% or less; IV RANK 39.99 or less; OPEN CHG % 0.75% or less |
+|  | Additional 2 | Low | 32 | 43.8% | 1.98 | $238 | -$101 | 236% | 43% | VIX 19.99 or less; VIX CHANGE % 0.99% or less; IV RANK 39.99 or less; OPEN CHG % 0.75% or less; MOMENTUM(10) -30 to 39.99 |
+|  | Additional 3 | Low | 32 | 43.8% | 1.98 | $238 | -$101 | 236% | 43% | VIX 19.99 or less; VIX CHANGE % 0.99% or less; IV RANK 39.99 or less; OPEN CHG % 0.75% or less; MOMENTUM(10) -20 to 39.99 |
+|  | Additional 4 | Low | 38 | 39.5% | 1.74 | $225 | -$101 | 223% | 51% | VIX 19.99 or less; VIX CHANGE % 1.99% or less; IV RANK 39.99 or less; OPEN CHG % 0.75% or less |
+|  | Additional 5 | Low | 41 | 39% | 1.60 | $206 | -$101 | 204% | 55% | VIX 19.99 or less; VIX CHANGE % 2.99% or less; IV RANK 39.99 or less |
+| 036 SPY ORB60 call 20/60 exit 3:50 (base 75 tr, PF 1.34, P/L $496, DD -$256) | Best + Most consistent | Low | 46 | 43.5% | 2.19 | $796 | -$110 | 724% | 61% | VIX CHANGE -3 to -0.01; OPEN CHG % 0% to 0.75%; STOCH(14,3,3) 20 or greater |
+|  | Highest RoDD | Low | 31 | 48.4% | 2.43 | $587 | -$69 | 851% | 41% | VIX CHANGE % 0.99% or less; IV RANK 39.99 or less; CHANGE % -0.25% to 2%; OPEN CHG % 0.5% or less |
+|  | Simplest | Low | 50 | 40% | 1.76 | $634 | -$110 | 576% | 67% | VIX CHANGE -3 to -0.01 |
+|  | Additional 1 | Low | 48 | 41.7% | 2.00 | $732 | -$110 | 665% | 64% | VIX CHANGE -3 to -0.01; OPEN CHG % 0% to 0.75% |
+|  | Additional 2 | Low | 46 | 43.5% | 2.19 | $796 | -$110 | 724% | 61% | VIX CHANGE -3 or greater; VIX CHANGE % -0.01% or less; OPEN CHG % 0% to 0.75%; STOCH(14,3,3) 20 or greater |
+|  | Additional 3 | Low | 37 | 45.9% | 2.28 | $630 | -$93 | 677% | 49% | VIX CHANGE % 0.99% or less; IV RANK 39.99 or less; CHANGE % -0.25% to 2%; OPEN CHG % 0.75% or less; MFI(14) 30 or greater |
+|  | Additional 4 | Low | 37 | 45.9% | 2.28 | $630 | -$93 | 677% | 49% | VIX CHANGE % 0.99% or less; IV RANK 39.99 or less; CHANGE % -0.25% to 2%; OPEN CHG % 0.75% or less; MFI(14) 30 to 89.99 |
+|  | Additional 5 | Low | 48 | 41.7% | 2.00 | $732 | -$110 | 665% | 64% | VIX CHANGE -3 or greater; VIX CHANGE % -0.01% or less; OPEN CHG % 0% to 0.75% |
+| 001 SPY ORB15 call 20/20 (base 86 tr, PF 1.09, P/L $136, DD -$323) | Best + Highest RoDD + Most consistent | Low | 45 | 60% | 1.88 | $573 | -$182 | 315% | 52% | IV RANK 39.99 or less; CHANGE SD -2 to 0.7499; OPEN CHG % 0% to 0.5%; CMO(9) 59.99 or less; MACD(12,26,9) -15 to 9.99 |
+|  | Simplest | Low | 44 | 56.8% | 1.72 | $485 | -$182 | 266% | 51% | IV RANK 39.99 or less; CHANGE SD -2 to 0.7499; OPEN CHG % 0% to 0.5%; CMO(9) 39.99 or less |
+|  | Additional 1 | Low | 46 | 58.7% | 1.81 | $548 | -$182 | 301% | 53% | IV RANK 39.99 or less; CHANGE SD -2 to 0.7499; OPEN CHG % 0% to 0.5%; CMO(9) 59.99 or less; RSI(14) 69.99 or less |
+|  | Additional 2 | Low | 39 | 61.5% | 2.09 | $561 | -$182 | 308% | 45% | IV RANK 39.99 or less; CHANGE SD -2 to 0.7499; OPEN CHG % 0% to 0.5%; CMO(9) 59.99 or less; MACD(12,26,9) -5 to 9.99 |
+|  | Additional 3 | Low | 45 | 57.8% | 1.71 | $495 | -$164 | 302% | 52% | IV RANK 39.99 or less; CHANGE % 0.75% or less; CHANGE SD -2 to 0.9999; OPEN CHG % 0% to 0.5%; CMO(9) 39.99 or less; MACD(12,26,9) -15 to 4.99 |
+| 003 SPY ORB15 call 20/60 (base 86 tr, PF 1.00, P/L $9, DD -$734) | Best + Highest RoDD + Most consistent + Simplest | Low | 47 | 44.7% | 2.39 | $1,190 | -$243 | 490% | 55% | DAY OF WEEK Mon/Tue/Wed/Fri; CHANGE % 0.75% or less; CHANGE SD -2 to 0.7499; OPEN CHG % 0% to 0.5%; CMO(9) 59.99 or less; MACD(12,26,9) -5 to 20 |
+|  | Additional 1 | Low | 48 | 43.8% | 2.32 | $1,164 | -$243 | 479% | 56% | DAY OF WEEK Mon/Tue/Wed/Fri; CHANGE % 0.75% or less; CHANGE SD -2 to 0.7499; OPEN CHG % 0% to 0.5%; MACD(12,26,9) -5 to 20; MFI(14) 69.99 or less |
+| 015 SPY ORB30 call 10/30 (base 91 tr, PF 1.01, P/L $10, DD -$474) | Best + Most consistent + Simplest | Low | 31 | 45.2% | 2.38 | $447 | -$175 | 255% | 34% | DAY OF WEEK Mon/Tue/Wed/Fri; VIX CHANGE -3 or greater; IV RANK 29.99 or less; CHANGE SD 0.9999 or less |
+|  | Highest RoDD | Low | 30 | 46.7% | 2.48 | $460 | -$175 | 263% | 33% | DAY OF WEEK Mon/Tue/Wed/Fri; VIX CHANGE -2 or greater; IV RANK 29.99 or less; CHANGE SD 0.9999 or less; RSI(14) 69.99 or less |
+|  | Additional 1 | Low | 31 | 45.2% | 2.38 | $447 | -$175 | 255% | 34% | DAY OF WEEK Mon/Tue/Wed/Fri; VIX CHANGE -3 to 4.99; IV RANK 29.99 or less; CHANGE SD 0.9999 or less |
+|  | Additional 2 | Low | 30 | 46.7% | 2.48 | $460 | -$175 | 263% | 33% | DAY OF WEEK Mon/Tue/Wed/Fri; VIX CHANGE -2 or greater; IV RANK 29.99 or less; CHANGE SD 0.9999 or less; RSI(14) 40 to 69.99 |
+| 016 SPY ORB30 put 20/20 (base 67 tr, PF 1.02, P/L $24, DD -$226) | Best + Highest RoDD + Most consistent + Simplest | Low | 29 | 72.4% | 3.55 | $719 | -$57 | 1,261% | 43% | DAY OF WEEK Mon/Tue/Wed/Thu; VIX CHANGE 0 or greater; VIX CHANGE % 1% or greater; CHANGE % -1.25% or greater; CMO(9) 39.99 or less; MOMENTUM(10) -20 to 50 |
+|  | Additional 1 | Low | 29 | 72.4% | 3.55 | $719 | -$57 | 1,261% | 43% | DAY OF WEEK Mon/Tue/Wed/Thu; VIX CHANGE 0 or greater; VIX CHANGE % 1% or greater; CHANGE % -1.25% or greater; CMO(9) 39.99 or less; MOMENTUM(10) -20 to 39.99 |
+| 017 SPY ORB30 put 20/40 (base 67 tr, PF 1.02, P/L $42, DD -$490) | Best + Highest RoDD + Most consistent + Simplest | Low | 24 | 58.3% | 2.89 | $676 | -$59 | 1,146% | 36% | DAY OF WEEK Mon/Tue/Wed/Thu; VIX CHANGE 0 to 3.99; VIX CHANGE % 1% or greater; IV RANK 39.99 or less; CMO(9) 39.99 or less; MOMENTUM(10) -20 to 50 |
+|  | Additional 1 | Low | 24 | 58.3% | 2.89 | $676 | -$59 | 1,146% | 36% | DAY OF WEEK Mon/Tue/Wed/Thu; VIX CHANGE 0 to 3.99; VIX CHANGE % 1% or greater; IV RANK 39.99 or less; CMO(9) 39.99 or less; MOMENTUM(10) -20 to 39.99 |
+|  | Additional 2 | Low | 24 | 58.3% | 2.89 | $676 | -$59 | 1,146% | 36% | DAY OF WEEK Mon/Tue/Wed/Thu; VIX CHANGE 0 to 3.99; VIX CHANGE % 1% or greater; IV RANK 39.99 or less; CMO(9) -40 to 39.99; MOMENTUM(10) -20 to 50 |
+|  | Additional 3 | Low | 24 | 58.3% | 2.89 | $676 | -$59 | 1,146% | 36% | DAY OF WEEK Mon/Tue/Wed/Thu; VIX CHANGE 0 to 3.99; VIX CHANGE % 1% or greater; IV RANK 39.99 or less; CMO(9) 39.99 or less; MOMENTUM(10) -20 to 29.99 |
+|  | Additional 4 | Low | 24 | 58.3% | 2.89 | $676 | -$59 | 1,146% | 36% | DAY OF WEEK Mon/Tue/Wed/Thu; VIX CHANGE % 1% or greater; IV RANK 10 to 39.99; CHANGE % -1.25% or greater; CMO(9) 39.99 or less; MOMENTUM(10) -20 to 50 |
+|  | Additional 5 | Low | 24 | 58.3% | 2.89 | $676 | -$59 | 1,146% | 36% | DAY OF WEEK Mon/Tue/Wed/Thu; VIX CHANGE % 1% or greater; IV RANK 10 to 39.99; CHANGE % -1.25% or greater; CMO(9) 39.99 or less; MOMENTUM(10) -20 to 39.99 |
+| 020 SPY ORB30 put 10/30 (base 67 tr, PF 1.04, P/L $47, DD -$252) | Best + Most consistent + Simplest | Low | 25 | 48% | 2.53 | $377 | -$82 | 460% | 37% | DAY OF WEEK Mon/Tue/Wed/Thu; VIX 24.99 or less; VIX CHANGE % -2% or greater; IV RANK 39.99 or less; CHANGE % -0.5% or greater |
+|  | Highest RoDD | Low | 24 | 50% | 2.69 | $392 | -$82 | 478% | 36% | DAY OF WEEK Mon/Tue/Wed/Thu; VIX 24.99 or less; VIX CHANGE % -2% or greater; IV RANK 39.99 or less; CHANGE % -0.5% or greater; CMO(9) 39.99 or less |
+|  | Additional 1 | Low | 24 | 50% | 2.69 | $392 | -$82 | 478% | 36% | DAY OF WEEK Mon/Tue/Wed/Thu; VIX 24.99 or less; VIX CHANGE % -2% or greater; IV RANK 39.99 or less; CHANGE % -0.5% or greater; CMO(9) -40 to 39.99 |
+| 022 SPY ORB60 call 20/40 (base 75 tr, PF 1.04, P/L $63, DD -$268) | Best + Highest RoDD + Most consistent + Simplest | Low | 40 | 47.5% | 1.73 | $377 | -$106 | 356% | 53% | VIX CHANGE % 0.99% or less; IV RANK 39.99 or less; CHANGE % -0.25% to 1.25% |
+|  | Additional 1 | Low | 40 | 47.5% | 1.73 | $377 | -$106 | 356% | 53% | VIX CHANGE -3 or greater; VIX CHANGE % 0.99% or less; IV RANK 39.99 or less; CHANGE % -0.25% to 2% |
+|  | Additional 2 | Low | 40 | 47.5% | 1.73 | $377 | -$106 | 356% | 53% | VIX CHANGE -3 or greater; VIX CHANGE % 0.99% or less; IV RANK 39.99 or less; CHANGE % -0.25% to 1.75% |
+|  | Additional 3 | Low | 40 | 47.5% | 1.73 | $377 | -$106 | 356% | 53% | VIX CHANGE 1.99 or less; VIX CHANGE % 0.99% or less; IV RANK 39.99 or less; CHANGE % -0.25% to 1.25% |
+|  | Additional 4 | Low | 40 | 47.5% | 1.73 | $377 | -$106 | 356% | 53% | VIX CHANGE % 0.99% or less; IV RANK 39.99 or less; CHANGE % -0.25% or greater; CHANGE SD 1.999 or less |
+|  | Additional 5 | Low | 40 | 47.5% | 1.73 | $377 | -$106 | 356% | 53% | VIX CHANGE % 0.99% or less; IV RANK 39.99 or less; CHANGE % -0.25% or greater; CHANGE SD -2 to 1.999 |
+| 030 SPY ORB60 put 10/30 (base 62 tr, PF 1.00, P/L $2, DD -$311) | Best + Highest RoDD + Most consistent + Simplest | Low | 23 | 47.8% | 2.82 | $432 | -$58 | 745% | 37% | DAY OF WEEK Mon/Tue/Thu/Fri; VIX CHANGE -2 to 1.99; CHANGE SD -1 or greater; ADX(14) 29.99 or less; CCI(20) 99.99 or less; MACD(12,26,9) -15 to 9.99 |
+|  | Additional 1 | Low | 23 | 47.8% | 2.82 | $432 | -$58 | 745% | 37% | DAY OF WEEK Mon/Tue/Thu/Fri; VIX CHANGE -2 to 1.99; CHANGE SD -1 or greater; ADX(14) 29.99 or less; CCI(20) 99.99 or less; MACD(12,26,9) -10 to 9.99 |
+|  | Additional 2 | Low | 23 | 47.8% | 2.82 | $432 | -$58 | 745% | 37% | DAY OF WEEK Mon/Tue/Thu/Fri; VIX CHANGE -2 to 1.99; CHANGE SD -1 or greater; ADX(14) 29.99 or less; CCI(20) -200 to 99.99; MACD(12,26,9) -15 to 9.99 |
+|  | Additional 3 | Low | 23 | 47.8% | 2.82 | $432 | -$58 | 745% | 37% | DAY OF WEEK Mon/Tue/Thu/Fri; VIX CHANGE -2 to 1.99; CHANGE SD -1 or greater; ADX(14) 29.99 or less; CCI(20) 99.99 or less; MACD(12,26,9) -5 to 9.99 |
+|  | Additional 4 | Low | 24 | 45.8% | 2.60 | $412 | -$58 | 710% | 39% | DAY OF WEEK Mon/Tue/Thu/Fri; VIX CHANGE -2 to 1.99; GAP % -0.5% to 0.75%; ADX(14) 10 to 29.99; CCI(20) 99.99 or less; MACD(12,26,9) -15 to 9.99 |
+|  | Additional 5 | Low | 24 | 45.8% | 2.60 | $412 | -$58 | 710% | 39% | DAY OF WEEK Mon/Tue/Thu/Fri; VIX CHANGE -2 to 1.99; GAP % -0.5% to 0.75%; ADX(14) 10 to 29.99; CCI(20) 99.99 or less; MACD(12,26,9) -10 to 9.99 |
+| 045 QQQ ORB60 put 10/30 (base 61 tr, PF 1.26, P/L $333, DD -$500) | Best + Highest RoDD + Most consistent | Low | 25 | 56% | 4.04 | $782 | -$84 | 931% | 41% | DAY OF WEEK Mon/Thu/Fri; VIX CHANGE 1.99 or less; VIX CHANGE % -5% or greater; MACD(12,26,9) -5 to 25; RSI(14) 30 to 79.99 |
+|  | Simplest | Low | 26 | 53.8% | 3.56 | $747 | -$84 | 889% | 43% | DAY OF WEEK Mon/Thu/Fri; VIX CHANGE 1.99 or less; VIX CHANGE % -5% or greater; MACD(12,26,9) -5 to 25 |
+|  | Additional 1 | Low | 25 | 56% | 4.04 | $782 | -$84 | 931% | 41% | DAY OF WEEK Mon/Thu/Fri; VIX CHANGE 1.99 or less; VIX CHANGE % -5% or greater; RSI(14) 30 to 79.99; SMA(200) Above |
+|  | Additional 2 | Low | 24 | 54.2% | 3.78 | $715 | -$84 | 851% | 39% | DAY OF WEEK Mon/Thu/Fri; VIX CHANGE 1.99 or less; VIX CHANGE % -5% or greater; GAP % -0.75% or greater; RSI(14) 30 to 79.99 |
+|  | Additional 3 | Low | 24 | 54.2% | 3.78 | $715 | -$84 | 851% | 39% | DAY OF WEEK Mon/Thu/Fri; VIX CHANGE 1.99 or less; VIX CHANGE % -5% or greater; GAP % -0.75% or greater; MACD(12,26,9) -5 to 25; RSI(14) 30 to 79.99 |
+|  | Additional 4 | Low | 25 | 52% | 3.33 | $680 | -$84 | 810% | 41% | DAY OF WEEK Mon/Thu/Fri; VIX CHANGE 1.99 or less; VIX CHANGE % -5% or greater; GAP % -0.75% or greater; MACD(12,26,9) -5 to 25 |
+|  | Additional 5 | Low | 25 | 52% | 3.33 | $680 | -$84 | 810% | 41% | DAY OF WEEK Mon/Thu/Fri; VIX CHANGE 1.99 or less; VIX CHANGE % -5% or greater; GAP % -0.75% or greater; SMA(200) Above |
+| 046 IWM ORB30 call 20/40 (base 83 tr, PF 1.04, P/L $44, DD -$245) | Best + Most consistent + Simplest | Low | 31 | 51.6% | 1.83 | $255 | -$131 | 195% | 37% | DAY OF WEEK Mon/Tue/Wed/Fri; VIX CHANGE -1 or greater; IV RANK 39.99 or less; OPEN CHG % 0.25% or greater |
+|  | Highest RoDD | Low | 30 | 53.3% | 2.12 | $297 | -$114 | 261% | 36% | DAY OF WEEK Mon/Tue/Wed/Fri; VIX CHANGE -2 or greater; IV RANK 39.99 or less; OPEN CHG % 0.25% or greater; MACD(12,26,9) -2 to 8; MFI(14) 89.99 or less |
+|  | Additional 1 | Low | 31 | 51.6% | 1.83 | $255 | -$131 | 195% | 37% | DAY OF WEEK Mon/Tue/Wed/Fri; VIX CHANGE -1 or greater; IV RANK 39.99 or less; OPEN CHG % 0.25% to 2% |
+|  | Additional 2 | Low | 31 | 51.6% | 1.83 | $255 | -$131 | 195% | 37% | DAY OF WEEK Mon/Tue/Wed/Fri; VIX CHANGE % -5% or greater; IV RANK 39.99 or less; OPEN CHG % 0.25% or greater |
+|  | Additional 3 | Low | 30 | 53.3% | 1.96 | $275 | -$131 | 210% | 36% | DAY OF WEEK Mon/Tue/Wed/Fri; VIX CHANGE -1 or greater; IV RANK 39.99 or less; OPEN CHG % 0.25% or greater; MFI(14) 89.99 or less |
+|  | Additional 4 | Low | 30 | 53.3% | 1.96 | $275 | -$131 | 210% | 36% | DAY OF WEEK Mon/Tue/Wed/Fri; VIX CHANGE -1 or greater; IV RANK 39.99 or less; OPEN CHG % 0.25% to 2%; MFI(14) 89.99 or less |
+|  | Additional 5 | Low | 30 | 53.3% | 1.96 | $275 | -$131 | 210% | 36% | DAY OF WEEK Mon/Tue/Wed/Fri; VIX CHANGE % -5% or greater; IV RANK 39.99 or less; OPEN CHG % 0.25% or greater; MFI(14) 89.99 or less |
+| 047 IWM ORB30 call 20/60 (base 83 tr, PF 1.17, P/L $200, DD -$263) | Best + Most consistent + Simplest | Low | 30 | 40% | 1.70 | $238 | -$102 | 233% | 36% | DAY OF WEEK Mon/Tue/Wed/Fri; IV RANK 29.99 or less |
+|  | Highest RoDD | Low | 28 | 50% | 2.55 | $406 | -$58 | 700% | 34% | IV RANK 29.99 or less; CHANGE % 1% or less; OPEN CHG % 0% to 1.25%; MACD(12,26,9) -4 to 8 |
+|  | Additional 1 | Low | 28 | 46.4% | 2.06 | $324 | -$71 | 456% | 34% | VIX CHANGE % -3% or greater; IV RANK 29.99 or less |
+|  | Additional 2 | Low | 30 | 40% | 1.70 | $238 | -$102 | 233% | 36% | DAY OF WEEK Mon/Tue/Wed/Fri; VIX CHANGE -3 or greater; IV RANK 29.99 or less |
+|  | Additional 3 | Low | 29 | 48.3% | 2.39 | $388 | -$60 | 647% | 35% | IV RANK 29.99 or less; CHANGE % 1% or less; MACD(12,26,9) -4 to 8 |
+|  | Additional 4 | Low | 28 | 46.4% | 2.06 | $324 | -$71 | 456% | 34% | VIX CHANGE -3 or greater; VIX CHANGE % -3% or greater; IV RANK 29.99 or less |
+|  | Additional 5 | Low | 28 | 46.4% | 2.06 | $324 | -$71 | 456% | 34% | VIX CHANGE -3 to 4.99; VIX CHANGE % -3% or greater; IV RANK 29.99 or less |
+| 051 IWM ORB60 call 20/60 (base 69 tr, PF 1.03, P/L $26, DD -$269) | Best + Highest RoDD + Most consistent | Low | 26 | 57.7% | 3.87 | $473 | -$41 | 1,154% | 38% | VIX CHANGE 0.99 or less; CHANGE % 0.25% to 1.25%; CHANGE SD -2 to 0.9999; ADX(14) 10 or greater; MACD(12,26,9) -6 to 5.99 |
+|  | Simplest | Low | 28 | 53.6% | 3.32 | $446 | -$41 | 1,088% | 41% | VIX CHANGE % 1.99% or less; CHANGE % 0.25% to 1.25%; CHANGE SD -1 to 0.9999; ADX(14) 10 or greater |
+|  | Additional 1 | Low | 26 | 57.7% | 3.87 | $473 | -$41 | 1,154% | 38% | VIX CHANGE 0.99 or less; CHANGE % 0.25% to 1.25%; CHANGE SD -2 to 0.9999; ADX(14) 10 to 89.99; MACD(12,26,9) -6 to 5.99 |
+|  | Additional 2 | Low | 26 | 57.7% | 3.87 | $473 | -$41 | 1,154% | 38% | VIX CHANGE 0.99 or less; CHANGE % 0.25% to 1.25%; CHANGE SD -2 to 0.9999; ADX(14) 10 to 79.99; MACD(12,26,9) -6 to 5.99 |
+|  | Additional 3 | Low | 26 | 57.7% | 3.87 | $473 | -$41 | 1,154% | 38% | VIX CHANGE 0.99 or less; CHANGE % 0.25% to 1.25%; CHANGE SD -2 to 0.9999; ADX(14) 10 to 69.99; MACD(12,26,9) -6 to 5.99 |
+|  | Additional 4 | Low | 28 | 53.6% | 3.32 | $446 | -$41 | 1,088% | 41% | VIX CHANGE % 1.99% or less; CHANGE % 0.25% to 1.25%; CHANGE SD -1 to 0.9999; ADX(14) 10 to 89.99 |
+|  | Additional 5 | Low | 28 | 53.6% | 3.32 | $446 | -$41 | 1,088% | 41% | VIX CHANGE % 1.99% or less; CHANGE % 0.25% to 1.25%; CHANGE SD -1 to 0.9999; ADX(14) 10 to 79.99 |
+| 054 SPY ORB60 call debit spread $2w 50/100 (base 75 tr, PF 1.23, P/L $412, DD -$522) | Best + Most consistent + Simplest | Low | 37 | 56.8% | 2.47 | $861 | -$129 | 667% | 49% | REWARD / RISK 80% to 210%; VIX 19.99 or less; VIX CHANGE -2 to 2.99; CMO(9) 0 or greater; MFI(14) 30 to 69.99 |
+|  | Highest RoDD | Low | 36 | 58.3% | 2.49 | $867 | -$129 | 672% | 48% | REWARD / RISK 80% to 210%; VIX 19.99 or less; VIX CHANGE -2 to 2.99; GAP % 0.75% or less; CMO(9) 0 or greater; MFI(14) 30 to 69.99 |
+|  | Additional 1 | Low | 37 | 56.8% | 2.47 | $861 | -$129 | 667% | 49% | REWARD / RISK 80% to 210%; VIX 19.99 or less; VIX CHANGE -2 to 2.99; CMO(9) 0 to 79.99; MFI(14) 30 to 69.99 |
+|  | Additional 2 | Low | 36 | 58.3% | 2.49 | $867 | -$129 | 672% | 48% | REWARD / RISK 80% to 210%; VIX 19.99 or less; VIX CHANGE -2 to 2.99; GAP % 0.75% or less; CMO(9) 0 to 79.99; MFI(14) 30 to 69.99 |
+|  | Additional 3 | Low | 38 | 55.3% | 2.27 | $809 | -$129 | 627% | 51% | REWARD / RISK 80% to 210%; VIX 19.99 or less; VIX CHANGE -2 to 2.99; CMO(9) 0 or greater; MFI(14) 69.99 or less |
+|  | Additional 4 | Low | 38 | 55.3% | 2.27 | $809 | -$129 | 627% | 51% | REWARD / RISK 80% to 210%; VIX 19.99 or less; VIX CHANGE -2 to 2.99; CMO(9) 0 to 79.99; MFI(14) 69.99 or less |
+|  | Additional 5 | Low | 37 | 54.1% | 2.12 | $716 | -$171 | 419% | 49% | REWARD / RISK 90% to 210%; VIX 19.99 or less; VIX CHANGE -2 to 2.99; CCI(20) 0 to 199.99; MFI(14) 69.99 or less |
+| 065 SPX ORB60 put credit spread $10w, -100% stop (research only) (base 69 tr, PF 1.04, P/L $114, DD -$1,033) | Best + Most consistent + Simplest | Low | 52 | 67.3% | 1.59 | $943 | -$501 | 188% | 75% | IV RANK 10 to 49.99; CHANGE % -0.75% to 1.75%; OPEN CHG % 0.75% or less; CCI(20) -100 or greater |
+|  | Highest RoDD | Low | 49 | 67.3% | 1.68 | $976 | -$501 | 195% | 71% | IV RANK 10 to 49.99; CHANGE % -0.75% to 1.75%; OPEN CHG % 0.75% or less; CCI(20) -100 or greater; CMO(9) 59.99 or less |
+|  | Additional 1 | Low | 49 | 67.3% | 1.68 | $976 | -$501 | 195% | 71% | IV RANK 10 to 49.99; CHANGE % -0.75% to 1.75%; OPEN CHG % 0.75% or less; CCI(20) -100 or greater; CMO(9) -20 to 59.99 |
+| 088 SPY ORB60 call .50d 50/100 (base 75 tr, PF 1.55, P/L $1,619, DD -$630) | Best + Most consistent + Simplest | Low | 53 | 52.8% | 2.40 | $2,285 | -$253 | 903% | 71% | DAY OF WEEK Mon/Tue/Wed/Thu; VIX CHANGE -3 to 2.99; OPEN CHG % 0.75% or less; MFI(14) 69.99 or less |
+|  | Highest RoDD | Low | 52 | 53.8% | 2.51 | $2,353 | -$253 | 930% | 69% | DAY OF WEEK Mon/Tue/Wed/Thu; VIX CHANGE -3 to 4.99; CHANGE SD -2 to 1.999; OPEN CHG % 0.75% or less; MFI(14) 69.99 or less |
+|  | Additional 1 | Low | 53 | 52.8% | 2.37 | $2,261 | -$253 | 894% | 71% | DAY OF WEEK Mon/Tue/Wed/Thu; CHANGE SD -2 to 1.999; OPEN CHG % 0.75% or less; MFI(14) 69.99 or less |
+|  | Additional 2 | Low | 52 | 53.8% | 2.51 | $2,353 | -$253 | 930% | 69% | DAY OF WEEK Mon/Tue/Wed/Thu; VIX CHANGE -3 to 4.99; CHANGE SD -2 to 1.999; OPEN CHG % 0% to 0.75%; MFI(14) 69.99 or less |
+
+### Backtests made with Apply Filters (OA-S1-080 to 087) and the locked T1a copy (088)
+
+Blocks are P/L for Nov-Dec 2025 / Jan-Feb / Mar-Apr / May-Jun 2026.
+
+| Run | Base | Variation applied | Exact filters | Trades | WR | PF | P/L | Max DD | Blocks | vs optimizer preview |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 080 | 023 SPY ORB60 call 20/60 | Simplest | VIX CHANGE -3 to -0.01 | 50 | 40.0% | 1.75 | $622 | -$110 | +210 / +99 / +94 / +219 | same |
+| 081 | 023 | Most consistent (= Best) | VIX CHANGE -3 to -0.01; OPEN CHG % 0% to 0.75%; STOCH(14,3,3) 20 or greater | 46 | 43.5% | 2.18 | $784 | -$110 | +210 / +116 / +158 / +300 | same |
+| 082 | 024 SPY ORB60 call 15/45 | Simplest | CHANGE % -1% to 1.75%; OPEN CHG % 0% to 0.75%; MOMENTUM(10) -20 to 29.99 | 56 | 42.9% | 2.01 | $728 | -$103 | +227 / +61 / +154 / +286 | preview 55 tr, $754, PF 2.09 |
+| 083 | 024 | Most consistent (= Best = Highest RoDD) | DAY OF WEEK Mon/Wed/Thu/Fri; CHANGE % -1% to 2%; OPEN CHG % 0% to 0.75%; MACD(12,26,9) -10 to 9.99; MOMENTUM(10) -20 to 39.99 | 35 | 42.9% | 2.31 | $603 | -$66 | +209 / +78 / +127 / +189 | preview 34 tr, $629, PF 2.45 |
+| 084 | 045 QQQ ORB60 put 10/30 | Simplest | DAY OF WEEK Mon/Thu/Fri; VIX CHANGE 1.99 or less; VIX CHANGE % -5% or greater; MACD(12,26,9) -5 to 25 | 26 | 53.9% | 3.56 | $747 | -$84 | +284 / +15 / +167 / +281 | same |
+| 085 | 045 | Most consistent (= Best = Highest RoDD) | same as 084 + RSI(14) 30 to 79.99 | 25 | 56.0% | 4.04 | $782 | -$84 | +284 / +15 / +167 / +316 | same |
+| 086 | 047 IWM ORB30 call 20/60 | Simplest = Most consistent (one variation) | DAY OF WEEK Mon/Tue/Wed/Fri; IV RANK 29.99 or less | 30 | 40.0% | 1.70 | $238 | -$102 | -49 / +264 / +44 / -21 | same |
+| 087 | 054 SPY ORB60 call debit $2w 50/100 | Simplest = Most consistent (one variation) | REWARD / RISK 80% to 210%; VIX 19.99 or less; VIX CHANGE -2 to 2.99; CMO(9) 0 or greater; MFI(14) 30 to 69.99 | 37 | 56.8% | 2.47 | $861 | -$129 | +262 / -60 / +302 / +357 | same |
+| 088 | T1a settings (SPY ORB60 call .50d 100/50), locked dates excluded | none | none | 75 | 42.7% | 1.55 | $1,619 | -$630 | +726 / -480 / +1038 / +335 | n/a |
+
+### Filters that recur across strategies
+
+Counted by code over the 19 base runs, using the named variations (Best / Highest RoDD / Simplest / Most consistent):
+
+| Filter | Base runs whose named variations use it (of 19) |
+|---|---|
+| VIX CHANGE (points) | 11: 015, 016, 017, 023, 030, 036, 045, 046, 051, 054, 088 |
+| IV RANK | 11: 001, 015, 017, 020, 022, 023, 025, 036, 046, 047, 065 |
+| DAY OF WEEK | 11: 003, 015, 016, 017, 020, 024, 030, 045, 046, 047, 088 |
+| CHANGE % (since prior close, at entry) | 10: 003, 016, 020, 022, 023, 024, 036, 047, 051, 065 |
+| OPEN CHG % (since today's open, at entry) | 10: 001, 003, 023, 024, 025, 036, 046, 047, 065, 088 |
+| VIX CHANGE % | 9: 016, 017, 020, 022, 023, 025, 036, 045, 051 |
+| MACD(12,26,9) | 8: 001, 003, 024, 030, 045, 046, 047, 051 |
+| CMO(9) | 7: 001, 003, 016, 017, 020, 054, 065 |
+| CHANGE SD | 6: 001, 003, 015, 030, 051, 088 |
+| MFI(14), MOMENTUM(10), VIX level | 3 each |
+| RSI(14), CCI(20), STOCH(14,3,3), ADX(14) | 2 each |
+| GAP %, REWARD / RISK | 1 each |
+
+Exact values that repeat in two or more base runs:
+- "IV RANK 39.99 or less" in 8 runs: 001, 017, 020, 022, 023, 025, 036, 046.
+- "OPEN CHG % 0% to 0.75%" in 4 runs: 023, 024, 025, 036.
+- "VIX CHANGE % 0.99% or less" in 4 runs: 022, 023, 025, 036.
+- "CMO(9) 39.99 or less" in 4 runs: 001, 016, 017, 020.
+- DAY OF WEEK leaving out Thursday (Mon/Tue/Wed/Fri) in 4 runs: 003, 015, 046, 047.
+- DAY OF WEEK leaving out Friday (Mon/Tue/Wed/Thu) in 4 runs: 016, 017, 020, 088.
+- "OPEN CHG % 0.75% or less" in 3 runs: 025, 065, 088.
+- 023 and 036 are the same strategy apart from the exit time, and they share every named filter set.
+
+### Odd things, recorded as seen
+
+**Results**
+- Every variation on every base run is labeled "Low Confidence".
+- **Weak base runs became strong:**
+  - 003: base P/L $9, PF 1.00 became $1,190, PF 2.39 (6 filters, 55% of trades kept).
+  - 030: $2 became $432, PF 2.82 (6 filters, 37% kept).
+  - 051: $26 became $473, PF 3.87 (5 filters, 38% kept).
+  - 016: $24 became $719, PF 3.55 (6 filters, 43% kept).
+- **Labels:** on 047, the variation labeled "Best Return on Drawdown" has return on DD 233%, which is lower than "Highest Return on Drawdown" (700%) and four "Additional" variations (456-647%).
+- **Repeated max drawdowns:** all 8 variations for 025 show max DD -$101. All 3 for 065 show -$501.
+- **Puts:** 045 is a put strategy, and two of its "Additional" variations filter on "SMA(200) Above".
+
+**Apply Filters runs**
+- **Same as preview:** 6 of the 8 Apply Filters backtests match the optimizer preview exactly (084's win rate shows 53.9% against 53.8% in the preview).
+- **Different from preview:** 082 and 083 (both from base 024) each have one more trade than the preview, and lower P/L and PF.
+- **Missing months:**
+  - 083: no May 2026 trades.
+  - 086: 27 of 30 trades fall in Nov-Feb.
+  - 087: no March 2026 trades.
+
+**Process**
+- One read-only inspection of the page's internal objects was refused by the session's permission check. It was not retried. How Apply Filters works was taken from the app's public script instead.
