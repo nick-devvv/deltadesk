@@ -3,6 +3,7 @@
 as committed in git (no uncommitted edits)."""
 import json
 import subprocess
+import sys
 from datetime import date
 
 import pytest
@@ -10,6 +11,7 @@ import pytest
 from sprint import periods, runner
 
 ROOT = periods.REPO
+sys.path.insert(0, str(ROOT / "tools"))                 # sprint_run, sprint_pull, pull_alpaca
 
 
 def test_dev_and_locked_boundaries():
