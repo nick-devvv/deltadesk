@@ -223,19 +223,23 @@ def run_pass(runs, a, b, root=None, spread=None, progress=None, writer=None, lim
         if progress:
             progress(f"  VIX proxy: VIXY {'loaded, ' + str(len(aux['VIXY'].days)) + ' sessions' if aux['VIXY'] else 'MISSING (vixy_falling skips every signal)'}")
     t0 = time.time()
+    want_next = any(contracts.is_next(r["exit"].contract) for r in runs)
+    held = {r["run_id"]: [] for r in runs if r["exit"].risk != "none"}   # full trades of risk-rule runs, written after the pass
     for sym in syms:
         rs = [r for r in runs if sym in r["symbols"]]
         df = data.read_stock(sym, a, b, root)
         series = data.Series(sym, df)
         odays = data.option_days(sym, root)
+        ndays = data.option_days(sym, root, "next") if want_next else set()
         days = [d for d in series.days if a <= d <= b]
         if limit_days:
             days = days[:limit_days]
         sessions[sym] = [d.isoformat() for d in days]
         for n, day in enumerate(days):
             tapes = data.read_option_day(sym, day, root) if day in odays else {}
+            tnext = data.read_option_day(sym, day, root, want_trades=False, expiry="next") if day in ndays else {}
             ctx = data.DayContext(series, day, tapes, spread, early_close=None if early_close is None else day.isoformat() in early_close,
-                                  aux=aux)
+                                  aux=aux, tapes_next=tnext)
             sig_cache, pick_cache = {}, {}
             for r in rs:
                 rid = r["run_id"]
@@ -259,8 +263,9 @@ def run_pass(runs, a, b, root=None, spread=None, progress=None, writer=None, lim
                     if why:
                         res[rid]["skips"][why] += 1
                         continue
-                    if not tapes:
-                        res[rid]["skips"]["no 0DTE option data for the day"] += 1
+                    nxt = contracts.is_next(r["exit"].contract)
+                    if not (tnext if nxt else tapes):
+                        res[rid]["skips"]["no next-expiry option data for the day" if nxt else "no 0DTE option data for the day"] += 1
                         continue
                     pk = (sig.key, r["exit"].contract)
                     if pk not in pick_cache:
@@ -275,12 +280,68 @@ def run_pass(runs, a, b, root=None, spread=None, progress=None, writer=None, lim
                         continue
                     last_exit = out["exit_idx"]
                     count += 1
+                    if rid in held:
+                        held[rid].append(out)
+                        continue
                     if writer is not None and not r.get("random") and r.get("fake_seed") is None and not r.get("nudge"):
                         writer.add(rid, out)
                     res[rid]["trades"].append({k: out.get(k) for k in LEAN})
             if progress and (n % 50 == 0 or n == len(days) - 1):
                 progress(f"  {sym} {day} ({n + 1}/{len(days)} sessions, {time.time() - t0:.0f}s)")
+    for r in runs:
+        rid = r["run_id"]
+        if rid not in held:
+            continue
+        kept, skips = bot_risk(held[rid])
+        res[rid]["skips"].update(skips)
+        for out in kept:
+            if writer is not None and not r.get("random") and r.get("fake_seed") is None and not r.get("nudge"):
+                writer.add(rid, out)
+            res[rid]["trades"].append({k: out.get(k) for k in LEAN})
     return res, sessions
+
+
+BOT_MAX_LOSS, BOT_MAX_TRADES, BOT_COOLDOWN = 50.0, 4, 10
+
+
+def bot_risk(trades):
+    """The bot's risk rules (SPRINT_PLAN "Risk"; pre-registered for setups_v2), applied in time order across every
+    symbol of the run, using only trades CLOSED before each entry:
+      1. planned loss at 1 contract (planned_risk, $) above $50 -> skip;
+      2. at most 4 trades a day;
+      3. after 2 losses in a row: no entry for 10 minutes after the second loss's exit ("A setups only" cannot be
+         expressed for a single-setup run, so only the cooldown applies);
+      4. after 3 losses in a row: done for the day.
+    A loss is pnl < 0 at base costs. Streaks reset each day. Returns (kept trades, Counter of skip reasons)."""
+    kept, skips = [], Counter()
+    for day in sorted({t["day"] for t in trades}):
+        today = sorted((t for t in trades if t["day"] == day), key=lambda t: (t["entry_idx"], t["symbol"]))
+        taken = []
+        for t in today:
+            pr = t.get("planned_risk")
+            if pr is not None and pr > BOT_MAX_LOSS:
+                skips["risk: planned loss > $50 at 1 contract"] += 1
+                continue
+            if len(taken) >= BOT_MAX_TRADES:
+                skips["risk: 4 trades already today"] += 1
+                continue
+            closed = sorted((x for x in taken if x["exit_idx"] < t["entry_idx"]), key=lambda x: x["exit_idx"])
+            streak, last_loss = 0, None
+            for x in closed:
+                if x["pnl"] < 0:
+                    streak += 1
+                    last_loss = x["exit_idx"]
+                else:
+                    streak = 0
+            if streak >= 3:
+                skips["risk: 3 losses in a row, done for the day"] += 1
+                continue
+            if streak == 2 and t["entry_idx"] < last_loss + BOT_COOLDOWN:
+                skips["risk: 10-minute cooldown after 2 losses"] += 1
+                continue
+            taken.append(t)
+        kept += taken
+    return kept, skips
 
 
 def _skip_key(reason):
@@ -295,6 +356,8 @@ def _skip_key(reason):
 # ---------------------------------------------------------------- robustness job builders
 NUDGE_STEPS = {
     "entry": ["orb15", "orb30", "orb60"],
+    "entry_fb_w": ["failed_break_w3", "failed_break", "failed_break_w10"],
+    "entry_fb_p": ["failed_break_p025", "failed_break", "failed_break_p075", "failed_break_p100"],
     "tp_buffer": ["$0.03", "0.05%", "0.1atr"],
     "rr_min": [1.0, 1.5, 2.0, 2.5, 3.0, 3.5],
     "be": ["be6", "be8", "be10", "be15"],
@@ -317,8 +380,9 @@ def nudges(r):
     """One-step neighbors of a run (each numeric parameter moved one step, one at a time)."""
     out = []
     x = r["exit"]
-    for e in _neighbors(NUDGE_STEPS["entry"], r["entry"]):
-        out.append(("entry", e, dict(r, entry=e)))
+    for fam in ("entry", "entry_fb_w", "entry_fb_p"):
+        for e in _neighbors(NUDGE_STEPS[fam], r["entry"]):
+            out.append(("entry", e, dict(r, entry=e)))
     if x.tp in ("B", "C", "D", "E") or x.trail == "belevel":
         for v in _neighbors(NUDGE_STEPS["tp_buffer"], x.tp_buffer):
             out.append(("tp_buffer", v, dict(r, exit=replace(x, tp_buffer=v))))

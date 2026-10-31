@@ -43,6 +43,14 @@ IMPLEMENTED
                   SIGNAL: within the next 5 bars, a finished close back above that level, provided the lowest low since
                   the break stayed within 0.5 x ATR(14, 5m) of the level (a probe, not a collapse). One signal per
                   level per day, signal bars finishing by 15:15. invalid = the lowest low since the break.
+  failed_break_* (setups_v2 deep dive, pre-registered 2026-10-31 after setups_v1, before any v2 run): the same rule with
+                  ONE number changed. _w3 / _w10: the close back above must come within 3 / 10 bars (base 5).
+                  _p025 / _p075 / _p100: the probe may reach 0.25 / 0.75 / 1.0 x ATR(14, 5m) below the level (base 0.5).
+                  _pd: prior-day and premarket lows only (PDL, PML). _or: opening-range lows only (OR15L, OR30L).
+  failed_high     The mirror, puts only: a finished close above a resistance level (PDH, PMH, OR15H, OR30H) by more
+                  than $0.01, then within 5 bars a finished close back below it, the highest high since the break
+                  within 0.5 x ATR(14, 5m) of the level. invalid = the highest high since the break. Tests whether
+                  the failed-break idea works on both sides (SPRINT_PLAN robustness: "works on both sides").
   flush           Reversal after a flush, both sides. Calls: within the last 5 finished 1-minute bars the low fell at
                   least 1.5 x ATR(14, 5m) below the highest high of those 5 bars, that high came BEFORE the low (a drop),
                   the flush low is the session's low so far, and at least one of the 5 bars had volume >= 2x the mean of
@@ -256,17 +264,23 @@ def pd_retest(ctx, side="both"):
     return out
 
 
-# ---------------------------------------------------------------- failed-break calls
-def failed_break(ctx, side="both"):
-    if side not in ("both", "C"):
-        return []
+# ---------------------------------------------------------------- failed-break calls (and the v2 variants)
+FB_LOW = ("PDL", "PML", "OR15L", "OR30L")
+FB_HIGH = ("PDH", "PMH", "OR15H", "OR30H")
+
+
+def _failed_break(ctx, setup, up=True, window=5, probe=0.5, kinds=None):
+    """Failed break of a support (up=True -> calls) or resistance (up=False -> puts) level. See the module docstring."""
+    kinds = tuple(kinds or (FB_LOW if up else FB_HIGH))
     prev, pre = ctx.series.prev_day(ctx.day), ctx.series.pre.get(ctx.day)
-    base = {}                                                     # the same values the level map lists as PDL / PML
+    base = {}                                                     # the same values the level map lists as PDL/PML (PDH/PMH)
     if prev:
-        base["PDL"] = prev["low"]
+        base["PDL" if up else "PDH"] = prev["low"] if up else prev["high"]
     if pre:
-        base["PML"] = pre[1]
-    orl = {m: float(np.nanmin(ctx.l[:m])) for m in (15, 30) if not np.isnan(ctx.l[:m]).all()}
+        base["PML" if up else "PMH"] = pre[1] if up else pre[0]
+    ext = np.nanmin if up else np.nanmax
+    orx = {m: float(ext(ctx.l[:m] if up else ctx.h[:m])) for m in (15, 30)
+           if not np.isnan(ctx.l[:m] if up else ctx.h[:m]).all()}
     out, used = [], set()
     pending = {}
     for i in range(DESK_FIRST, min(DESK_LAST, ctx.close_idx - 2) + 1):
@@ -274,25 +288,47 @@ def failed_break(ctx, side="both"):
         if math.isnan(c):
             continue
         a5 = ctx.atr5[i]
-        known = dict(base)                                        # levels known at the end of bar i - 1
-        for m, v in orl.items():
-            if i - 1 >= m - 1:
-                known[f"OR{m}L"] = v
-        for k, (lvl, i0, low) in list(pending.items()):
-            low = min(low, float(ctx.l[i]))
-            pending[k] = (lvl, i0, low)
-            if c > lvl:
+        known = {k: v for k, v in base.items() if k in kinds}    # levels known at the end of bar i - 1
+        for m, v in orx.items():
+            k = f"OR{m}{'L' if up else 'H'}"
+            if k in kinds and i - 1 >= m - 1:
+                known[k] = v
+        for k, (lvl, i0, ext_px) in list(pending.items()):
+            ext_px = min(ext_px, float(ctx.l[i])) if up else max(ext_px, float(ctx.h[i]))
+            pending[k] = (lvl, i0, ext_px)
+            if (c > lvl) if up else (c < lvl):
                 del pending[k]
                 used.add(k)
-                if not math.isnan(a5) and lvl - low <= 0.5 * a5:
-                    out.append(Signal("failed_break", ctx.sym, ctx.day, "C", i, float(c), low, {"level": lvl, "kind": k}))
-            elif i - i0 >= 5:
+                depth = (lvl - ext_px) if up else (ext_px - lvl)
+                if not math.isnan(a5) and depth <= probe * a5:
+                    out.append(Signal(setup, ctx.sym, ctx.day, "C" if up else "P", i, float(c), ext_px, {"level": lvl, "kind": k}))
+            elif i - i0 >= window:
                 del pending[k]
                 used.add(k)
         for k, lvl in known.items():
-            if k not in used and k not in pending and c < lvl - 0.01:
-                pending[k] = (lvl, i, float(ctx.l[i]))
+            if k not in used and k not in pending and ((c < lvl - 0.01) if up else (c > lvl + 0.01)):
+                pending[k] = (lvl, i, float(ctx.l[i]) if up else float(ctx.h[i]))
     return out
+
+
+FB_VARIANTS = {                                   # name -> (up, window, probe, kinds); pre-registered 2026-10-31 (setups_v2)
+    "failed_break": (True, 5, 0.5, None),
+    "failed_break_w3": (True, 3, 0.5, None),
+    "failed_break_w10": (True, 10, 0.5, None),
+    "failed_break_p025": (True, 5, 0.25, None),
+    "failed_break_p075": (True, 5, 0.75, None),
+    "failed_break_p100": (True, 5, 1.0, None),
+    "failed_break_pd": (True, 5, 0.5, ("PDL", "PML")),
+    "failed_break_or": (True, 5, 0.5, ("OR15L", "OR30L")),
+    "failed_high": (False, 5, 0.5, None),
+}
+
+
+def failed_break(ctx, side="both", setup="failed_break"):
+    up, window, probe, kinds = FB_VARIANTS[setup]
+    if side not in ("both", "C" if up else "P"):
+        return []
+    return _failed_break(ctx, setup, up, window, probe, kinds)
 
 
 # ---------------------------------------------------------------- reversal after a flush
@@ -344,12 +380,14 @@ SETUPS = {
     "noise_nocap": lambda ctx, side="both": noise(ctx, side, cap=False),
     "vwap_macd": vwap_macd,
     "pd_retest": pd_retest,
-    "failed_break": failed_break,
     "flush": flush,
 }
+for _n in FB_VARIANTS:
+    SETUPS[_n] = (lambda n: lambda ctx, side="both": failed_break(ctx, side, n))(_n)
 ENTRY_WINDOWS = {"orb15": (15, ORB_CUTOFF), "orb30": (30, ORB_CUTOFF), "orb60": (60, ORB_CUTOFF), "noise": (29, 329),
                  "noise_nocap": (29, 329), "vwap_macd": (DESK_FIRST, DESK_LAST), "pd_retest": (DESK_FIRST, DESK_LAST),
-                 "failed_break": (DESK_FIRST, DESK_LAST), "flush": (DESK_FIRST, DESK_LAST)}
+                 "flush": (DESK_FIRST, DESK_LAST)}
+ENTRY_WINDOWS.update({_n: (DESK_FIRST, DESK_LAST) for _n in FB_VARIANTS})
 
 
 def signals(ctx, setup, side="both"):

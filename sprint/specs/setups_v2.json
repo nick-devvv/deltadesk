@@ -1,0 +1,265 @@
+{
+ "spec_id": "setups_v2",
+ "description": "Failed-break deep dive (pre-registered 2026-10-31, after setups_v1 and before any v2 run). setups_v1-049 (failed_break calls, premium-ceiling stop, no target, all out 15:25; PF 1.47, PF 2x 1.03) is the only v1 run with PF >= 1.25, but it lost in Aug-Dec 2024 and is negative without its best 5 trades. This spec changes ONE thing at a time on that run: symbols (SPY+QQQ is an IN-SAMPLE choice made after seeing IWM lose), the entry's own numbers (re-close window, probe depth, which levels), the put mirror (failed_high), time rules, trails, level take-profits, fixed far targets, contracts (incl. the next listed expiry, bought and sold the same day), day filters (each checked against skipping the same number of random days), and the bot's risk rules. Base everywhere: SPY+QQQ+IWM pooled, calls, d40-55t45, premium ceiling, no target, time (b), all out 15:25, desk fills, 2% half-spread. A change is kept only if it adds expectancy after costs on DEV AND passes its own robustness checks; parameters picked here are in-sample. 58 runs.",
+ "period": "DEV",
+ "symbols": [
+  "SPY",
+  "QQQ",
+  "IWM"
+ ],
+ "defaults": {
+  "entry": "failed_break",
+  "side": "C",
+  "contract": "d40-55t45",
+  "allout": "15:25",
+  "time": "b",
+  "stop": "premium",
+  "tp": "none",
+  "tp_buffer": "$0.03",
+  "rr_min": null,
+  "trail": "none",
+  "mechanics": "desk",
+  "filters": [],
+  "risk": "none"
+ },
+ "blocks": [
+  {
+   "name": "reference",
+   "why": "setups_v1-049 rerun unchanged (must reproduce its numbers on the same data).",
+   "grid": {
+    "entry": [
+     "failed_break"
+    ]
+   }
+  },
+  {
+   "name": "by_symbol",
+   "why": "Where the edge lives. SPY+QQQ is in-sample (IWM lost in v1).",
+   "grid": {
+    "symbols": [
+     [
+      "SPY"
+     ],
+     [
+      "QQQ"
+     ],
+     [
+      "IWM"
+     ],
+     [
+      "SPY",
+      "QQQ"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "entry_numbers",
+   "why": "One number of the entry moved at a time: re-close window 3/10 (base 5), probe 0.25/0.75/1.0 ATR(5m) (base 0.5), level subsets.",
+   "grid": {
+    "entry": [
+     "failed_break_w3",
+     "failed_break_w10",
+     "failed_break_p025",
+     "failed_break_p075",
+     "failed_break_p100",
+     "failed_break_pd",
+     "failed_break_or"
+    ]
+   }
+  },
+  {
+   "name": "mirror",
+   "why": "Failed break of a resistance level -> puts. Does the idea work on both sides?",
+   "grid": {
+    "entry": [
+     "failed_high"
+    ],
+    "side": [
+     "P"
+    ]
+   }
+  },
+  {
+   "name": "time_rules",
+   "why": "(a) the table (tightening + breakeven + if-flat), (c) tightening + if-flat only, (d) = c off on trend days.",
+   "grid": {
+    "time": [
+     "a",
+     "c",
+     "d"
+    ]
+   }
+  },
+  {
+   "name": "trails",
+   "why": "Each trail alone on the plain exit (the trade keeps its premium-ceiling stop until the trail is higher).",
+   "grid": {
+    "trail": [
+     "be6",
+     "be8",
+     "be10",
+     "be15",
+     "belevel",
+     "L1",
+     "L2",
+     "L3",
+     "gb30",
+     "gb40",
+     "gb50",
+     "gb60",
+     "hl1m",
+     "hl5m",
+     "lvl",
+     "vwap",
+     "ema9"
+    ]
+   }
+  },
+  {
+   "name": "level_exits",
+   "why": "Level stop alone; then key-level take-profits B, C (half + trail), E (rejection or next level), D.",
+   "grid": {
+    "exit": [
+     {
+      "stop": "level",
+      "tp": "none",
+      "time": "b"
+     },
+     {
+      "stop": "level",
+      "tp": "B",
+      "time": "c"
+     },
+     {
+      "stop": "level",
+      "tp": "C",
+      "time": "c"
+     },
+     {
+      "stop": "level",
+      "tp": "E",
+      "time": "c"
+     },
+     {
+      "stop": "premium",
+      "tp": "D",
+      "time": "a"
+     }
+    ]
+   }
+  },
+  {
+   "name": "far_targets",
+   "why": "Fixed 20% stop with a far target (+100%, +200% of the debit): an exit Option Alpha can also run.",
+   "grid": {
+    "exit": [
+     {
+      "stop": "fixed",
+      "fixed_stop": 0.2,
+      "fixed_target": 1.0,
+      "tp": "none",
+      "trail": "none",
+      "time": "b"
+     },
+     {
+      "stop": "fixed",
+      "fixed_stop": 0.2,
+      "fixed_target": 2.0,
+      "tp": "none",
+      "trail": "none",
+      "time": "b"
+     }
+    ]
+   }
+  },
+  {
+   "name": "all_out",
+   "why": "Hold to 15:50 instead of 15:25.",
+   "grid": {
+    "allout": [
+     "15:50"
+    ]
+   }
+  },
+  {
+   "name": "contracts",
+   "why": "Higher delta, and the next listed expiry (less decay per hour, held the same day).",
+   "grid": {
+    "contract": [
+     "d50-65t575",
+     "d45-60t50",
+     "n1d40-55t45",
+     "n1d50-65t575"
+    ]
+   }
+  },
+  {
+   "name": "day_filters",
+   "why": "Each filter alone, each checked against skipping the same number of random days.",
+   "grid": {
+    "filters": [
+     [
+      "trend_only"
+     ],
+     [
+      "noise_trend"
+     ],
+     [
+      "chop2"
+     ],
+     [
+      "after14"
+     ],
+     [
+      "skip_fomc_cpi"
+     ],
+     [
+      "sma20_side"
+     ],
+     [
+      "vixy_pctl_le40"
+     ],
+     [
+      "vixy_pctl_ge60"
+     ],
+     [
+      "vixy_falling"
+     ],
+     [
+      "vixy_not_rising"
+     ],
+     [
+      "gap_side_075"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "bot_risk",
+   "why": "The bot's risk rules ($50 max planned loss, 4 trades a day, 10-min cooldown after 2 losses, done after 3).",
+   "grid": {
+    "risk": [
+     "bot"
+    ],
+    "symbols": [
+     [
+      "SPY",
+      "QQQ",
+      "IWM"
+     ],
+     [
+      "SPY",
+      "QQQ"
+     ]
+    ]
+   }
+  }
+ ],
+ "robustness": {
+  "top_k": 6,
+  "random_paths": 5,
+  "fake_seeds": 20,
+  "min_trades": 60
+ }
+}

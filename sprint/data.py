@@ -253,7 +253,7 @@ class Series:
 class DayContext:
     """One symbol, one session: the stock arrays, indicators and that day's option tapes."""
 
-    def __init__(self, series, day, tapes=None, spread=None, early_close=None, aux=None):
+    def __init__(self, series, day, tapes=None, spread=None, early_close=None, aux=None, tapes_next=None):
         self.series, self.sym, self.day = series, series.sym, day
         self.aux = aux or {}                                      # other symbols' Series (e.g. VIXY for the VIX proxy)
         g = series.rth[day]
@@ -263,6 +263,7 @@ class DayContext:
         self.adx, self.pdi, self.mdi, self.atr5 = (getattr(series, n).get(day, np.full(N, np.nan)) for n in ("adx", "pdi", "mdi", "atr5"))
         self.b5 = series.b5.get(day)
         self.tapes = tapes or {}
+        self.tapes_next = tapes_next or {}                        # next-expiry contracts (contract rules "n1...")
         self.spread = spread
         ec = early_closes() if early_close is None else ({day.isoformat()} if early_close else set())
         self.early = day.isoformat() in ec
@@ -287,9 +288,11 @@ class DayContext:
 
 
 # ---------------------------------------------------------------- options
-def read_option_day(under, day, root=None, want_trades=True):
-    """{symbol: OptionTape} for that day's 0DTE contracts (empty dict when the day has no option file)."""
-    folder = Path(root or ROOT) / "options" / under / day.isoformat()
+def read_option_day(under, day, root=None, want_trades=True, expiry="0dte"):
+    """{symbol: OptionTape} for that day's 0DTE contracts (empty dict when the day has no option file).
+    expiry="next": the same day's prices of the NEXT listed expiry after `day` (data/alpaca/options_next/, pulled by
+    tools/sprint_pull.py --next-expiry); only the nearest expiry in the file is kept."""
+    folder = Path(root or ROOT) / ("options_next" if expiry == "next" else "options") / under / day.isoformat()
     f = folder / "bars.csv.gz"
     if not f.exists():
         return {}
@@ -313,14 +316,19 @@ def read_option_day(under, day, root=None, want_trades=True):
     out = {}
     syms = df["symbol"].to_numpy()
     vals = df[["o", "h", "l", "c", "v"]].to_numpy(float)
+    nearest = None
+    if expiry == "next":
+        exps = [m["expiry"] for m in (parse_occ(x) for x in pd.unique(syms)) if m and m["expiry"] > day]
+        nearest = min(exps) if exps else None
     for s in pd.unique(syms):
         meta = parse_occ(s)
-        if not meta or meta["expiry"] != day:
+        if not meta or meta["expiry"] != (nearest if expiry == "next" else day):
             continue
         sel = syms == s
         grid = np.full((N, 5), np.nan)
         grid[mi[sel]] = vals[sel]
         out[s] = fills.OptionTape(s, meta["right"], meta["strike"], *(grid[:, k] for k in range(5)), trades=trades.get(s))
+        out[s].expiry = meta["expiry"]
     return out
 
 
@@ -352,8 +360,8 @@ def percentile_rank(closes, prior_day, n=252):
     return float((w.to_numpy() <= float(w.iloc[-1])).mean())
 
 
-def option_days(under, root=None):
-    folder = Path(root or ROOT) / "options" / under
+def option_days(under, root=None, expiry="0dte"):
+    folder = Path(root or ROOT) / ("options_next" if expiry == "next" else "options") / under
     if not folder.exists():
         return set()
     return {date.fromisoformat(p.name) for p in folder.iterdir() if p.is_dir() and (p / "bars.csv.gz").exists()}

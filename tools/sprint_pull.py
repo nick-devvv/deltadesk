@@ -7,6 +7,7 @@ no positions), the same throttle/retry, the same cache layout.
   python3 tools/sprint_pull.py --symbols SPY,QQQ,IWM --from 2024-08-01 --to 2026-06-30
   python3 tools/sprint_pull.py --symbols SPY,QQQ,IWM --from 2024-08-01 --to 2026-06-30 --trades     # + option trades
   python3 tools/sprint_pull.py --symbols SPY,QQQ,IWM --from 2024-08-01 --to 2026-06-30 --gaps-only
+  python3 tools/sprint_pull.py --symbols SPY,QQQ,IWM --from 2024-08-01 --to 2026-06-30 --next-only  # next-expiry bars
   (--stock-only VIXY is the default: VIXY 1-minute stock bars, no options, as the labeled proxy for VIX in the
    "VIX falling" filter of oa_crosscheck_v1; pass --stock-only "" to skip it)
   (--daily VIXY is the default: VIXY DAILY bars, split-adjusted, from --daily-from (2023-01-01) to --to, for the
@@ -169,6 +170,47 @@ def pull_options(under, a, b, band=0.03, trades=False, trades_band=0.015, today=
     return out
 
 
+def pull_options_next(under, a, b, band=0.03, today=None, log=print, max_ahead=5):
+    """For each session d: 1-minute bars ON d of the NEXT listed expiry after d (setups_v2's next-expiry contracts),
+    every $1 strike within `band` of the open widened to the day's range, calls and puts. The next listed expiry is
+    found by asking for the next session's expiry first and, if Alpaca returns no bars, the one after (up to
+    `max_ahead` sessions). Only prices dated d are requested, so a DEV day never fetches locked-period prices.
+    Cache: data/alpaca/options_next/<SYM>/<d>/bars.csv.gz (+ .done with the expiry used). Bars only, no trades."""
+    today = today or date.today()
+    out = {"days": 0, "skipped": 0, "no_stock_bars": [], "no_expiry_found": [], "bars": 0, "contracts": 0}
+    stock = D.read_stock(under, a, b, PA.ROOT)
+    by_day = {d: g for d, g in stock.groupby(stock["ts"].dt.date)} if stock is not None else {}
+    for n, d in enumerate(sessions(a, b)):
+        g = by_day.get(d)
+        if g is None or not len(g):
+            out["no_stock_bars"].append(d.isoformat())
+            continue
+        folder = PA.ROOT / "options_next" / under / d.isoformat()
+        if (folder / ".done").exists():
+            out["skipped"] += 1
+            continue
+        df, used = None, None
+        for exp in sessions(d + timedelta(days=1), d + timedelta(days=14))[:max_ahead]:
+            syms = [PA.occ(under, exp, sym[-9], int(sym[-8:]) / 1000) for sym in PA.symbols_for_day(under, d, g, band)]
+            df = _fetch("/v1beta1/options/bars", syms, d, {"timeframe": "1Min"}, "bars")
+            if len(df):
+                used = exp
+                break
+        if used is None:
+            out["no_expiry_found"].append(d.isoformat())
+            continue
+        PA._write_gz(folder / "bars.csv.gz", df)
+        out["bars"] += len(df)
+        out["contracts"] += int(df["symbol"].nunique())
+        if d < today:
+            (folder / ".done").write_text(json.dumps({"bars": len(df), "expiry": used.isoformat(),
+                                                      "at": datetime.now().isoformat(timespec="seconds")}))
+        out["days"] += 1
+        if n % 20 == 0:
+            log(f"  {under} next-expiry options {d} (expiry {used}): {out['days']} sessions pulled so far")
+    return out
+
+
 def gap_report(sym, a, b, out_dir=None, options=True):
     early = periods.early_closes()
     stock = D.read_stock(sym, a, b, PA.ROOT)
@@ -231,6 +273,8 @@ def main(argv=None):
     ap.add_argument("--band", type=float, default=0.03)
     ap.add_argument("--trades", action="store_true")
     ap.add_argument("--trades-band", type=float, default=0.015)
+    ap.add_argument("--next-expiry", action="store_true", help="also pull the next listed expiry's bars per session (setups_v2)")
+    ap.add_argument("--next-only", action="store_true", help="pull only the next-expiry bars (stock bars must be cached)")
     ap.add_argument("--feed", default="sip", choices=["sip", "iex"])
     ap.add_argument("--gaps-only", action="store_true")
     ap.add_argument("--stock-only", default="VIXY", help="symbols pulled as stock bars only, no options (default VIXY)")
@@ -256,10 +300,15 @@ def main(argv=None):
     print(f"sprint_pull: {','.join(syms)} {a}..{b} ({n_days} sessions), band {x.band:.1%}, trades {'on' if x.trades else 'off'}, "
           f"stock bars only: {','.join(stock_only) or 'none'}, cache {PA.ROOT}", flush=True)
     for s in syms:
-        if not x.gaps_only:
+        if not x.gaps_only and not x.next_only:
             print(s, "stocks", pull_stock(s, a, b, x.feed), flush=True)
             r = pull_options(s, a, b, x.band, x.trades, x.trades_band)
             print(s, "options", {k: (v if k != "no_stock_bars" else len(v)) for k, v in r.items()}, flush=True)
+        if not x.gaps_only and (x.next_expiry or x.next_only):
+            r = pull_options_next(s, a, b, x.band)
+            print(s, "next-expiry options", {k: (v if not isinstance(v, list) else f"{len(v)} {v[:5]}") for k, v in r.items()}, flush=True)
+        if x.next_only:
+            continue
         g = gap_report(s, a, b, out_dir)
         print(f"{s}: {g['sessions']} sessions, {len(g['no_bars'])} weekdays without bars {g['no_bars'][:10]}, "
               f"{len(g['short_sessions'])} short sessions, {len(g['early_closes'])} early closes, "

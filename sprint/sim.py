@@ -109,6 +109,7 @@ class ExitCfg:
     fixed_stop: float = None
     fixed_target: float = None
     mechanics: str = "desk"
+    risk: str = "none"            # "bot": the bot's risk rules as a pass over the run's trades (sprint/engine.bot_risk)
     table: tuple = TABLE
 
     @classmethod
@@ -218,7 +219,8 @@ def simulate(ctx, sig, cfg, levels=None, tape=None, cinfo=None, k_plan=1):
     costs = Costs(ctx.spread, ctx.sym, dec, k_plan)
     px_dec, iv = cinfo["px"], cinfo["iv"]
     C_plan = costs.cost(px_dec)
-    T_plan = bs.t_years(390 - dec - DECAY_MIN)
+    _exp = getattr(tape, "expiry", None)                      # next-expiry contracts: add the calendar days to expiry
+    T_plan = bs.t_years(390 - dec - DECAY_MIN + (1440 * (_exp - ctx.day).days if _exp is not None and _exp > ctx.day else 0))
     K = tape.strike
     reprice = lambda s: bs.price(s, K, T_plan, iv, side)
     trend = dt.trend_aligned(j, side)

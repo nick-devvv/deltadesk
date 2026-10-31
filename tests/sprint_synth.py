@@ -48,22 +48,25 @@ def stock_day(day, px0, seed, drift=0.0, vol=0.0005, trend_at=None):
     return df
 
 
-def option_bars(day, stock, under, iv=0.18, band=0.03, skip=None, seed=0):
-    """BS-priced 1-minute bars for $1 strikes within band of the open; skip = set of (symbol, minute_idx) with no print."""
+def option_bars(day, stock, under, iv=0.18, band=0.03, skip=None, seed=0, expiry=None):
+    """BS-priced 1-minute bars for $1 strikes within band of the open; skip = set of (symbol, minute_idx) with no print.
+    expiry: a later expiry date (next-expiry contracts priced on `day`); default = `day` (0DTE)."""
+    expiry = expiry or day
+    extra = 1440 * (expiry - day).days
     rng = np.random.default_rng(seed)
     mins = stock["ts"].dt.hour * 60 + stock["ts"].dt.minute
     r = stock[(mins >= 570) & (mins < 960)]
     S_o, S_c = r["o"].to_numpy(float), r["c"].to_numpy(float)
     o0 = float(S_o[0])
     i = np.arange(390)
-    Ta = np.maximum(390 - i, bs.MIN_T_MIN) / bs.YEAR_MIN
-    Tb = np.maximum(390 - i - 1, bs.MIN_T_MIN) / bs.YEAR_MIN
+    Ta = np.maximum(390 - i + extra, bs.MIN_T_MIN) / bs.YEAR_MIN
+    Tb = np.maximum(390 - i - 1 + extra, bs.MIN_T_MIN) / bs.YEAR_MIN
     t0 = pd.Timestamp(f"{day} 09:30", tz=ET)
     stamps = np.array([t0 + pd.Timedelta(minutes=int(k)) for k in i])
     frames = []
     for k in range(int(o0 * (1 - band)), int(o0 * (1 + band)) + 2):
         for right in ("C", "P"):
-            sym = f"{under}{day:%y%m%d}{right}{k * 1000:08d}"
+            sym = f"{under}{expiry:%y%m%d}{right}{k * 1000:08d}"
             call = right == "C"
             po = bs.price_v(S_o, float(k), Ta, iv, call)
             pc = bs.price_v(S_c, float(k), Tb, iv, call)
@@ -77,8 +80,9 @@ def option_bars(day, stock, under, iv=0.18, band=0.03, skip=None, seed=0):
     return pd.concat(frames, ignore_index=True)
 
 
-def write_cache(root, under, days, px0=500.0, seed=1, iv=0.18, drifts=None, trend=None, band=0.03):
-    """Write stock months + option days for `days`. Returns {day: stock_df}."""
+def write_cache(root, under, days, px0=500.0, seed=1, iv=0.18, drifts=None, trend=None, band=0.03, next_expiry=False):
+    """Write stock months + option days for `days` (and, with next_expiry, each day's prices of the next weekday's
+    expiry under options_next/). Returns {day: stock_df}."""
     import pull_alpaca as PA
     root = Path(root)
     frames, px, out = [], px0, {}
@@ -89,6 +93,10 @@ def write_cache(root, under, days, px0=500.0, seed=1, iv=0.18, drifts=None, tren
         px = float(df["c"].iloc[-1])
         ob = option_bars(d, df, under, iv=iv, seed=seed + n, band=band)
         PA._write_gz(root / "options" / under / d.isoformat() / "bars.csv.gz", ob)
+        if next_expiry:
+            nx = d + timedelta(days=3 if d.weekday() == 4 else 1)
+            nb = option_bars(d, df, under, iv=iv, seed=seed + n, band=band, expiry=nx)
+            PA._write_gz(root / "options_next" / under / d.isoformat() / "bars.csv.gz", nb)
     allb = pd.concat(frames, ignore_index=True)
     for m, g in allb.groupby(allb["ts"].dt.strftime("%Y-%m")):
         PA._write_gz(root / "stocks" / under / f"{m}.csv.gz", g.reset_index(drop=True))

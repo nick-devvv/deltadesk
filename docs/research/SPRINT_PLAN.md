@@ -168,6 +168,32 @@ Every run in both tools, winners and losers, goes in `docs/research/sprint_runs.
 
 Columns: run_id, timestamp, tool, period_tag (DEV/L1/L2/NOT_SEEN_BY_OA), symbol, setup, side, stop_rule, tp_rule, trail, time_rule, trend_rule, filters, contract_rule, slippage, trades, win_rate, avg_win, avg_loss, expectancy, profit_factor, pf_2x_slip, max_dd, pct_peak_kept, planned_rr, actual_rr, notes.
 
+## Amendment 2, 2026-10-31: setups_v2, the failed-break deep dive (written after run 1, before any v2 run)
+
+Run 1 (`docs/research/SPRINT_RESULTS_1.md`) left one lead: failed-break calls with the plain exit (setups_v1-049). `sprint/specs/setups_v2.json` (58 runs, DEV) changes one thing at a time on that run. Everything chosen from these results is **in-sample**, and every run counts as a trial for the deflated Sharpe.
+- **Entry numbers** (`sprint/entries.py`): re-close window 3 / 10 bars (base 5); probe depth 0.25 / 0.75 / 1.0 x ATR(14, 5m) (base 0.5); prior-day and premarket lows only; opening-range lows only.
+- **Mirror** `failed_high` (puts): a failed break above PDH, PMH, OR15H or OR30H, the same numbers. This is the "works on both sides" check.
+- **Symbols:** SPY, QQQ, IWM each alone, and SPY+QQQ. SPY+QQQ was chosen after seeing IWM lose in run 1, so it is in-sample.
+- **Exits on the plain base:**
+  - time rules (a), (c), (d);
+  - each trail alone;
+  - the level stop alone;
+  - level take-profits B, C, E and D;
+  - a fixed 20% stop with a +100% or +200% target;
+  - all out 15:50.
+- **Contracts:**
+  - delta 0.50-0.65 and 0.45-0.60;
+  - the **next listed expiry** (`n1...`): the nearest expiry after the session, bought and sold the same session.
+  - Next-expiry prices are 1-minute bars only (no trades). BS-EST time = minutes to 16:00 plus 1440 x the calendar days to expiry.
+- **Day filters:** each alone, each against skipping the same number of random days. The filters: trend_only, noise_trend, chop2, after14, skip_fomc_cpi, sma20_side, VIXY percentile <=40% / >=60%, VIXY falling / not rising, gap side.
+- **Bot risk rules** (`sprint/engine.bot_risk`), applied in time order across all symbols of the run, using only trades closed before each entry:
+  - skip a trade whose planned loss at 1 contract is above $50;
+  - at most 4 trades a day;
+  - after 2 losses in a row, a 10-minute cooldown from the second loss's exit ("A setups only" cannot be expressed for a single-setup run);
+  - after 3 losses in a row, done for the day.
+  - Streaks reset daily. A trade the risk pass removes cannot free its symbol for a signal that was skipped as "busy", so the pass is slightly conservative.
+- **Keep rule:** a change survives only if it raises expectancy after costs on DEV and passes its own robustness checks (filters must also beat random day-skips). Then 3-5 finalists are frozen and run once on L1 and L2. If no failed-break version passes every robustness check, the report says "nothing held up" and no locked period is used.
+
 ## Limits
 
 - Backtests only.

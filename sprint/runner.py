@@ -34,7 +34,7 @@ VALID = {"stop": {"premium", "level", "noise", "fixed"}, "mechanics": {"desk", "
                    "gb50", "gb60", "vwap", "ema9"}, "side": {"both", "C", "P"},
          "filters": {"after14", "chop2", "trend_only", "noise_trend", "sma20_side", "sma20_side_1pct", "skip_fomc", "skip_fomc_cpi",
                      "vixy_falling", "gap_side_075", "vixy_pctl_le40", "vixy_pctl_ge60", "vixy_not_rising",
-                     "vixy_rising_1pct"}}
+                     "vixy_rising_1pct"}, "risk": {"none", "bot"}}
 
 
 def label_for(tag):
@@ -54,7 +54,7 @@ def validate(runs):
         if r["entry"] not in entries.SETUPS:
             raise ValueError(f"{r['run_id']}: unknown entry {r['entry']}")
         x = r["exit"]
-        for k in ("stop", "tp", "time", "allout", "tp_buffer", "contract", "trail", "mechanics"):
+        for k in ("stop", "tp", "time", "allout", "tp_buffer", "contract", "trail", "mechanics", "risk"):
             if getattr(x, k) not in VALID[k]:
                 raise ValueError(f"{r['run_id']}: {k}={getattr(x, k)!r} not in {sorted(VALID[k])}")
         if r["side"] not in VALID["side"]:
@@ -284,7 +284,16 @@ def _lab(r):
         s += f" rr{x.rr_min:g}"
     if x.trail != "none":
         s += f" tr:{x.trail}"
-    return s + f" t{x.time} {x.allout}"
+    s += f" t{x.time} {x.allout}"
+    if x.contract != "d40-55t45":
+        s += f" {x.contract}"
+    if x.risk != "none":
+        s += f" risk:{x.risk}"
+    if r.get("filters"):
+        s += " " + "+".join(r["filters"])
+    if len(r["symbols"]) < 3:
+        s = "+".join(r["symbols"]) + " " + s
+    return s
 
 
 def summary_table(runs, summ, limit=None):

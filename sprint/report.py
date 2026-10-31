@@ -250,7 +250,8 @@ def csv_row(run, s, ts, period_tag, spread_label, notes=""):
     stop, tp, time, trend = describe(run)
     return {"run_id": run["run_id"], "timestamp": ts, "tool": "DeskEngine", "period_tag": period_tag,
             "symbol": "+".join(run["symbols"]), "setup": run["entry"], "side": run["side"], "stop_rule": stop, "tp_rule": tp,
-            "trail": run["exit"].trail, "time_rule": time, "trend_rule": trend, "filters": "+".join(run.get("filters") or []) or "none",
+            "trail": run["exit"].trail, "time_rule": time, "trend_rule": trend,
+            "filters": "+".join(list(run.get("filters") or []) + ([f"risk:{run['exit'].risk}"] if run["exit"].risk != "none" else [])) or "none",
             "contract_rule": run["exit"].contract + " (BS-EST delta)",
             "slippage": f"k=1 x half-spread ({spread_label}); 2x: k=2, stops 4", "trades": s.get("trades", 0),
             "win_rate": s.get("win_rate"), "avg_win": s.get("avg_win"), "avg_loss": s.get("avg_loss"), "expectancy": s.get("expectancy"),

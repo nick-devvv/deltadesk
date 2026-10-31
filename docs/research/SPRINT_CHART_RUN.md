@@ -2,7 +2,34 @@
 
 This runs the sprint's backtests on Chart's computer, the only machine that can reach Alpaca's data API. Everything runs in its own folder, `~/sprint`, from branch `sprint/exits`. Nothing touches `~/desk`, its journal or the live desk, and nothing can place an order: the puller only reads `data.alpaca.markets` (market data), and the engine only reads files it pulled.
 
-## What runs
+## Run 2 (setups_v2): the failed-break deep dive
+
+Run 1's results are in `docs/research/SPRINT_RESULTS_1.md`. Run 2 changes one thing at a time on the only lead, failed-break calls (58 runs on DEV; what each block tests is in `sprint/specs/setups_v2.json` and SPRINT_PLAN "Amendment 2"). It needs one new pull: each session's prices of the **next listed expiry** (bars only, strikes within 1.5% of the open widened to the day's range; about 30-45 minutes, about 100-250 MB). Then it runs the spec at the base cost and at the 5% stress cost (about 15-30 minutes).
+
+### Message for Chart, run 2 (one paste)
+
+```
+Sprint run 2 (research only, about 1 hour). Show me every output.
+Rules: you never place trades, never click buy/sell/order buttons, never enter passwords or keys, never print a key.
+Never touch ~/desk: don't cd into it, don't edit, copy, restart or run anything there. Never pass --locked or --frozen to any command.
+If a step fails, show the error and stop. Don't change any code; re-running the same command once is fine (the pull resumes).
+1. Update the sprint code:
+   cd ~/sprint && git fetch -q origin sprint/exits && git checkout -q sprint/exits && git reset -q --hard origin/sprint/exits && git log -1 --oneline
+2. Tests:
+   cd ~/sprint && .venv/bin/pip install -q -r requirements.txt && .venv/bin/python -m pytest -q tests/test_sprint_*.py 2>&1 | tail -3
+3. Pull the next-expiry option bars (30-45 min, safe to re-run):
+   cd ~/sprint && .venv/bin/python tools/sprint_pull.py --symbols SPY,QQQ,IWM --from 2024-08-01 --to 2026-06-30 --next-only --band 0.015 2>&1 | tail -12 ; du -sh ~/sprint/data/alpaca/options_next
+4. Run setups_v2 at the base cost, then at the 5% stress cost (15-30 min):
+   cd ~/sprint && mkdir -p data/sprint/logs && for a in "sprint/specs/setups_v2.json" "sprint/specs/setups_v2.json --spread-pct 0.05"; do L="data/sprint/logs/$(echo "$a" | tr ' /.' '___').log"; echo "=== $a"; .venv/bin/python tools/sprint_run.py $a > "$L" 2>&1 && grep -E "^sprint |VIX|pass [12] done|^report:" "$L" || { echo "FAILED: $a"; tail -30 "$L"; }; done
+5. Zip the results and show the base report:
+   cd ~/sprint && .venv/bin/python -m zipfile -c ~/sprint_results2.zip $(ls data/sprint/report_*setups_v2*.md) data/sprint/runs_*.csv && ls -la ~/sprint_results2.zip
+   cat "$(ls -t data/sprint/report_*setups_v2.md | head -1)"
+   (send Nick the file ~/sprint_results2.zip)
+```
+
+What Nick sends back: step 2's last line, step 3's lines (sessions pulled per symbol, any "no_expiry_found" dates, MB on disk), step 4's lines, and `~/sprint_results2.zip`. Check on the way in: run setups_v2-001 is setups_v1-049 rerun unchanged, so it must show 676 trades and +$10.95 a trade.
+
+## What runs (run 1)
 
 | Spec | Runs | Period | Cost runs | Question |
 | --- | --- | --- | --- | --- |
@@ -128,4 +155,5 @@ C, E and the trails use B without an R:R minimum so that they compare exits on t
 | Exits: stops, A-E, trails 1-5, time (a)-(d), R:R minimum, never-loosen, fixed stop/target (desk and OA-LIKE mechanics) | implemented, tested on hand-checked paths |
 | Day-type features, 20-day SMA side rule, FOMC/CPI calendar | implemented, tested (point-in-time). News and VIX are unknown in the backtest. |
 | Entries: ORB 15/30/60, noise band + no-cap twin, VWAP + 2m MACD retest, PDH/PDL retest + 9 EMA, failed-break calls, flush reversal | pre-registered in `sprint/entries.py` docstrings, implemented and tested for rules and no look-ahead |
-| Risk layer for the full bot rules (max loss sizing, 4 trades a day, streak rules, runner exception) | not built yet (later build steps) |
+| Risk layer for the full bot rules ($50 max planned loss, 4 trades a day, streak rules) | implemented for setups_v2 (`sprint/engine.bot_risk`), tested; the runner exception needs live news and is not testable here |
+| Failed-break variants, the put mirror (failed_high), next-expiry contracts and their puller | implemented for setups_v2, tested (rules, no look-ahead, fake HTTP) |
