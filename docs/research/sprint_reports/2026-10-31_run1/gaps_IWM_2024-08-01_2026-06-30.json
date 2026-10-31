@@ -1,0 +1,41 @@
+{
+ "symbol": "IWM",
+ "from": "2024-08-01",
+ "to": "2026-06-30",
+ "sessions": 479,
+ "no_bars": [],
+ "short_sessions": [],
+ "early_closes": [
+  {
+   "day": "2024-11-29",
+   "rth_minutes": 286
+  },
+  {
+   "day": "2024-12-24",
+   "rth_minutes": 278
+  },
+  {
+   "day": "2025-07-03",
+   "rth_minutes": 333
+  },
+  {
+   "day": "2025-11-28",
+   "rth_minutes": 305
+  },
+  {
+   "day": "2025-12-24",
+   "rth_minutes": 265
+  }
+ ],
+ "no_option_bars": [],
+ "contracts_per_session": {
+  "min": 26,
+  "median": 32,
+  "max": 54
+ },
+ "known_option_gaps": [
+  "2024-02-26",
+  "2024-03-15"
+ ],
+ "premarket_missing": []
+}

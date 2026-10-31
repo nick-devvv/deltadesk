@@ -1,0 +1,41 @@
+{
+ "symbol": "QQQ",
+ "from": "2024-08-01",
+ "to": "2026-06-30",
+ "sessions": 479,
+ "no_bars": [],
+ "short_sessions": [],
+ "early_closes": [
+  {
+   "day": "2024-11-29",
+   "rth_minutes": 313
+  },
+  {
+   "day": "2024-12-24",
+   "rth_minutes": 314
+  },
+  {
+   "day": "2025-07-03",
+   "rth_minutes": 364
+  },
+  {
+   "day": "2025-11-28",
+   "rth_minutes": 381
+  },
+  {
+   "day": "2025-12-24",
+   "rth_minutes": 335
+  }
+ ],
+ "no_option_bars": [],
+ "contracts_per_session": {
+  "min": 44,
+  "median": 66,
+  "max": 132
+ },
+ "known_option_gaps": [
+  "2024-02-26",
+  "2024-03-15"
+ ],
+ "premarket_missing": []
+}

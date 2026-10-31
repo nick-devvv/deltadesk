@@ -1,0 +1,2008 @@
+{
+ "symbol": "VIXY",
+ "from": "2024-08-01",
+ "to": "2026-06-30",
+ "sessions": 479,
+ "no_bars": [],
+ "short_sessions": [
+  {
+   "day": "2024-08-05",
+   "rth_minutes": 386,
+   "missing": 4
+  },
+  {
+   "day": "2024-08-13",
+   "rth_minutes": 386,
+   "missing": 4
+  },
+  {
+   "day": "2024-08-14",
+   "rth_minutes": 386,
+   "missing": 4
+  },
+  {
+   "day": "2024-08-15",
+   "rth_minutes": 382,
+   "missing": 8
+  },
+  {
+   "day": "2024-08-16",
+   "rth_minutes": 377,
+   "missing": 13
+  },
+  {
+   "day": "2024-08-19",
+   "rth_minutes": 356,
+   "missing": 34
+  },
+  {
+   "day": "2024-08-20",
+   "rth_minutes": 384,
+   "missing": 6
+  },
+  {
+   "day": "2024-08-21",
+   "rth_minutes": 377,
+   "missing": 13
+  },
+  {
+   "day": "2024-08-26",
+   "rth_minutes": 382,
+   "missing": 8
+  },
+  {
+   "day": "2024-08-27",
+   "rth_minutes": 368,
+   "missing": 22
+  },
+  {
+   "day": "2024-08-29",
+   "rth_minutes": 384,
+   "missing": 6
+  },
+  {
+   "day": "2024-08-30",
+   "rth_minutes": 389,
+   "missing": 1
+  },
+  {
+   "day": "2024-09-12",
+   "rth_minutes": 388,
+   "missing": 2
+  },
+  {
+   "day": "2024-09-13",
+   "rth_minutes": 384,
+   "missing": 6
+  },
+  {
+   "day": "2024-09-16",
+   "rth_minutes": 368,
+   "missing": 22
+  },
+  {
+   "day": "2024-09-17",
+   "rth_minutes": 389,
+   "missing": 1
+  },
+  {
+   "day": "2024-09-19",
+   "rth_minutes": 377,
+   "missing": 13
+  },
+  {
+   "day": "2024-09-20",
+   "rth_minutes": 381,
+   "missing": 9
+  },
+  {
+   "day": "2024-09-23",
+   "rth_minutes": 370,
+   "missing": 20
+  },
+  {
+   "day": "2024-09-24",
+   "rth_minutes": 359,
+   "missing": 31
+  },
+  {
+   "day": "2024-09-25",
+   "rth_minutes": 366,
+   "missing": 24
+  },
+  {
+   "day": "2024-09-26",
+   "rth_minutes": 371,
+   "missing": 19
+  },
+  {
+   "day": "2024-09-27",
+   "rth_minutes": 384,
+   "missing": 6
+  },
+  {
+   "day": "2024-09-30",
+   "rth_minutes": 387,
+   "missing": 3
+  },
+  {
+   "day": "2024-10-03",
+   "rth_minutes": 388,
+   "missing": 2
+  },
+  {
+   "day": "2024-10-07",
+   "rth_minutes": 380,
+   "missing": 10
+  },
+  {
+   "day": "2024-10-08",
+   "rth_minutes": 383,
+   "missing": 7
+  },
+  {
+   "day": "2024-10-09",
+   "rth_minutes": 353,
+   "missing": 37
+  },
+  {
+   "day": "2024-10-10",
+   "rth_minutes": 368,
+   "missing": 22
+  },
+  {
+   "day": "2024-10-11",
+   "rth_minutes": 339,
+   "missing": 51
+  },
+  {
+   "day": "2024-10-14",
+   "rth_minutes": 350,
+   "missing": 40
+  },
+  {
+   "day": "2024-10-15",
+   "rth_minutes": 388,
+   "missing": 2
+  },
+  {
+   "day": "2024-10-16",
+   "rth_minutes": 318,
+   "missing": 72
+  },
+  {
+   "day": "2024-10-17",
+   "rth_minutes": 338,
+   "missing": 52
+  },
+  {
+   "day": "2024-10-18",
+   "rth_minutes": 342,
+   "missing": 48
+  },
+  {
+   "day": "2024-10-21",
+   "rth_minutes": 352,
+   "missing": 38
+  },
+  {
+   "day": "2024-10-22",
+   "rth_minutes": 342,
+   "missing": 48
+  },
+  {
+   "day": "2024-10-23",
+   "rth_minutes": 386,
+   "missing": 4
+  },
+  {
+   "day": "2024-10-24",
+   "rth_minutes": 385,
+   "missing": 5
+  },
+  {
+   "day": "2024-10-25",
+   "rth_minutes": 376,
+   "missing": 14
+  },
+  {
+   "day": "2024-10-28",
+   "rth_minutes": 380,
+   "missing": 10
+  },
+  {
+   "day": "2024-10-29",
+   "rth_minutes": 379,
+   "missing": 11
+  },
+  {
+   "day": "2024-10-30",
+   "rth_minutes": 379,
+   "missing": 11
+  },
+  {
+   "day": "2024-11-01",
+   "rth_minutes": 389,
+   "missing": 1
+  },
+  {
+   "day": "2024-11-04",
+   "rth_minutes": 385,
+   "missing": 5
+  },
+  {
+   "day": "2024-11-06",
+   "rth_minutes": 387,
+   "missing": 3
+  },
+  {
+   "day": "2024-11-07",
+   "rth_minutes": 337,
+   "missing": 53
+  },
+  {
+   "day": "2024-11-08",
+   "rth_minutes": 366,
+   "missing": 24
+  },
+  {
+   "day": "2024-11-11",
+   "rth_minutes": 360,
+   "missing": 30
+  },
+  {
+   "day": "2024-11-12",
+   "rth_minutes": 357,
+   "missing": 33
+  },
+  {
+   "day": "2024-11-13",
+   "rth_minutes": 362,
+   "missing": 28
+  },
+  {
+   "day": "2024-11-14",
+   "rth_minutes": 327,
+   "missing": 63
+  },
+  {
+   "day": "2024-11-15",
+   "rth_minutes": 387,
+   "missing": 3
+  },
+  {
+   "day": "2024-11-18",
+   "rth_minutes": 311,
+   "missing": 79
+  },
+  {
+   "day": "2024-11-19",
+   "rth_minutes": 358,
+   "missing": 32
+  },
+  {
+   "day": "2024-11-20",
+   "rth_minutes": 363,
+   "missing": 27
+  },
+  {
+   "day": "2024-11-21",
+   "rth_minutes": 330,
+   "missing": 60
+  },
+  {
+   "day": "2024-11-22",
+   "rth_minutes": 309,
+   "missing": 81
+  },
+  {
+   "day": "2024-11-25",
+   "rth_minutes": 277,
+   "missing": 113
+  },
+  {
+   "day": "2024-11-26",
+   "rth_minutes": 267,
+   "missing": 123
+  },
+  {
+   "day": "2024-11-27",
+   "rth_minutes": 290,
+   "missing": 100
+  },
+  {
+   "day": "2024-12-02",
+   "rth_minutes": 243,
+   "missing": 147
+  },
+  {
+   "day": "2024-12-03",
+   "rth_minutes": 314,
+   "missing": 76
+  },
+  {
+   "day": "2024-12-04",
+   "rth_minutes": 296,
+   "missing": 94
+  },
+  {
+   "day": "2024-12-05",
+   "rth_minutes": 272,
+   "missing": 118
+  },
+  {
+   "day": "2024-12-06",
+   "rth_minutes": 275,
+   "missing": 115
+  },
+  {
+   "day": "2024-12-09",
+   "rth_minutes": 327,
+   "missing": 63
+  },
+  {
+   "day": "2024-12-10",
+   "rth_minutes": 303,
+   "missing": 87
+  },
+  {
+   "day": "2024-12-11",
+   "rth_minutes": 251,
+   "missing": 139
+  },
+  {
+   "day": "2024-12-12",
+   "rth_minutes": 318,
+   "missing": 72
+  },
+  {
+   "day": "2024-12-13",
+   "rth_minutes": 299,
+   "missing": 91
+  },
+  {
+   "day": "2024-12-16",
+   "rth_minutes": 293,
+   "missing": 97
+  },
+  {
+   "day": "2024-12-17",
+   "rth_minutes": 342,
+   "missing": 48
+  },
+  {
+   "day": "2024-12-18",
+   "rth_minutes": 314,
+   "missing": 76
+  },
+  {
+   "day": "2024-12-19",
+   "rth_minutes": 389,
+   "missing": 1
+  },
+  {
+   "day": "2024-12-20",
+   "rth_minutes": 379,
+   "missing": 11
+  },
+  {
+   "day": "2024-12-23",
+   "rth_minutes": 363,
+   "missing": 27
+  },
+  {
+   "day": "2024-12-26",
+   "rth_minutes": 327,
+   "missing": 63
+  },
+  {
+   "day": "2024-12-27",
+   "rth_minutes": 378,
+   "missing": 12
+  },
+  {
+   "day": "2024-12-30",
+   "rth_minutes": 344,
+   "missing": 46
+  },
+  {
+   "day": "2024-12-31",
+   "rth_minutes": 368,
+   "missing": 22
+  },
+  {
+   "day": "2025-01-02",
+   "rth_minutes": 373,
+   "missing": 17
+  },
+  {
+   "day": "2025-01-03",
+   "rth_minutes": 349,
+   "missing": 41
+  },
+  {
+   "day": "2025-01-06",
+   "rth_minutes": 366,
+   "missing": 24
+  },
+  {
+   "day": "2025-01-07",
+   "rth_minutes": 358,
+   "missing": 32
+  },
+  {
+   "day": "2025-01-08",
+   "rth_minutes": 375,
+   "missing": 15
+  },
+  {
+   "day": "2025-01-10",
+   "rth_minutes": 381,
+   "missing": 9
+  },
+  {
+   "day": "2025-01-13",
+   "rth_minutes": 373,
+   "missing": 17
+  },
+  {
+   "day": "2025-01-14",
+   "rth_minutes": 380,
+   "missing": 10
+  },
+  {
+   "day": "2025-01-15",
+   "rth_minutes": 367,
+   "missing": 23
+  },
+  {
+   "day": "2025-01-16",
+   "rth_minutes": 356,
+   "missing": 34
+  },
+  {
+   "day": "2025-01-17",
+   "rth_minutes": 346,
+   "missing": 44
+  },
+  {
+   "day": "2025-01-21",
+   "rth_minutes": 363,
+   "missing": 27
+  },
+  {
+   "day": "2025-01-22",
+   "rth_minutes": 339,
+   "missing": 51
+  },
+  {
+   "day": "2025-01-23",
+   "rth_minutes": 373,
+   "missing": 17
+  },
+  {
+   "day": "2025-01-24",
+   "rth_minutes": 368,
+   "missing": 22
+  },
+  {
+   "day": "2025-01-28",
+   "rth_minutes": 365,
+   "missing": 25
+  },
+  {
+   "day": "2025-01-29",
+   "rth_minutes": 371,
+   "missing": 19
+  },
+  {
+   "day": "2025-01-30",
+   "rth_minutes": 332,
+   "missing": 58
+  },
+  {
+   "day": "2025-01-31",
+   "rth_minutes": 367,
+   "missing": 23
+  },
+  {
+   "day": "2025-02-03",
+   "rth_minutes": 370,
+   "missing": 20
+  },
+  {
+   "day": "2025-02-04",
+   "rth_minutes": 334,
+   "missing": 56
+  },
+  {
+   "day": "2025-02-05",
+   "rth_minutes": 359,
+   "missing": 31
+  },
+  {
+   "day": "2025-02-06",
+   "rth_minutes": 343,
+   "missing": 47
+  },
+  {
+   "day": "2025-02-07",
+   "rth_minutes": 368,
+   "missing": 22
+  },
+  {
+   "day": "2025-02-10",
+   "rth_minutes": 325,
+   "missing": 65
+  },
+  {
+   "day": "2025-02-11",
+   "rth_minutes": 309,
+   "missing": 81
+  },
+  {
+   "day": "2025-02-12",
+   "rth_minutes": 357,
+   "missing": 33
+  },
+  {
+   "day": "2025-02-13",
+   "rth_minutes": 362,
+   "missing": 28
+  },
+  {
+   "day": "2025-02-14",
+   "rth_minutes": 371,
+   "missing": 19
+  },
+  {
+   "day": "2025-02-18",
+   "rth_minutes": 363,
+   "missing": 27
+  },
+  {
+   "day": "2025-02-19",
+   "rth_minutes": 361,
+   "missing": 29
+  },
+  {
+   "day": "2025-02-20",
+   "rth_minutes": 353,
+   "missing": 37
+  },
+  {
+   "day": "2025-02-21",
+   "rth_minutes": 384,
+   "missing": 6
+  },
+  {
+   "day": "2025-02-24",
+   "rth_minutes": 388,
+   "missing": 2
+  },
+  {
+   "day": "2025-02-25",
+   "rth_minutes": 378,
+   "missing": 12
+  },
+  {
+   "day": "2025-02-26",
+   "rth_minutes": 365,
+   "missing": 25
+  },
+  {
+   "day": "2025-02-27",
+   "rth_minutes": 363,
+   "missing": 27
+  },
+  {
+   "day": "2025-02-28",
+   "rth_minutes": 378,
+   "missing": 12
+  },
+  {
+   "day": "2025-03-03",
+   "rth_minutes": 354,
+   "missing": 36
+  },
+  {
+   "day": "2025-03-04",
+   "rth_minutes": 386,
+   "missing": 4
+  },
+  {
+   "day": "2025-03-05",
+   "rth_minutes": 378,
+   "missing": 12
+  },
+  {
+   "day": "2025-03-06",
+   "rth_minutes": 382,
+   "missing": 8
+  },
+  {
+   "day": "2025-03-07",
+   "rth_minutes": 372,
+   "missing": 18
+  },
+  {
+   "day": "2025-03-10",
+   "rth_minutes": 385,
+   "missing": 5
+  },
+  {
+   "day": "2025-03-11",
+   "rth_minutes": 386,
+   "missing": 4
+  },
+  {
+   "day": "2025-03-12",
+   "rth_minutes": 362,
+   "missing": 28
+  },
+  {
+   "day": "2025-03-13",
+   "rth_minutes": 376,
+   "missing": 14
+  },
+  {
+   "day": "2025-03-14",
+   "rth_minutes": 351,
+   "missing": 39
+  },
+  {
+   "day": "2025-03-17",
+   "rth_minutes": 382,
+   "missing": 8
+  },
+  {
+   "day": "2025-03-18",
+   "rth_minutes": 323,
+   "missing": 67
+  },
+  {
+   "day": "2025-03-19",
+   "rth_minutes": 352,
+   "missing": 38
+  },
+  {
+   "day": "2025-03-20",
+   "rth_minutes": 348,
+   "missing": 42
+  },
+  {
+   "day": "2025-03-21",
+   "rth_minutes": 347,
+   "missing": 43
+  },
+  {
+   "day": "2025-03-24",
+   "rth_minutes": 335,
+   "missing": 55
+  },
+  {
+   "day": "2025-03-25",
+   "rth_minutes": 292,
+   "missing": 98
+  },
+  {
+   "day": "2025-03-26",
+   "rth_minutes": 341,
+   "missing": 49
+  },
+  {
+   "day": "2025-03-27",
+   "rth_minutes": 314,
+   "missing": 76
+  },
+  {
+   "day": "2025-03-28",
+   "rth_minutes": 375,
+   "missing": 15
+  },
+  {
+   "day": "2025-03-31",
+   "rth_minutes": 363,
+   "missing": 27
+  },
+  {
+   "day": "2025-04-01",
+   "rth_minutes": 334,
+   "missing": 56
+  },
+  {
+   "day": "2025-04-02",
+   "rth_minutes": 346,
+   "missing": 44
+  },
+  {
+   "day": "2025-04-03",
+   "rth_minutes": 386,
+   "missing": 4
+  },
+  {
+   "day": "2025-04-07",
+   "rth_minutes": 374,
+   "missing": 16
+  },
+  {
+   "day": "2025-04-08",
+   "rth_minutes": 388,
+   "missing": 2
+  },
+  {
+   "day": "2025-04-09",
+   "rth_minutes": 376,
+   "missing": 14
+  },
+  {
+   "day": "2025-04-11",
+   "rth_minutes": 389,
+   "missing": 1
+  },
+  {
+   "day": "2025-04-14",
+   "rth_minutes": 376,
+   "missing": 14
+  },
+  {
+   "day": "2025-04-15",
+   "rth_minutes": 365,
+   "missing": 25
+  },
+  {
+   "day": "2025-04-16",
+   "rth_minutes": 376,
+   "missing": 14
+  },
+  {
+   "day": "2025-04-17",
+   "rth_minutes": 357,
+   "missing": 33
+  },
+  {
+   "day": "2025-04-21",
+   "rth_minutes": 370,
+   "missing": 20
+  },
+  {
+   "day": "2025-04-22",
+   "rth_minutes": 345,
+   "missing": 45
+  },
+  {
+   "day": "2025-04-23",
+   "rth_minutes": 356,
+   "missing": 34
+  },
+  {
+   "day": "2025-04-24",
+   "rth_minutes": 323,
+   "missing": 67
+  },
+  {
+   "day": "2025-04-25",
+   "rth_minutes": 315,
+   "missing": 75
+  },
+  {
+   "day": "2025-04-28",
+   "rth_minutes": 330,
+   "missing": 60
+  },
+  {
+   "day": "2025-04-29",
+   "rth_minutes": 310,
+   "missing": 80
+  },
+  {
+   "day": "2025-04-30",
+   "rth_minutes": 334,
+   "missing": 56
+  },
+  {
+   "day": "2025-05-01",
+   "rth_minutes": 264,
+   "missing": 126
+  },
+  {
+   "day": "2025-05-02",
+   "rth_minutes": 288,
+   "missing": 102
+  },
+  {
+   "day": "2025-05-05",
+   "rth_minutes": 278,
+   "missing": 112
+  },
+  {
+   "day": "2025-05-06",
+   "rth_minutes": 327,
+   "missing": 63
+  },
+  {
+   "day": "2025-05-07",
+   "rth_minutes": 348,
+   "missing": 42
+  },
+  {
+   "day": "2025-05-08",
+   "rth_minutes": 338,
+   "missing": 52
+  },
+  {
+   "day": "2025-05-09",
+   "rth_minutes": 311,
+   "missing": 79
+  },
+  {
+   "day": "2025-05-12",
+   "rth_minutes": 348,
+   "missing": 42
+  },
+  {
+   "day": "2025-05-13",
+   "rth_minutes": 357,
+   "missing": 33
+  },
+  {
+   "day": "2025-05-14",
+   "rth_minutes": 354,
+   "missing": 36
+  },
+  {
+   "day": "2025-05-15",
+   "rth_minutes": 325,
+   "missing": 65
+  },
+  {
+   "day": "2025-05-16",
+   "rth_minutes": 330,
+   "missing": 60
+  },
+  {
+   "day": "2025-05-19",
+   "rth_minutes": 357,
+   "missing": 33
+  },
+  {
+   "day": "2025-05-20",
+   "rth_minutes": 368,
+   "missing": 22
+  },
+  {
+   "day": "2025-05-21",
+   "rth_minutes": 345,
+   "missing": 45
+  },
+  {
+   "day": "2025-05-22",
+   "rth_minutes": 354,
+   "missing": 36
+  },
+  {
+   "day": "2025-05-23",
+   "rth_minutes": 352,
+   "missing": 38
+  },
+  {
+   "day": "2025-05-27",
+   "rth_minutes": 310,
+   "missing": 80
+  },
+  {
+   "day": "2025-05-28",
+   "rth_minutes": 279,
+   "missing": 111
+  },
+  {
+   "day": "2025-05-29",
+   "rth_minutes": 309,
+   "missing": 81
+  },
+  {
+   "day": "2025-05-30",
+   "rth_minutes": 357,
+   "missing": 33
+  },
+  {
+   "day": "2025-06-02",
+   "rth_minutes": 306,
+   "missing": 84
+  },
+  {
+   "day": "2025-06-03",
+   "rth_minutes": 327,
+   "missing": 63
+  },
+  {
+   "day": "2025-06-04",
+   "rth_minutes": 301,
+   "missing": 89
+  },
+  {
+   "day": "2025-06-05",
+   "rth_minutes": 349,
+   "missing": 41
+  },
+  {
+   "day": "2025-06-06",
+   "rth_minutes": 319,
+   "missing": 71
+  },
+  {
+   "day": "2025-06-09",
+   "rth_minutes": 287,
+   "missing": 103
+  },
+  {
+   "day": "2025-06-10",
+   "rth_minutes": 294,
+   "missing": 96
+  },
+  {
+   "day": "2025-06-11",
+   "rth_minutes": 364,
+   "missing": 26
+  },
+  {
+   "day": "2025-06-12",
+   "rth_minutes": 362,
+   "missing": 28
+  },
+  {
+   "day": "2025-06-13",
+   "rth_minutes": 385,
+   "missing": 5
+  },
+  {
+   "day": "2025-06-16",
+   "rth_minutes": 356,
+   "missing": 34
+  },
+  {
+   "day": "2025-06-17",
+   "rth_minutes": 373,
+   "missing": 17
+  },
+  {
+   "day": "2025-06-18",
+   "rth_minutes": 385,
+   "missing": 5
+  },
+  {
+   "day": "2025-06-20",
+   "rth_minutes": 371,
+   "missing": 19
+  },
+  {
+   "day": "2025-06-23",
+   "rth_minutes": 378,
+   "missing": 12
+  },
+  {
+   "day": "2025-06-24",
+   "rth_minutes": 344,
+   "missing": 46
+  },
+  {
+   "day": "2025-06-25",
+   "rth_minutes": 293,
+   "missing": 97
+  },
+  {
+   "day": "2025-06-26",
+   "rth_minutes": 286,
+   "missing": 104
+  },
+  {
+   "day": "2025-06-27",
+   "rth_minutes": 340,
+   "missing": 50
+  },
+  {
+   "day": "2025-06-30",
+   "rth_minutes": 321,
+   "missing": 69
+  },
+  {
+   "day": "2025-07-01",
+   "rth_minutes": 342,
+   "missing": 48
+  },
+  {
+   "day": "2025-07-02",
+   "rth_minutes": 327,
+   "missing": 63
+  },
+  {
+   "day": "2025-07-07",
+   "rth_minutes": 371,
+   "missing": 19
+  },
+  {
+   "day": "2025-07-08",
+   "rth_minutes": 323,
+   "missing": 67
+  },
+  {
+   "day": "2025-07-09",
+   "rth_minutes": 350,
+   "missing": 40
+  },
+  {
+   "day": "2025-07-10",
+   "rth_minutes": 300,
+   "missing": 90
+  },
+  {
+   "day": "2025-07-11",
+   "rth_minutes": 352,
+   "missing": 38
+  },
+  {
+   "day": "2025-07-14",
+   "rth_minutes": 311,
+   "missing": 79
+  },
+  {
+   "day": "2025-07-15",
+   "rth_minutes": 360,
+   "missing": 30
+  },
+  {
+   "day": "2025-07-16",
+   "rth_minutes": 348,
+   "missing": 42
+  },
+  {
+   "day": "2025-07-17",
+   "rth_minutes": 297,
+   "missing": 93
+  },
+  {
+   "day": "2025-07-18",
+   "rth_minutes": 328,
+   "missing": 62
+  },
+  {
+   "day": "2025-07-21",
+   "rth_minutes": 333,
+   "missing": 57
+  },
+  {
+   "day": "2025-07-22",
+   "rth_minutes": 357,
+   "missing": 33
+  },
+  {
+   "day": "2025-07-23",
+   "rth_minutes": 373,
+   "missing": 17
+  },
+  {
+   "day": "2025-07-24",
+   "rth_minutes": 363,
+   "missing": 27
+  },
+  {
+   "day": "2025-07-25",
+   "rth_minutes": 350,
+   "missing": 40
+  },
+  {
+   "day": "2025-07-28",
+   "rth_minutes": 370,
+   "missing": 20
+  },
+  {
+   "day": "2025-07-29",
+   "rth_minutes": 375,
+   "missing": 15
+  },
+  {
+   "day": "2025-07-30",
+   "rth_minutes": 367,
+   "missing": 23
+  },
+  {
+   "day": "2025-07-31",
+   "rth_minutes": 377,
+   "missing": 13
+  },
+  {
+   "day": "2025-08-01",
+   "rth_minutes": 389,
+   "missing": 1
+  },
+  {
+   "day": "2025-08-04",
+   "rth_minutes": 364,
+   "missing": 26
+  },
+  {
+   "day": "2025-08-05",
+   "rth_minutes": 384,
+   "missing": 6
+  },
+  {
+   "day": "2025-08-06",
+   "rth_minutes": 361,
+   "missing": 29
+  },
+  {
+   "day": "2025-08-07",
+   "rth_minutes": 381,
+   "missing": 9
+  },
+  {
+   "day": "2025-08-08",
+   "rth_minutes": 372,
+   "missing": 18
+  },
+  {
+   "day": "2025-08-11",
+   "rth_minutes": 355,
+   "missing": 35
+  },
+  {
+   "day": "2025-08-12",
+   "rth_minutes": 379,
+   "missing": 11
+  },
+  {
+   "day": "2025-08-13",
+   "rth_minutes": 387,
+   "missing": 3
+  },
+  {
+   "day": "2025-08-14",
+   "rth_minutes": 375,
+   "missing": 15
+  },
+  {
+   "day": "2025-08-15",
+   "rth_minutes": 389,
+   "missing": 1
+  },
+  {
+   "day": "2025-08-18",
+   "rth_minutes": 375,
+   "missing": 15
+  },
+  {
+   "day": "2025-08-19",
+   "rth_minutes": 389,
+   "missing": 1
+  },
+  {
+   "day": "2025-08-20",
+   "rth_minutes": 381,
+   "missing": 9
+  },
+  {
+   "day": "2025-08-21",
+   "rth_minutes": 371,
+   "missing": 19
+  },
+  {
+   "day": "2025-08-22",
+   "rth_minutes": 382,
+   "missing": 8
+  },
+  {
+   "day": "2025-08-25",
+   "rth_minutes": 354,
+   "missing": 36
+  },
+  {
+   "day": "2025-08-26",
+   "rth_minutes": 355,
+   "missing": 35
+  },
+  {
+   "day": "2025-08-27",
+   "rth_minutes": 341,
+   "missing": 49
+  },
+  {
+   "day": "2025-08-28",
+   "rth_minutes": 355,
+   "missing": 35
+  },
+  {
+   "day": "2025-08-29",
+   "rth_minutes": 383,
+   "missing": 7
+  },
+  {
+   "day": "2025-09-02",
+   "rth_minutes": 389,
+   "missing": 1
+  },
+  {
+   "day": "2025-09-03",
+   "rth_minutes": 389,
+   "missing": 1
+  },
+  {
+   "day": "2025-09-04",
+   "rth_minutes": 359,
+   "missing": 31
+  },
+  {
+   "day": "2025-09-05",
+   "rth_minutes": 386,
+   "missing": 4
+  },
+  {
+   "day": "2025-09-08",
+   "rth_minutes": 382,
+   "missing": 8
+  },
+  {
+   "day": "2025-09-09",
+   "rth_minutes": 377,
+   "missing": 13
+  },
+  {
+   "day": "2025-09-10",
+   "rth_minutes": 381,
+   "missing": 9
+  },
+  {
+   "day": "2025-09-11",
+   "rth_minutes": 373,
+   "missing": 17
+  },
+  {
+   "day": "2025-09-12",
+   "rth_minutes": 342,
+   "missing": 48
+  },
+  {
+   "day": "2025-09-15",
+   "rth_minutes": 371,
+   "missing": 19
+  },
+  {
+   "day": "2025-09-16",
+   "rth_minutes": 372,
+   "missing": 18
+  },
+  {
+   "day": "2025-09-17",
+   "rth_minutes": 374,
+   "missing": 16
+  },
+  {
+   "day": "2025-09-18",
+   "rth_minutes": 368,
+   "missing": 22
+  },
+  {
+   "day": "2025-09-19",
+   "rth_minutes": 355,
+   "missing": 35
+  },
+  {
+   "day": "2025-09-22",
+   "rth_minutes": 347,
+   "missing": 43
+  },
+  {
+   "day": "2025-09-23",
+   "rth_minutes": 372,
+   "missing": 18
+  },
+  {
+   "day": "2025-09-24",
+   "rth_minutes": 372,
+   "missing": 18
+  },
+  {
+   "day": "2025-09-25",
+   "rth_minutes": 387,
+   "missing": 3
+  },
+  {
+   "day": "2025-09-26",
+   "rth_minutes": 373,
+   "missing": 17
+  },
+  {
+   "day": "2025-09-29",
+   "rth_minutes": 382,
+   "missing": 8
+  },
+  {
+   "day": "2025-09-30",
+   "rth_minutes": 387,
+   "missing": 3
+  },
+  {
+   "day": "2025-10-01",
+   "rth_minutes": 366,
+   "missing": 24
+  },
+  {
+   "day": "2025-10-02",
+   "rth_minutes": 354,
+   "missing": 36
+  },
+  {
+   "day": "2025-10-03",
+   "rth_minutes": 356,
+   "missing": 34
+  },
+  {
+   "day": "2025-10-06",
+   "rth_minutes": 352,
+   "missing": 38
+  },
+  {
+   "day": "2025-10-07",
+   "rth_minutes": 387,
+   "missing": 3
+  },
+  {
+   "day": "2025-10-08",
+   "rth_minutes": 342,
+   "missing": 48
+  },
+  {
+   "day": "2025-10-09",
+   "rth_minutes": 382,
+   "missing": 8
+  },
+  {
+   "day": "2025-10-10",
+   "rth_minutes": 385,
+   "missing": 5
+  },
+  {
+   "day": "2025-10-13",
+   "rth_minutes": 386,
+   "missing": 4
+  },
+  {
+   "day": "2025-10-14",
+   "rth_minutes": 385,
+   "missing": 5
+  },
+  {
+   "day": "2025-10-16",
+   "rth_minutes": 389,
+   "missing": 1
+  },
+  {
+   "day": "2025-10-20",
+   "rth_minutes": 387,
+   "missing": 3
+  },
+  {
+   "day": "2025-10-21",
+   "rth_minutes": 388,
+   "missing": 2
+  },
+  {
+   "day": "2025-10-23",
+   "rth_minutes": 384,
+   "missing": 6
+  },
+  {
+   "day": "2025-10-24",
+   "rth_minutes": 373,
+   "missing": 17
+  },
+  {
+   "day": "2025-10-27",
+   "rth_minutes": 365,
+   "missing": 25
+  },
+  {
+   "day": "2025-10-28",
+   "rth_minutes": 387,
+   "missing": 3
+  },
+  {
+   "day": "2025-10-29",
+   "rth_minutes": 383,
+   "missing": 7
+  },
+  {
+   "day": "2025-10-31",
+   "rth_minutes": 389,
+   "missing": 1
+  },
+  {
+   "day": "2025-11-03",
+   "rth_minutes": 386,
+   "missing": 4
+  },
+  {
+   "day": "2025-11-04",
+   "rth_minutes": 388,
+   "missing": 2
+  },
+  {
+   "day": "2025-11-05",
+   "rth_minutes": 383,
+   "missing": 7
+  },
+  {
+   "day": "2025-11-10",
+   "rth_minutes": 384,
+   "missing": 6
+  },
+  {
+   "day": "2025-11-11",
+   "rth_minutes": 345,
+   "missing": 45
+  },
+  {
+   "day": "2025-11-12",
+   "rth_minutes": 380,
+   "missing": 10
+  },
+  {
+   "day": "2025-11-24",
+   "rth_minutes": 389,
+   "missing": 1
+  },
+  {
+   "day": "2025-11-26",
+   "rth_minutes": 384,
+   "missing": 6
+  },
+  {
+   "day": "2025-12-01",
+   "rth_minutes": 382,
+   "missing": 8
+  },
+  {
+   "day": "2025-12-02",
+   "rth_minutes": 385,
+   "missing": 5
+  },
+  {
+   "day": "2025-12-03",
+   "rth_minutes": 384,
+   "missing": 6
+  },
+  {
+   "day": "2025-12-04",
+   "rth_minutes": 383,
+   "missing": 7
+  },
+  {
+   "day": "2025-12-05",
+   "rth_minutes": 380,
+   "missing": 10
+  },
+  {
+   "day": "2025-12-08",
+   "rth_minutes": 381,
+   "missing": 9
+  },
+  {
+   "day": "2025-12-09",
+   "rth_minutes": 389,
+   "missing": 1
+  },
+  {
+   "day": "2025-12-10",
+   "rth_minutes": 380,
+   "missing": 10
+  },
+  {
+   "day": "2025-12-11",
+   "rth_minutes": 382,
+   "missing": 8
+  },
+  {
+   "day": "2025-12-15",
+   "rth_minutes": 384,
+   "missing": 6
+  },
+  {
+   "day": "2025-12-17",
+   "rth_minutes": 386,
+   "missing": 4
+  },
+  {
+   "day": "2025-12-18",
+   "rth_minutes": 384,
+   "missing": 6
+  },
+  {
+   "day": "2025-12-19",
+   "rth_minutes": 388,
+   "missing": 2
+  },
+  {
+   "day": "2025-12-22",
+   "rth_minutes": 376,
+   "missing": 14
+  },
+  {
+   "day": "2025-12-23",
+   "rth_minutes": 353,
+   "missing": 37
+  },
+  {
+   "day": "2025-12-26",
+   "rth_minutes": 330,
+   "missing": 60
+  },
+  {
+   "day": "2025-12-29",
+   "rth_minutes": 372,
+   "missing": 18
+  },
+  {
+   "day": "2025-12-30",
+   "rth_minutes": 354,
+   "missing": 36
+  },
+  {
+   "day": "2025-12-31",
+   "rth_minutes": 369,
+   "missing": 21
+  },
+  {
+   "day": "2026-01-02",
+   "rth_minutes": 385,
+   "missing": 5
+  },
+  {
+   "day": "2026-01-05",
+   "rth_minutes": 356,
+   "missing": 34
+  },
+  {
+   "day": "2026-01-06",
+   "rth_minutes": 344,
+   "missing": 46
+  },
+  {
+   "day": "2026-01-07",
+   "rth_minutes": 386,
+   "missing": 4
+  },
+  {
+   "day": "2026-01-08",
+   "rth_minutes": 377,
+   "missing": 13
+  },
+  {
+   "day": "2026-01-09",
+   "rth_minutes": 373,
+   "missing": 17
+  },
+  {
+   "day": "2026-01-12",
+   "rth_minutes": 304,
+   "missing": 86
+  },
+  {
+   "day": "2026-01-13",
+   "rth_minutes": 386,
+   "missing": 4
+  },
+  {
+   "day": "2026-01-15",
+   "rth_minutes": 374,
+   "missing": 16
+  },
+  {
+   "day": "2026-01-16",
+   "rth_minutes": 365,
+   "missing": 25
+  },
+  {
+   "day": "2026-01-21",
+   "rth_minutes": 389,
+   "missing": 1
+  },
+  {
+   "day": "2026-01-22",
+   "rth_minutes": 358,
+   "missing": 32
+  },
+  {
+   "day": "2026-01-23",
+   "rth_minutes": 379,
+   "missing": 11
+  },
+  {
+   "day": "2026-01-26",
+   "rth_minutes": 367,
+   "missing": 23
+  },
+  {
+   "day": "2026-01-27",
+   "rth_minutes": 369,
+   "missing": 21
+  },
+  {
+   "day": "2026-01-28",
+   "rth_minutes": 371,
+   "missing": 19
+  },
+  {
+   "day": "2026-01-29",
+   "rth_minutes": 389,
+   "missing": 1
+  },
+  {
+   "day": "2026-02-02",
+   "rth_minutes": 384,
+   "missing": 6
+  },
+  {
+   "day": "2026-02-06",
+   "rth_minutes": 386,
+   "missing": 4
+  },
+  {
+   "day": "2026-02-09",
+   "rth_minutes": 387,
+   "missing": 3
+  },
+  {
+   "day": "2026-02-10",
+   "rth_minutes": 380,
+   "missing": 10
+  },
+  {
+   "day": "2026-02-11",
+   "rth_minutes": 386,
+   "missing": 4
+  },
+  {
+   "day": "2026-02-18",
+   "rth_minutes": 389,
+   "missing": 1
+  },
+  {
+   "day": "2026-02-24",
+   "rth_minutes": 382,
+   "missing": 8
+  },
+  {
+   "day": "2026-02-25",
+   "rth_minutes": 368,
+   "missing": 22
+  },
+  {
+   "day": "2026-03-04",
+   "rth_minutes": 388,
+   "missing": 2
+  },
+  {
+   "day": "2026-03-17",
+   "rth_minutes": 387,
+   "missing": 3
+  },
+  {
+   "day": "2026-03-18",
+   "rth_minutes": 389,
+   "missing": 1
+  },
+  {
+   "day": "2026-03-19",
+   "rth_minutes": 389,
+   "missing": 1
+  },
+  {
+   "day": "2026-03-25",
+   "rth_minutes": 389,
+   "missing": 1
+  },
+  {
+   "day": "2026-03-27",
+   "rth_minutes": 388,
+   "missing": 2
+  },
+  {
+   "day": "2026-04-01",
+   "rth_minutes": 384,
+   "missing": 6
+  },
+  {
+   "day": "2026-04-02",
+   "rth_minutes": 387,
+   "missing": 3
+  },
+  {
+   "day": "2026-04-06",
+   "rth_minutes": 377,
+   "missing": 13
+  },
+  {
+   "day": "2026-04-08",
+   "rth_minutes": 387,
+   "missing": 3
+  },
+  {
+   "day": "2026-04-09",
+   "rth_minutes": 386,
+   "missing": 4
+  },
+  {
+   "day": "2026-04-10",
+   "rth_minutes": 382,
+   "missing": 8
+  },
+  {
+   "day": "2026-04-13",
+   "rth_minutes": 386,
+   "missing": 4
+  },
+  {
+   "day": "2026-04-14",
+   "rth_minutes": 384,
+   "missing": 6
+  },
+  {
+   "day": "2026-04-15",
+   "rth_minutes": 381,
+   "missing": 9
+  },
+  {
+   "day": "2026-04-16",
+   "rth_minutes": 385,
+   "missing": 5
+  },
+  {
+   "day": "2026-04-17",
+   "rth_minutes": 389,
+   "missing": 1
+  },
+  {
+   "day": "2026-04-20",
+   "rth_minutes": 386,
+   "missing": 4
+  },
+  {
+   "day": "2026-04-22",
+   "rth_minutes": 374,
+   "missing": 16
+  },
+  {
+   "day": "2026-04-23",
+   "rth_minutes": 384,
+   "missing": 6
+  },
+  {
+   "day": "2026-04-24",
+   "rth_minutes": 382,
+   "missing": 8
+  },
+  {
+   "day": "2026-04-27",
+   "rth_minutes": 372,
+   "missing": 18
+  },
+  {
+   "day": "2026-04-28",
+   "rth_minutes": 382,
+   "missing": 8
+  },
+  {
+   "day": "2026-04-29",
+   "rth_minutes": 382,
+   "missing": 8
+  },
+  {
+   "day": "2026-04-30",
+   "rth_minutes": 355,
+   "missing": 35
+  },
+  {
+   "day": "2026-05-01",
+   "rth_minutes": 372,
+   "missing": 18
+  },
+  {
+   "day": "2026-05-04",
+   "rth_minutes": 369,
+   "missing": 21
+  },
+  {
+   "day": "2026-05-05",
+   "rth_minutes": 349,
+   "missing": 41
+  },
+  {
+   "day": "2026-05-06",
+   "rth_minutes": 362,
+   "missing": 28
+  },
+  {
+   "day": "2026-05-07",
+   "rth_minutes": 380,
+   "missing": 10
+  },
+  {
+   "day": "2026-05-08",
+   "rth_minutes": 378,
+   "missing": 12
+  },
+  {
+   "day": "2026-05-11",
+   "rth_minutes": 366,
+   "missing": 24
+  },
+  {
+   "day": "2026-05-12",
+   "rth_minutes": 384,
+   "missing": 6
+  },
+  {
+   "day": "2026-05-13",
+   "rth_minutes": 378,
+   "missing": 12
+  },
+  {
+   "day": "2026-05-14",
+   "rth_minutes": 386,
+   "missing": 4
+  },
+  {
+   "day": "2026-05-15",
+   "rth_minutes": 379,
+   "missing": 11
+  },
+  {
+   "day": "2026-05-18",
+   "rth_minutes": 387,
+   "missing": 3
+  },
+  {
+   "day": "2026-05-19",
+   "rth_minutes": 389,
+   "missing": 1
+  },
+  {
+   "day": "2026-05-20",
+   "rth_minutes": 385,
+   "missing": 5
+  },
+  {
+   "day": "2026-05-21",
+   "rth_minutes": 387,
+   "missing": 3
+  },
+  {
+   "day": "2026-05-22",
+   "rth_minutes": 373,
+   "missing": 17
+  },
+  {
+   "day": "2026-05-26",
+   "rth_minutes": 388,
+   "missing": 2
+  },
+  {
+   "day": "2026-05-27",
+   "rth_minutes": 382,
+   "missing": 8
+  },
+  {
+   "day": "2026-05-28",
+   "rth_minutes": 384,
+   "missing": 6
+  },
+  {
+   "day": "2026-05-29",
+   "rth_minutes": 386,
+   "missing": 4
+  },
+  {
+   "day": "2026-06-02",
+   "rth_minutes": 386,
+   "missing": 4
+  },
+  {
+   "day": "2026-06-03",
+   "rth_minutes": 375,
+   "missing": 15
+  },
+  {
+   "day": "2026-06-04",
+   "rth_minutes": 382,
+   "missing": 8
+  },
+  {
+   "day": "2026-06-08",
+   "rth_minutes": 385,
+   "missing": 5
+  },
+  {
+   "day": "2026-06-12",
+   "rth_minutes": 389,
+   "missing": 1
+  },
+  {
+   "day": "2026-06-15",
+   "rth_minutes": 382,
+   "missing": 8
+  },
+  {
+   "day": "2026-06-16",
+   "rth_minutes": 382,
+   "missing": 8
+  },
+  {
+   "day": "2026-06-17",
+   "rth_minutes": 387,
+   "missing": 3
+  },
+  {
+   "day": "2026-06-18",
+   "rth_minutes": 380,
+   "missing": 10
+  },
+  {
+   "day": "2026-06-22",
+   "rth_minutes": 382,
+   "missing": 8
+  },
+  {
+   "day": "2026-06-23",
+   "rth_minutes": 388,
+   "missing": 2
+  },
+  {
+   "day": "2026-06-24",
+   "rth_minutes": 389,
+   "missing": 1
+  },
+  {
+   "day": "2026-06-26",
+   "rth_minutes": 385,
+   "missing": 5
+  },
+  {
+   "day": "2026-06-29",
+   "rth_minutes": 368,
+   "missing": 22
+  },
+  {
+   "day": "2026-06-30",
+   "rth_minutes": 343,
+   "missing": 47
+  }
+ ],
+ "early_closes": [
+  {
+   "day": "2024-11-29",
+   "rth_minutes": 170
+  },
+  {
+   "day": "2024-12-24",
+   "rth_minutes": 214
+  },
+  {
+   "day": "2025-07-03",
+   "rth_minutes": 217
+  },
+  {
+   "day": "2025-11-28",
+   "rth_minutes": 235
+  },
+  {
+   "day": "2025-12-24",
+   "rth_minutes": 197
+  }
+ ],
+ "no_option_bars": [],
+ "contracts_per_session": null,
+ "known_option_gaps": [
+  "2024-02-26",
+  "2024-03-15"
+ ],
+ "premarket_missing": []
+}

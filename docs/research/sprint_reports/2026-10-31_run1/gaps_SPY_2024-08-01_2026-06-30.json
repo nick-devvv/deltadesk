@@ -1,0 +1,41 @@
+{
+ "symbol": "SPY",
+ "from": "2024-08-01",
+ "to": "2026-06-30",
+ "sessions": 479,
+ "no_bars": [],
+ "short_sessions": [],
+ "early_closes": [
+  {
+   "day": "2024-11-29",
+   "rth_minutes": 344
+  },
+  {
+   "day": "2024-12-24",
+   "rth_minutes": 332
+  },
+  {
+   "day": "2025-07-03",
+   "rth_minutes": 377
+  },
+  {
+   "day": "2025-11-28",
+   "rth_minutes": 379
+  },
+  {
+   "day": "2025-12-24",
+   "rth_minutes": 358
+  }
+ ],
+ "no_option_bars": [],
+ "contracts_per_session": {
+  "min": 48,
+  "median": 76,
+  "max": 140
+ },
+ "known_option_gaps": [
+  "2024-02-26",
+  "2024-03-15"
+ ],
+ "premarket_missing": []
+}
