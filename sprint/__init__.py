@@ -9,7 +9,8 @@ otherwise), with option prices from real Alpaca 1-minute bars (and trades when p
 Modules:
   periods   DEV / locked periods L1, L2 and the refusal rule (--locked + --frozen <spec sha256>, checked against git)
   data      cached bar loader, per-symbol series and per-day context (no network)
-  spread    half-spread model (logged chains if present, else 5% of premium for SPY/QQQ/IWM, 10% single stocks)
+  spread    half-spread model (logged chains if present, else 2% of premium for SPY/QQQ/IWM, 10% single stocks)
+  events    pre-registered FOMC and CPI dates (sources in the module) for the event-skip filters
   bs        Black-Scholes helpers (r = 0, 0DTE), implied vol solved from the option price, labeled BS-EST
   levels    the level map known at each minute + the made-up-levels generator
   daytype   day-type features (ADX/DI, efficiency, VWAP crosses, overlap, range/ATR, OR acceptance, trend score)

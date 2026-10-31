@@ -225,6 +225,19 @@ class Series:
         k = self.days.index(day)
         return self.days[max(0, k - n):k]
 
+    def sma_side(self, day, n=20, margin=0.0):
+        """Side rule known before `day`'s open: +1 if the prior session's close is above the n-day SMA of closes
+        ending at that close, -1 if below, 0 if equal (or, with a margin, if within +/-margin of the SMA; a close at
+        least `margin` beyond it counts), None with fewer than n prior sessions."""
+        prior = self.prior_days(day, n)
+        if len(prior) < n:
+            return None
+        closes = self.daily.loc[prior, "close"].to_numpy(float)
+        sma, last = float(closes.mean()), float(closes[-1])
+        if margin:
+            return 1 if last >= sma * (1 + margin) else -1 if last <= sma * (1 - margin) else 0
+        return 1 if last > sma else -1 if last < sma else 0
+
     def daily_atr(self, day, n=14):
         """Wilder ATR(14) of daily regular-hours bars before `day` (None until 14 prior sessions)."""
         prior = self.prior_days(day, 60)
@@ -240,8 +253,9 @@ class Series:
 class DayContext:
     """One symbol, one session: the stock arrays, indicators and that day's option tapes."""
 
-    def __init__(self, series, day, tapes=None, spread=None, early_close=None):
+    def __init__(self, series, day, tapes=None, spread=None, early_close=None, aux=None):
         self.series, self.sym, self.day = series, series.sym, day
+        self.aux = aux or {}                                      # other symbols' Series (e.g. VIXY for the VIX proxy)
         g = series.rth[day]
         self.o, self.h, self.l, self.c, self.v = (g[:, k] for k in range(5))
         self.vwap, self.vsd = series.vwap[day], series.vsd[day]

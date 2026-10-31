@@ -53,8 +53,8 @@ def test_runner_end_to_end(tmp_path, cache):
     assert len(rows) == 6 and [r["run_id"] for r in rows] == [f"e2e-{i:03d}" for i in range(1, 7)]
     assert all(r["tool"] == "DeskEngine" and r["period_tag"].startswith("DEV") and "MODELED-SPREAD" in r["slippage"] for r in rows)
     assert sum(int(r["trades"]) for r in rows) > 0
-    rep = (out / "report_2026-10-31.md").read_text()
-    assert "BACKTEST" in rep and "First answer" in rep and "Robustness on the top" in rep and "MODELED-SPREAD" in rep
+    rep = (out / "report_2026-10-31_e2e.md").read_text()
+    assert "BACKTEST" in rep and "Exit families side by side" in rep and "Robustness on the top" in rep and "MODELED-SPREAD" in rep
     assert "run " in printed and "exp$" in printed and str(out / "runs_t.csv") in printed
     with gzip.open(out / "trades_e2e_2026-10-31.csv.gz", "rt") as f:
         tr = list(csv.DictReader(f))

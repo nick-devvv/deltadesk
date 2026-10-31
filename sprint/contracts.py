@@ -8,7 +8,8 @@ At the decision time (end of the signal bar i):
   * keep |delta| inside the rule's band, pick the one nearest the target; ties -> the lower premium;
   * spread cap ~10% of price, only when the spread is MEASURED from logged chains (a modeled spread is not a quote).
 Rules: "d40-55t45" (base: 0.40-0.55, target 0.45), "d50-65t575" (variant: 0.50-0.65, target the midpoint 0.575),
-"d55-75t65" (the noise ledger's own band, for the noise entries).
+"d55-75t65" (the noise ledger's own band, for the noise entries), "d45-60t50" (Option Alpha T1's 0.50 delta, as the
+base band shifted up by 0.05: 0.45-0.60, target 0.50; OA itself takes the closest delta with no band).
 """
 import math
 
@@ -16,7 +17,8 @@ import numpy as np
 
 from . import bs
 
-RULES = {"d40-55t45": (0.40, 0.55, 0.45), "d50-65t575": (0.50, 0.65, 0.575), "d55-75t65": (0.55, 0.75, 0.65)}
+RULES = {"d40-55t45": (0.40, 0.55, 0.45), "d50-65t575": (0.50, 0.65, 0.575), "d55-75t65": (0.55, 0.75, 0.65),
+         "d45-60t50": (0.45, 0.60, 0.50)}
 MAX_AGE = 5
 
 

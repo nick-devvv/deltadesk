@@ -61,7 +61,7 @@ def ordered(trades):
     return sorted(trades, key=lambda t: (t["day"], t.get("entry_idx", 0), t["symbol"]))
 
 
-def summarize(trades):
+def summarize(trades, a=None, b=None):
     tr = ordered(trades)
     m = metrics(tr)
     if not tr:
@@ -79,7 +79,8 @@ def summarize(trades):
     m["sides"] = {s: metrics([t for t in tr if t["side"] == s]) for s in ("C", "P")}
     m["symbols"] = {s: metrics([t for t in tr if t["symbol"] == s]) for s in sorted({t["symbol"] for t in tr})}
     m["exit_reasons"] = dict(Counter(_reason(t["exit_reason"]) for t in tr).most_common())
-    m["stretches"] = by_stretch(tr)
+    m["stretches"] = by_stretch(tr, a, b)
+    m["blocks_2m"] = two_month_blocks(tr, a, b)
     m["without_best5"] = without_best(tr, 5)
     mfe = [t["opt_mfe_pct"] for t in tr]
     mae = [t["opt_mae_pct"] for t in tr]
@@ -94,7 +95,7 @@ def summarize(trades):
 
 def _reason(s):
     s = str(s)
-    for k in ("CEILING STOP", "BREAKEVEN STOP", "LOCK STOP", "GIVEBACK STOP", "LEVEL STOP", "1M PIVOT TRAIL", "5M PIVOT TRAIL",
+    for k in ("FIXED STOP", "FIXED TARGET", "CEILING STOP", "BREAKEVEN STOP", "LOCK STOP", "GIVEBACK STOP", "LEVEL STOP", "1M PIVOT TRAIL", "5M PIVOT TRAIL",
               "LEVEL TRAIL", "VWAP TRAIL", "EMA9 TRAIL", "NOISE STOP", "NOISE REVERSAL", "T1", "LEVEL TARGET", "LEVEL 1",
               "LEVEL 2", "LEVEL REJECTION", "IF FLAT", "ALL OUT"):
         if s.startswith(k):
@@ -102,11 +103,32 @@ def _reason(s):
     return s[:30]
 
 
-def by_stretch(trades):
+def by_stretch(trades, a=None, b=None):
+    """SPRINT_PLAN's stretches, clipped to the run's period [a, b] (a stretch outside the period is left out)."""
     out = {}
-    for name, a, b in STRETCHES:
-        sel = [t for t in trades if a.isoformat() <= t["day"] <= b.isoformat()]
-        out[name] = metrics(sel)
+    for name, x, y in STRETCHES:
+        if a is not None and (y < a or x > b):
+            continue
+        lo, hi = max(x, a) if a else x, min(y, b) if b else y
+        sel = [t for t in trades if lo.isoformat() <= t["day"] <= hi.isoformat()]
+        out[name if (lo, hi) == (x, y) else f"{name} ({lo:%b %d}-{hi:%b %d})"] = metrics(sel)
+    return out
+
+
+def two_month_blocks(trades, a=None, b=None):
+    """Consecutive two-calendar-month blocks from the period's first month (Option Alpha's '3 of 4 blocks' test)."""
+    if not trades and a is None:
+        return {}
+    days = sorted(t["day"] for t in trades)
+    a = a or date.fromisoformat(days[0])
+    b = b or date.fromisoformat(days[-1])
+    out, y, m = {}, a.year, a.month
+    while date(y, m, 1) <= b:
+        y2, m2 = (y + (m + 1 > 12), (m + 1 - 1) % 12 + 1)
+        end_y, end_m = (y2 + (m2 + 1 > 12), (m2 + 1 - 1) % 12 + 1)
+        lo, hi = date(y, m, 1).isoformat(), date(end_y, end_m, 1).isoformat()
+        out[f"{date(y, m, 1):%b %Y}-{date(y2, m2, 1):%b %Y}"] = metrics([t for t in trades if lo <= t["day"] < hi])
+        y, m = end_y, end_m
     return out
 
 
@@ -203,6 +225,12 @@ def beat_share(value, others):
 # ---------------------------------------------------------------- run log row
 def describe(run):
     x = run["exit"]
+    if x.stop == "fixed":
+        mech = ("desk fills: inside the bar, same-bar -> stop" if x.mechanics == "desk" else
+                "OA-LIKE: checked once a minute on the close (mid proxy), filled at the next minute's print")
+        tp = f"fixed +{x.fixed_target:.0%} of debit"
+        time = f"none (no tightening, no breakeven, no if-flat); all out {x.allout}"
+        return f"fixed -{x.fixed_stop:.0%} of debit; {mech}", tp, time, "none"
     stop = {"premium": "premium ceiling by time table (costs incl.)",
             "level": "setup level -/+ max($0.02,0.05ATR1m) on 1m close; skip if > ceiling; ceiling stays as premium stop",
             "noise": "noise checks max/min(band,VWAP) + reversal" + ("" if run["entry"].endswith("nocap") else " + 20% ceiling every minute")}[x.stop]
@@ -233,12 +261,14 @@ def csv_row(run, s, ts, period_tag, spread_label, notes=""):
 # ---------------------------------------------------------------- pass/fail against SPRINT_PLAN's robustness list
 def checklist(s, rob):
     st = s.get("stretches") or {}
+    bl = [v for v in (s.get("blocks_2m") or {}).values() if v.get("trades")]
     items = [("at least 60 trades", s.get("trades", 0) >= 60),
              ("PF >= 1.25", (s.get("profit_factor") or 0) >= 1.25),
              ("PF > 1.0 at 2x slippage", (s.get("pf_2x_slip") or 0) > 1.0),
              ("profitable in each stretch", all((v.get("net") or 0) > 0 for v in st.values()) if st else False),
              ("positive without best 5", ((s.get("without_best5") or {}).get("net") or 0) > 0),
-             ("both sides profitable", all((v.get("net") or 0) > 0 for v in (s.get("sides") or {}).values() if v.get("trades")))]
+             ("both sides profitable (sides traded)", all((v.get("net") or 0) > 0 for v in (s.get("sides") or {}).values() if v.get("trades"))),
+             (f"profitable two-month blocks: {sum(1 for v in bl if (v.get('net') or 0) > 0)} of {len(bl)} (info)", True)]
     if rob.get("nudge_min_pf") is not None:
         items.append(("every one-step nudge keeps PF > 1.1", rob["nudge_min_pf"] > 1.1))
     if rob.get("random_beat") is not None:

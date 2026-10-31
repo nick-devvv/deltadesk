@@ -7,6 +7,8 @@ no positions), the same throttle/retry, the same cache layout.
   python3 tools/sprint_pull.py --symbols SPY,QQQ,IWM --from 2024-08-01 --to 2026-06-30
   python3 tools/sprint_pull.py --symbols SPY,QQQ,IWM --from 2024-08-01 --to 2026-06-30 --trades     # + option trades
   python3 tools/sprint_pull.py --symbols SPY,QQQ,IWM --from 2024-08-01 --to 2026-06-30 --gaps-only
+  (--stock-only VIXY is the default: VIXY 1-minute stock bars, no options, as the labeled proxy for VIX in the
+   "VIX falling" filter of oa_crosscheck_v1; pass --stock-only "" to skip it)
 
 What it pulls for each symbol and date range:
   1. stock 1-minute bars 04:00-20:00 ET (raw, feed sip), month files, the range clipped to exactly [from, to] in ET
@@ -132,7 +134,7 @@ def pull_options(under, a, b, band=0.03, trades=False, trades_band=0.015, today=
     return out
 
 
-def gap_report(sym, a, b, out_dir=None):
+def gap_report(sym, a, b, out_dir=None, options=True):
     early = periods.early_closes()
     stock = D.read_stock(sym, a, b, PA.ROOT)
     by_day = {d: g for d, g in stock.groupby(stock["ts"].dt.date)} if stock is not None else {}
@@ -155,6 +157,8 @@ def gap_report(sym, a, b, out_dir=None):
         elif rth < 390:
             rep["short_sessions"].append({"day": d.isoformat(), "rth_minutes": rth, "missing": 390 - rth})
         f = PA.ROOT / "options" / sym / d.isoformat() / "bars.csv.gz"
+        if not options:
+            continue
         if not f.exists():
             rep["no_option_bars"].append(d.isoformat())
             continue
@@ -194,6 +198,7 @@ def main(argv=None):
     ap.add_argument("--trades-band", type=float, default=0.015)
     ap.add_argument("--feed", default="sip", choices=["sip", "iex"])
     ap.add_argument("--gaps-only", action="store_true")
+    ap.add_argument("--stock-only", default="VIXY", help="symbols pulled as stock bars only, no options (default VIXY)")
     ap.add_argument("--root", default=None, help="cache root (default data/alpaca)")
     ap.add_argument("--locked")
     ap.add_argument("--frozen")
@@ -208,19 +213,27 @@ def main(argv=None):
     if x.root:
         PA.ROOT = Path(x.root)
     syms = [s.strip().upper() for s in x.symbols.split(",") if s.strip()]
+    stock_only = [s.strip().upper() for s in (x.stock_only or "").split(",") if s.strip() and s.strip().upper() not in syms]
+    out_dir = (Path(x.root).parent if x.root else HERE / "data") / "sprint"
     n_days = len(sessions(a, b))
     print(f"sprint_pull: {','.join(syms)} {a}..{b} ({n_days} sessions), band {x.band:.1%}, trades {'on' if x.trades else 'off'}, "
-          f"cache {PA.ROOT}", flush=True)
+          f"stock bars only: {','.join(stock_only) or 'none'}, cache {PA.ROOT}", flush=True)
     for s in syms:
         if not x.gaps_only:
             print(s, "stocks", pull_stock(s, a, b, x.feed), flush=True)
             r = pull_options(s, a, b, x.band, x.trades, x.trades_band)
             print(s, "options", {k: (v if k != "no_stock_bars" else len(v)) for k, v in r.items()}, flush=True)
-        g = gap_report(s, a, b, HERE / "data" / "sprint")
+        g = gap_report(s, a, b, out_dir)
         print(f"{s}: {g['sessions']} sessions, {len(g['no_bars'])} weekdays without bars {g['no_bars'][:10]}, "
               f"{len(g['short_sessions'])} short sessions, {len(g['early_closes'])} early closes, "
               f"{len(g['no_option_bars'])} sessions without 0DTE bars {g['no_option_bars'][:10]}, contracts/session "
               f"{g['contracts_per_session']}, {disk_mb(s)} MB on disk -> {g.get('file')}", flush=True)
+    for s in stock_only:
+        if not x.gaps_only:
+            print(s, "stocks (no options)", pull_stock(s, a, b, x.feed), flush=True)
+        g = gap_report(s, a, b, out_dir, options=False)
+        print(f"{s}: {g['sessions']} sessions, {len(g['no_bars'])} weekdays without bars {g['no_bars'][:10]}, "
+              f"{len(g['short_sessions'])} short sessions, {disk_mb(s)} MB on disk -> {g.get('file')}", flush=True)
     sm = SP.from_chains(HERE / "data" / "chains", set(syms))
     print("spread model for the runner:", sm.describe(), flush=True)
     return 0

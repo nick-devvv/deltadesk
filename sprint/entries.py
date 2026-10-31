@@ -111,7 +111,15 @@ def orb(ctx, minutes, side="both"):
 
 # ---------------------------------------------------------------- noise band (reuses noiseband's math)
 def noise_bands(ctx):
-    """{check bar index: (upper, lower)} for the day, from noiseband.sigma_profile on regular-hours bars."""
+    """{check bar index: (upper, lower)} for the day, from noiseband.sigma_profile on regular-hours bars (cached per day)."""
+    hit = getattr(ctx, "_noise_bands", None)
+    if hit is not None:
+        return hit
+    ctx._noise_bands = _noise_bands(ctx)
+    return ctx._noise_bands
+
+
+def _noise_bands(ctx):
     import pandas as pd
     import noiseband
     s, d = ctx.series, ctx.day
@@ -252,7 +260,13 @@ def pd_retest(ctx, side="both"):
 def failed_break(ctx, side="both"):
     if side not in ("both", "C"):
         return []
-    lv = ctx.levels()
+    prev, pre = ctx.series.prev_day(ctx.day), ctx.series.pre.get(ctx.day)
+    base = {}                                                     # the same values the level map lists as PDL / PML
+    if prev:
+        base["PDL"] = prev["low"]
+    if pre:
+        base["PML"] = pre[1]
+    orl = {m: float(np.nanmin(ctx.l[:m])) for m in (15, 30) if not np.isnan(ctx.l[:m]).all()}
     out, used = [], set()
     pending = {}
     for i in range(DESK_FIRST, min(DESK_LAST, ctx.close_idx - 2) + 1):
@@ -260,7 +274,10 @@ def failed_break(ctx, side="both"):
         if math.isnan(c):
             continue
         a5 = ctx.atr5[i]
-        known = {k: px for px, k in lv.at(i - 1) if k in ("PDL", "PML", "OR15L", "OR30L")}
+        known = dict(base)                                        # levels known at the end of bar i - 1
+        for m, v in orl.items():
+            if i - 1 >= m - 1:
+                known[f"OR{m}L"] = v
         for k, (lvl, i0, low) in list(pending.items()):
             low = min(low, float(ctx.l[i]))
             pending[k] = (lvl, i0, low)
@@ -281,6 +298,8 @@ def failed_break(ctx, side="both"):
 # ---------------------------------------------------------------- reversal after a flush
 def flush(ctx, side="both"):
     out, done = [], set()
+    run_lo = np.fmin.accumulate(np.where(np.isnan(ctx.l), np.inf, ctx.l))
+    run_hi = np.fmax.accumulate(np.where(np.isnan(ctx.h), -np.inf, ctx.h))
     for sd in ("C", "P"):
         if side not in ("both", sd):
             continue
@@ -296,11 +315,11 @@ def flush(ctx, side="both"):
                 k_hi, k_lo = int(np.nanargmax(ctx.h[w])), int(np.nanargmin(ctx.l[w]))
                 if sd == "C":
                     lo = float(np.nanmin(ctx.l[w]))
-                    if np.nanmax(ctx.h[w]) - lo >= 1.5 * a5 and k_hi < k_lo and lo <= np.nanmin(ctx.l[:i + 1]) and spike:
+                    if np.nanmax(ctx.h[w]) - lo >= 1.5 * a5 and k_hi < k_lo and lo <= run_lo[i] and spike:
                         flush_i = i - 4 + k_lo
                 else:
                     hi = float(np.nanmax(ctx.h[w]))
-                    if hi - np.nanmin(ctx.l[w]) >= 1.5 * a5 and k_lo < k_hi and hi >= np.nanmax(ctx.h[:i + 1]) and spike:
+                    if hi - np.nanmin(ctx.l[w]) >= 1.5 * a5 and k_lo < k_hi and hi >= run_hi[i] and spike:
                         flush_i = i - 4 + k_hi
                 continue
             if flush_i is not None:

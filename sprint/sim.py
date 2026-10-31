@@ -19,6 +19,15 @@ Stop rules (`stop`):
            ceiling, the trade is SKIPPED. The ceiling also stays on as a hard premium stop.
   noise    the noise rules: at each half-hour check a close through max(upper, VWAP) / min(lower, VWAP) exits, a
            signal on the other side exits; the 20% ceiling acts every minute unless the signal is the no-cap twin.
+  fixed    Option Alpha's plain fixed premium stop/target (oa_crosscheck_v1): stop at debit x (1 - fixed_stop), target
+           at debit x (1 + fixed_target), where debit = the entry fill (traded price + half-spread, fees excluded) and
+           the trigger is the option's traded price (the mid proxy), as OA defines "% of debit". Nothing else: no
+           ceiling, no breakeven, no if-flat, no time tightening; all out at the run's time.
+             mechanics "desk"  (base) SPRINT_PLAN's fill rules: triggers act inside the bar, same-bar stop and
+                               target -> the stop, stop fills at the worse of the stop and the next real price.
+             mechanics "oa1m"  OA-LIKE (labeled): checked once per minute on the bar's close (the mid proxy) and
+                               filled at the next minute's print (its open), so a stop crossed between checks fills
+                               at the next price, never at the stop level.
 Take profit (`tp`):
   none     stop + time only.
   A        fixed T1 by the time-of-day table (premium target on the option's prices).
@@ -97,6 +106,9 @@ class ExitCfg:
     time: str = "a"
     allout: str = "15:25"
     contract: str = "d40-55t45"
+    fixed_stop: float = None
+    fixed_target: float = None
+    mechanics: str = "desk"
     table: tuple = TABLE
 
     @classmethod
@@ -212,9 +224,10 @@ def simulate(ctx, sig, cfg, levels=None, tape=None, cinfo=None, k_plan=1):
     trend = dt.trend_aligned(j, side)
     feats = dt.features(j)
     noise_mode = cfg.stop == "noise"
+    fixed = cfg.stop == "fixed"
     w0 = window(cfg.table, dec)
-    no_tight = cfg.time == "b" or (cfg.time == "d" and trend) or noise_mode
-    ceiling = (0.20 if sig.info.get("cap", True) else None) if noise_mode else w0[2]
+    no_tight = cfg.time == "b" or (cfg.time == "d" and trend) or noise_mode or fixed
+    ceiling = (0.20 if sig.info.get("cap", True) else None) if noise_mode else (None if fixed else w0[2])
     tp = cfg.tp
     if tp == "D":
         use_c = trend or ((feats.get("rvol") or 0) >= 1.5)
@@ -268,6 +281,11 @@ def simulate(ctx, sig, cfg, levels=None, tape=None, cinfo=None, k_plan=1):
     C = b_in + k_plan * hs_in + FEE / MULT
     S_in = float(ctx.o[e]) if not math.isnan(ctx.o[e]) else S
     trig = lambda g: costs.trigger(C * (1 + g))
+    debit = b_in + k_plan * hs_in
+    fx_stop = fx_tgt = None
+    if fixed:                                                  # Option Alpha's definition: % of the debit, on the price
+        fx_stop, fx_tgt = debit * (1 - cfg.fixed_stop), debit * (1 + cfg.fixed_target)
+        risk_o = C - costs.proceeds(fx_stop)
     if risk_o is None and ceiling is not None:
         risk_o = C * ceiling
     planned_risk = (risk_o if risk_o is not None else (C - costs.proceeds(reprice(stop_s)) if stop_s is not None else None))
@@ -281,13 +299,18 @@ def simulate(ctx, sig, cfg, levels=None, tape=None, cinfo=None, k_plan=1):
         stock_stops["LEVEL STOP"] = stop_s
     t1 = w0[4] if tp == "A" else None
     prem_tgt = trig(t1) if t1 is not None else None
+    oa_check = fixed and cfg.mechanics == "oa1m"
+    fx_name = (f"FIXED STOP -{cfg.fixed_stop:.0%}", f"FIXED TARGET +{cfg.fixed_target:.0%}") if fixed else None
+    if fixed and not oa_check:
+        prem[fx_name[0]] = fx_stop
+        prem_tgt = fx_tgt
     be_list = []
-    if cfg.time == "a" and not noise_mode:
+    if cfg.time == "a" and not noise_mode and not fixed:
         be_list.append(w0[3])
     if trail.startswith("be") and trail[2:].isdigit():
         be_list.append(int(trail[2:]) / 100)
     be_pct = min(be_list) if be_list else None
-    use_flat = not noise_mode and (cfg.time in ("a", "c") or (cfg.time == "d" and not trend))
+    use_flat = not noise_mode and not fixed and (cfg.time in ("a", "c") or (cfg.time == "d" and not trend))
     flat_idx = e + w0[5] - 1 if use_flat else None
     stock_tgt = tgt_s if tp in ("B", "C", "E") else None
     c_state = None
@@ -362,7 +385,7 @@ def simulate(ctx, sig, cfg, levels=None, tape=None, cinfo=None, k_plan=1):
             continue
         if p_tgt:
             basis, _how = tape.target_basis(i, prem_tgt)
-            leg(qty, basis, i, f"T1 +{t1:.0%}", False)
+            leg(qty, basis, i, f"T1 +{t1:.0%}" if t1 is not None else fx_name[1], False)
             qty = 0.0
             exit_i = i
             break
@@ -458,6 +481,11 @@ def simulate(ctx, sig, cfg, levels=None, tape=None, cinfo=None, k_plan=1):
                             c_state["phase"] = 2
                     elif not beyond:
                         c_state["phase"] = 3
+        if oa_check and has and pending is None:             # OA-LIKE: one check per minute on the close, next-minute fill
+            if tape.c[i] <= fx_stop:
+                pending = (qty, f"{fx_name[0]} (OA-LIKE 1-min check)", True)
+            elif tape.c[i] >= fx_tgt:
+                pending = (qty, f"{fx_name[1]} (OA-LIKE 1-min check)", False)
         if flat_idx is not None and i >= flat_idx:
             flat_idx = None
             if not be_hit and (last_px is None or costs.proceeds(last_px) <= C):

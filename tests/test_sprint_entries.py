@@ -191,3 +191,15 @@ def test_contract_picker_uses_bs_est_delta_band_and_only_past_prices():
     else:
         assert why.startswith("no contract")
     assert contracts.pick(ctx, "C", 0)[0] is None or contracts.pick(ctx, "C", 0)[1]["px"] == contracts.pick(ctx, "C", 0)[0].last_close(0)
+
+
+def test_failed_break_support_levels_match_the_level_map():
+    ctx = _failed_break_ctx()
+    lm = ctx.levels()
+    for i in (20, 40, 100):
+        want = {k: px for px, k in lm.at(i - 1) if k in ("PDL", "PML", "OR15L", "OR30L")}
+        prev, pre = ctx.series.prev_day(ctx.day), ctx.series.pre.get(ctx.day)
+        got = {"PDL": prev["low"], "PML": pre[1], "OR15L": float(np.nanmin(ctx.l[:15]))}
+        if i - 1 >= 29:
+            got["OR30L"] = float(np.nanmin(ctx.l[:30]))
+        assert {k: round(v, 4) for k, v in got.items()} == want

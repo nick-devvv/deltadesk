@@ -12,7 +12,7 @@ Every feature at index i uses only bars finished by the end of regular-hours bar
   rvol              regular-hours volume so far / mean volume of the same minutes over up to 14 prior sessions (>= 10)
   noise_trend       noise_trend's score with the conditions computable from bars: (b) 09:30-10:00 volume >= 1.5x
                     its 14-session average, (c) |09:30-10:00 return| above its 14-session average, (d) FOMC day from
-                    the dated list below (CPI/jobs unknown, so (d) is True on an FOMC day and unknown otherwise);
+                    sprint/events.py (CPI/jobs unknown here, so (d) is True on an FOMC day and unknown otherwise);
                     (a) VIX is unknown in the backtest (no VIX history in the Alpaca pull). Trade = >= 2 known true.
   news              unknown in the backtest (None): no point-in-time news archive for 2024-2026.
 Pre-registered day-type rule (2026-10-31, before any run):
@@ -27,19 +27,18 @@ import math
 import numpy as np
 
 ADX_MIN, ER_MIN, VWAP_X_MAX, OVERLAP_MAX = 25.0, 0.35, 2, 0.60
-# FOMC statement days. 2026 from config/v4.json; 2024-2025 from the Federal Reserve's published calendars (verify).
-FOMC = {"2024-09-18", "2024-11-07", "2024-12-18", "2025-01-29", "2025-03-19", "2025-05-07", "2025-06-18", "2025-07-30",
-        "2025-09-17", "2025-10-29", "2025-12-10"}
 
 
 def _fomc_days():
+    """FOMC statement days from sprint/events.py (verified against federalreserve.gov) plus config/v4.json."""
+    from . import events
     try:
         import json
         from pathlib import Path
         j = json.loads((Path(__file__).resolve().parents[1] / "config" / "v4.json").read_text())
-        return FOMC | set(j.get("fomc_decision_days") or [])
+        return set(events.FOMC) | set(j.get("fomc_decision_days") or [])
     except (OSError, ValueError):
-        return set(FOMC)
+        return set(events.FOMC)
 
 
 def efficiency(c, i, n=30):

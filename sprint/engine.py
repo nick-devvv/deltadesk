@@ -11,6 +11,19 @@ Filters (entry-level, pre-registered in SPRINT_PLAN "Day type"):
   chop2        at most 2 trades on a day whose day_type is "chop" at the decision
   trend_only   only when daytype.trend_aligned at the decision
   noise_trend  only when the bar-computable noise_trend score says trade
+  sma20_side   calls only when the prior session's close is above its 20-day SMA (closes ending at that close), puts
+               only when below (the symbol's own daily closes; for SPY this is Option Alpha's SPY SMA(20) side rule)
+  sma20_side_1pct  the same with a 1% margin: calls only when the prior close is at least 1% above the SMA, puts only
+               when at least 1% below, no trade in between
+  skip_fomc    no entries on an FOMC statement day (sprint/events.py)
+  skip_fomc_cpi  no entries on an FOMC statement day or a CPI release day (sprint/events.py, sources listed there)
+  vixy_falling "VIX falling" (Option Alpha optimizer lead on its run 023, in-sample there): at the decision, VIXY's last
+               finished 1-minute close (at or before the signal bar) is below VIXY's prior regular-session close.
+               PROXY: VIXY (Alpaca has no VIX index). Applied as stated to calls and puts alike (no mirror given).
+  gap_side_075 open-gap side rule (the optimizer's second lead): calls only when today's 09:30 open vs the prior
+               close is above 0% and at most +0.75%, puts only when below 0% and at least -0.75% (the symbol's own)
+An event day outside the calendar's coverage is not traded by these filters (counted as "event calendar unknown").
+Specs may give a grid value as an object to set several fields together (e.g. a stop/target pair).
 """
 import csv
 import gzip
@@ -22,6 +35,8 @@ import time
 import zlib
 from collections import Counter, defaultdict
 from dataclasses import replace
+
+import numpy as np
 
 from . import contracts, data, entries
 from .sim import ExitCfg, simulate
@@ -53,7 +68,12 @@ def expand(spec):
         grid = blk["grid"]
         keys = list(grid)
         for combo in itertools.product(*(grid[k] for k in keys)):
-            cfg = dict(d, **dict(zip(keys, combo)))
+            cfg = dict(d)
+            for k, v in zip(keys, combo):
+                if isinstance(v, dict):
+                    cfg.update(v)                                 # a combo: several fields that move together
+                else:
+                    cfg[k] = v
             r = {"block": blk["name"], "entry": cfg["entry"], "side": cfg.get("side", "both"), "symbols": tuple(cfg.get("symbols") or syms),
                  "filters": tuple(cfg.get("filters") or ()), "exit": ExitCfg.from_dict(cfg)}
             k = run_key(r)
@@ -81,6 +101,45 @@ def _filters_ok(r, ctx, sig, day_count):
         return "not a trend day (trend_only)"
     if "noise_trend" in fs and not f["noise_trend"]["trade"]:
         return "noise_trend score < 2"
+    for name, margin in (("sma20_side", 0.0), ("sma20_side_1pct", 0.01)):
+        if name in fs:
+            sd = ctx.series.sma_side(ctx.day, 20, margin)
+            if sd is None:
+                return "side rule: fewer than 20 prior sessions"
+            if sd == 0 and margin:
+                return "side rule: prior close within 1% of the 20-day SMA"
+            if sd != (1 if sig.side == "C" else -1):
+                return "side rule: prior close on the wrong side of the 20-day SMA"
+    if "skip_fomc" in fs or "skip_fomc_cpi" in fs:
+        from . import events
+        fo = events.is_fomc(ctx.day)
+        cp = events.is_cpi(ctx.day) if "skip_fomc_cpi" in fs else False
+        if fo is None or cp is None:
+            return "event calendar unknown for this date"
+        if fo:
+            return "FOMC day skipped"
+        if cp:
+            return "CPI day skipped"
+    if "vixy_falling" in fs:
+        vx = ctx.aux.get("VIXY")
+        if vx is None or ctx.day not in vx.rth:
+            return "no VIXY bars for the day (VIX proxy)"
+        pc = vx.prev_day(ctx.day)
+        if pc is None:
+            return "no VIXY prior close (VIX proxy)"
+        closes = vx.rth[ctx.day][:sig.idx + 1, 3]
+        closes = closes[~np.isnan(closes)]
+        if not len(closes):
+            return "no VIXY bar yet today (VIX proxy)"
+        if not closes[-1] < pc["close"]:
+            return "VIX proxy (VIXY) not below its prior close"
+    if "gap_side_075" in fs:
+        prev = ctx.series.prev_day(ctx.day)
+        if prev is None or np.isnan(ctx.o[0]):
+            return "no prior close or open for the gap rule"
+        g = round(float(ctx.o[0]) / prev["close"] - 1, 10)        # exact at the 0.75% edge despite float noise
+        if not ((0 < g <= 0.0075) if sig.side == "C" else (-0.0075 <= g < 0)):
+            return "gap outside 0 to +/-0.75% for this side"
     return None
 
 
@@ -128,6 +187,12 @@ def run_pass(runs, a, b, root=None, spread=None, progress=None, writer=None, lim
     res = {r["run_id"]: {"trades": [], "skips": Counter(), "signals": 0} for r in runs}
     sessions = {}
     syms = sorted({s for r in runs for s in r["symbols"]})
+    aux = {}
+    if any("vixy_falling" in (r.get("filters") or ()) for r in runs):
+        vdf = data.read_stock("VIXY", a, b, root)                 # the labeled VIX proxy (stock bars only)
+        aux["VIXY"] = data.Series("VIXY", vdf) if vdf is not None else None
+        if progress:
+            progress(f"  VIX proxy: VIXY {'loaded, ' + str(len(aux['VIXY'].days)) + ' sessions' if aux['VIXY'] else 'MISSING (vixy_falling skips every signal)'}")
     t0 = time.time()
     for sym in syms:
         rs = [r for r in runs if sym in r["symbols"]]
@@ -140,7 +205,8 @@ def run_pass(runs, a, b, root=None, spread=None, progress=None, writer=None, lim
         sessions[sym] = [d.isoformat() for d in days]
         for n, day in enumerate(days):
             tapes = data.read_option_day(sym, day, root) if day in odays else {}
-            ctx = data.DayContext(series, day, tapes, spread, early_close=None if early_close is None else day.isoformat() in early_close)
+            ctx = data.DayContext(series, day, tapes, spread, early_close=None if early_close is None else day.isoformat() in early_close,
+                                  aux=aux)
             sig_cache, pick_cache = {}, {}
             for r in rs:
                 rid = r["run_id"]
@@ -206,6 +272,8 @@ NUDGE_STEPS = {
     "gb": ["gb20", "gb30", "gb40", "gb50", "gb60"],
     "hl": ["hl1m", "hl5m"],
     "allout": ["15:25", "15:50"],
+    "fixed_stop": [0.10, 0.15, 0.20, 0.25, 0.30, 0.40, 0.50, 0.60],
+    "fixed_target": [0.20, 0.30, 0.40, 0.45, 0.60, 0.75, 0.90, 1.00, 1.25],
 }
 
 
@@ -233,6 +301,10 @@ def nudges(r):
             out.append(("trail", v, dict(r, exit=replace(x, trail=v))))
     for v in _neighbors(NUDGE_STEPS["allout"], x.allout):
         out.append(("allout", v, dict(r, exit=replace(x, allout=v))))
+    if x.stop == "fixed":
+        for k in ("fixed_stop", "fixed_target"):
+            for v in _neighbors(NUDGE_STEPS[k], round(float(getattr(x, k)), 2)):
+                out.append((k, v, dict(r, exit=replace(x, **{k: v}))))
     return out
 
 

@@ -2,6 +2,8 @@
 "Periods").
 
   DEV = 2024-08-01 .. 2026-06-30   free to explore
+  NOT_SEEN_BY_OA = 2024-08-01 .. 2025-10-29   the part of DEV Option Alpha never saw (its window began 2025-10-30);
+                                   used to cross-check Option Alpha's rules in the desk engine
   L1  = 2026-07-01 .. 2026-10-30   locked
   L2  = 2024-02-01 .. 2024-07-31   locked
 
@@ -24,7 +26,10 @@ REPO = Path(__file__).resolve().parents[1]
 
 DEV = (date(2024, 8, 1), date(2026, 6, 30))
 LOCKED = {"L1": (date(2026, 7, 1), date(2026, 10, 30)), "L2": (date(2024, 2, 1), date(2024, 7, 31))}
-PERIODS = {"DEV": DEV, **LOCKED}
+NOT_SEEN_BY_OA = (date(2024, 8, 1), date(2025, 10, 29))    # inside DEV; the part of it Option Alpha never saw
+PERIODS = {"DEV": DEV, "NOT_SEEN_BY_OA": NOT_SEEN_BY_OA, **LOCKED}
+for _k, (_a, _b) in PERIODS.items():                        # every named non-locked period lies inside DEV
+    assert _k in LOCKED or (DEV[0] <= _a <= _b <= DEV[1]), _k
 STRETCHES = [("Aug-Dec 2024", date(2024, 8, 1), date(2024, 12, 31)), ("2025", date(2025, 1, 1), date(2025, 12, 31)),
              ("Jan-Jun 2026", date(2026, 1, 1), date(2026, 6, 30))]
 
@@ -107,7 +112,7 @@ def guard(a, b, locked=None, frozen=None, spec_path=None, repo=None):
 def period_range(name):
     name = name.upper()
     if name not in PERIODS:
-        raise ValueError(f"unknown period {name} (DEV, L1, L2)")
+        raise ValueError(f"unknown period {name} ({', '.join(PERIODS)})")
     return PERIODS[name]
 
 

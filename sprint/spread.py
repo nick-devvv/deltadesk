@@ -6,7 +6,8 @@ half-spread comes from:
      present: 0DTE rows with a valid two-sided quote, median half-spread in dollars per underlying, by premium bucket
      (mid) and time-of-day bucket (09:30-10:00, 10:00-15:00, 15:00-16:00). A cell needs MIN_CELL rows, otherwise the
      premium-bucket median over all times is used, otherwise the default below.
-  2. MODELED-SPREAD (default): 5% of the premium for SPY/QQQ/IWM (index ETFs), 10% for single stocks. Floor: half a
+  2. MODELED-SPREAD (default): 2% of the premium for SPY/QQQ/IWM (index ETFs; amended from 5% on 2026-10-31 before any
+     run, see SPRINT_PLAN), 10% for single stocks. Floor: half a
      $0.01 tick ($0.005), because a listed option spread can't be under one tick.
   3. Sensitivity only (never the default): a spec's "spread_pct" or the runner's --spread-pct sets the half-spread
      to that share of the premium for every symbol, labeled "MODELED-SPREAD x% (sensitivity)" in the run log.
@@ -53,7 +54,7 @@ class SpreadModel:
     def describe(self):
         if self.pct is not None:
             return (f"MODELED-SPREAD {self.pct:.1%} of premium for every symbol (a SENSITIVITY run, not the pre-registered "
-                    f"5% default), floor ${TICK_HALF}")
+                    f"{DEFAULT_PCT_INDEX:.0%} default), floor ${TICK_HALF}")
         if not self.table:
             return (f"MODELED-SPREAD: half-spread = {DEFAULT_PCT_INDEX:.0%} of premium (SPY/QQQ/IWM), "
                     f"{DEFAULT_PCT_STOCK:.0%} single stocks, floor ${TICK_HALF}")
