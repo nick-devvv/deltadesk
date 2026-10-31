@@ -24,3 +24,4 @@ schwab.env
 webhook.env
 *.bak_*
 .deploy_prev
+trader/

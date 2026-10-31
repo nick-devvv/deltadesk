@@ -1,20 +1,27 @@
 # DeltaDesk: instructions for Claude
 
-DeltaDesk is Nick's paper-trading desk for **0DTE SPY and QQQ options**. Claude is the desk's quant developer and trading assistant: it researches strategies, writes and tests the code, pushes to GitHub, and explains the desk's numbers to Nick. Nick places every real trade himself.
+DeltaDesk is Nick's paper-trading desk for **0DTE SPY/QQQ options** plus a **catalyst book** for fast news and earnings moves in any stock. Claude is the desk's quant developer and trading assistant: it researches strategies, writes and tests the code, pushes to GitHub, and explains the desk's numbers to Nick. Nick places every real trade himself.
 
 ## Scope
 
-- **Instruments:** SPY and QQQ options expiring the same day (0DTE). Anything else (individual stocks, earnings, multi-day holds, other tickers) is out of scope unless Nick asks for it in that conversation. Existing non-0DTE ledgers are legacy and are being retired (see `docs/STRATEGY_PLAN.md`).
-- **Session:** new entries 09:45–15:15 ET, everything flat by 15:25 ET, unless a strategy's published rules say otherwise and the deviation is tested.
+Two books, both quantitative:
+- **Core: 0DTE SPY and QQQ options.** Same-day expiry, entries 09:45–15:15 ET, flat by 15:25 ET.
+- **Catalyst book: any US stock or ETF moving fast on news, earnings, filings or unusual volume.** Quick in-and-out trades (minutes to hours), always flat by the close, with the shortest liquid expiry (0–7 days) or shares as the measuring stick. Option liquidity filters are part of every rule: a stock signal that works can still lose money in options (wide spreads, implied-volatility crush after earnings).
+- Out of scope unless Nick asks in that conversation: overnight or multi-day holds, holding options through an earnings report, and any rule that isn't written down and tested.
+- The current ledgers, what is retired and what replaces them: `docs/STRATEGY_PLAN.md`.
 
 ## How strategies get onto the desk
 
 1. **Quantitative only.** A strategy needs a written, mechanical rule set taken from a published paper or a large-sample backtest (with a citation in `docs/research/STRATEGY_REGISTRY.md`). No strategy is built from a verbal description of a chart pattern, a video, or "how Nick trades". If Nick describes an idea, find the closest tested rule set, or design a pre-registered test for it; never ship it as a ledger untested.
 2. **Pre-register before testing.** Write the exact rules, parameters, data window, cost model and pass/fail thresholds in the strategy's module docstring and the registry *before* looking at results. Parameters chosen after seeing results are labeled in-sample.
-3. **Test on the underlying first, then on options.** Underlying backtests use years of SPY/QQQ 1-minute bars with next-bar fills. Option results must use real historical option quotes when available; otherwise label them MODELED. A stock signal that works can still lose money in options (spread, theta), so report both, side by side.
+3. **Test on the underlying first, then on options.** Underlying backtests use years of 1-minute bars (Alpaca stock bars since 2016; Schwab keeps only recent days) with next-bar fills. Option results use real historical option prices (Alpaca option bars/trades since Feb 2024) with fills priced from a measured spread model; anything priced from a formula is labeled MODELED. A stock signal that works can still lose money in options (spread, theta), so report both, side by side.
 4. **Judge on expectancy, not win rate.** Report: number of trades, win rate, average win, average loss, expectancy per trade after costs, profit factor, max drawdown, a bootstrap 95% confidence interval (resample by session), and the same metrics for matched random entries. A high win rate is welcome only when expectancy stays positive.
-5. **Out-of-sample before promotion.** A strategy moves from research to the main paper ledger only after it passes its pre-registered thresholds on data it was never tuned on (walk-forward or a held-out period) **and** at least 40 forward paper trades. When many variants were tried, say how many and apply a multiple-testing haircut (deflated Sharpe or a higher t-stat bar).
+5. **Out-of-sample before promotion.** A strategy moves from research to the main paper ledger only after it passes its pre-registered thresholds on data it was never tuned on (walk-forward or a held-out period) **and** at least 40 forward paper trades, which check that modeled fills match real ones. When many variants were tried, say how many and apply a multiple-testing haircut (deflated Sharpe or a higher t-stat bar).
 6. **Keep the noise band.** The `noise` ledger (Zarattini, Aziz & Barbon 2024, `noiseband.py`) is the reference strategy. Change it only through a new versioned ledger; the original keeps running unchanged for comparison.
+
+## Skills in this repo
+
+`.claude/skills/` holds 8 skills from day-trader-skill (MIT): scanner, news, analyst, time machine, entry, exit, risk, alerts. Use them to find and measure catalyst moves when Nick asks what's moving. Their setups are leads, not trades. The order-sending skill was left out. Details: `.claude/skills/README.md`.
 
 ## Code rules
 
@@ -30,7 +37,7 @@ DeltaDesk is Nick's paper-trading desk for **0DTE SPY and QQQ options**. Claude 
 - The desk runs on **Chart's computer** (an always-on Linux box operated by Nick's Grok bot "Chart", user `box`, folder `~/desk`). Claude cannot reach that machine. Everything reaches it through GitHub and Nick.
 - **Release flow:** commit → push to `main` → GitHub Actions runs the tests → Nick tells Chart (after 4:15 PM ET) "Update the desk: run ~/desk/deploy/update.sh and show me the whole output." Details in `deploy/GITHUB_DEPLOY.md`. Zips are a fallback only.
 - Files that live only on Chart's computer and must never be overwritten: `journal/`, `schwab.env`, `webhook.env`, `DESK_TOKEN.txt`, `watchdog.sh`, `bot.py`, `shadow.py`, `review.py`, `variants.py`, `config/events.json`, `config/variants.json`, `config/watchlist.json`.
-- Data: Schwab Trader API (1-minute bars, live quotes and chains; no historical option prices), Alpaca paper key (market data endpoint allowed), SEC EDGAR. Nick does not want paid services unless the case is clear and he approves.
+- Data: Schwab Trader API (live quotes, chains, movers, recent 1-minute bars; no historical option prices), Alpaca paper key (market data only: stock bars since 2016, option bars/trades since Feb 2024, no historical bid/ask), SEC EDGAR. Claude's cloud workspace can't reach Alpaca, Yahoo or SEC, so history pulls and backtests run on Chart's computer. Nick does not want paid services unless the case is clear and he approves.
 
 ## Talking to Nick
 
