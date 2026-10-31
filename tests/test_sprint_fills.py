@@ -157,7 +157,7 @@ def test_spread_model_default_measured_from_chains_and_sensitivity(tmp_path):
     import gzip as _gz
     from sprint import spread as SP
     m = SP.SpreadModel()
-    assert m.half_spread("SPY", 2.0) == (pytest.approx(0.10), "MODELED-SPREAD")          # 5% of premium
+    assert m.half_spread("SPY", 2.0) == (pytest.approx(0.04), "MODELED-SPREAD")          # 2% of premium
     assert m.half_spread("NVDA", 2.0)[0] == pytest.approx(0.20)                          # 10% single stocks
     assert m.half_spread("SPY", 0.05)[0] == SP.TICK_HALF and m.label == "MODELED-SPREAD"
     assert SP.from_chains(tmp_path / "missing").label == "MODELED-SPREAD"

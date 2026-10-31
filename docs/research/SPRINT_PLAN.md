@@ -24,13 +24,15 @@ Maximize profit after costs, per trade and in total, with drawdown under control
 **Option Alpha:** fills at mid plus slippage. Base slippage $0.03 per contract on entries and on exits. If OA's stops fill at the stop level or at mid without slippage, add $0.03 more on stop exits. "2x slippage" = $0.06 base and +$0.06 on stops. Fees ($0.04/contract/side by default) are added back to P/L in the log.
 
 **Desk engine:**
-- Long options are bought at the ask and sold at the bid when quotes are logged. On Alpaca bars and trades (no historical quotes), fills are the trade/bar price ± k × the half-spread from the spread model, with k = 1 as base and k = 2 as "2x slippage". The half-spread uses the desk's logged chains when present, otherwise a default of 5% of premium for SPY/QQQ/IWM and 10% for single stocks, labeled MODELED-SPREAD.
+- Long options are bought at the ask and sold at the bid when quotes are logged. On Alpaca bars and trades (no historical quotes), fills are the trade/bar price ± k × the half-spread from the spread model, with k = 1 as base and k = 2 as "2x slippage". The half-spread uses the desk's logged chains when present, otherwise a default of 2% of premium for SPY/QQQ/IWM and 10% for single stocks, labeled MODELED-SPREAD.
 - Fees: $0.65 per contract per side.
 - **Same-bar stop and target:** if a stop and a target both fall inside the same 1-minute bar, the stop counts.
 - **Stop fills:** a stop fills at the worse of the stop price and the next real price after it, plus slippage. A fill is never at a price the option did not trade or quote.
 - **No quote:** if the option has no trade or quote in a minute, no fill is assumed in that minute.
 - **Signals and levels:** signals use finished 1-minute (or 5-minute) bars only. Levels use only data known at entry.
 - **Entries:** at the next bar after the signal.
+
+**Amendment, 2026-10-31, before any desk-engine run:** the SPY/QQQ/IWM default half-spread changed from 5% to 2% of premium. Option Alpha's T1a fills, at mid + $0.03, sat at the ask and bid on an average premium of about $1.44, so the real half-spread is at most about $0.03 (2%). 5% (a 10% round trip) is kept as a stress run.
 
 ## Levels (known at entry)
 

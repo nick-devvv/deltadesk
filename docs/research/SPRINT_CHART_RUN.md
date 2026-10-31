@@ -8,11 +8,11 @@ This runs the sprint's first backtest (`sprint/specs/orb_exits_v1.json`, 195 run
 | --- | --- | --- |
 | Clone + venv + sprint tests | 2-5 min | about 300 MB (venv) |
 | Pull SPY, QQQ, IWM, 2024-08-01 to 2026-06-30: stock bars 04:00-20:00 ET and 0DTE option bars within ±3% of the open | 30-60 min (about 3,000-4,000 requests under the 200/min free-plan limit) | 0.5-1.5 GB |
-| Run the spec (195 runs, then robustness on the top 5) | 10-30 min, under 2 GB of memory | about 20 MB of results |
+| Run the spec twice (195 runs each: base cost and 5% stress; robustness on the top 5) | 20-60 min, under 2 GB of memory | about 20 MB of results |
 
 Estimates come from timing the engine on synthetic data of the same shape (195 runs over 120 symbol-sessions took 30 s here; the real run has 1,440 symbol-sessions and longer trades). The pull is resumable: if it stops, run the same command again and it continues where it left off.
 
-The run uses the pre-registered cost model: a half-spread of **5% of the premium** on every fill (MODELED-SPREAD), because the desk's chain logs (which would give MEASURED-SPREAD) only start on 2026-11-02 and don't cover the development period. Option trades (for exact stop fills) are optional and not part of this first run; without them a stop that trades through inside a minute fills at the stop price, and a stop gapped through fills at the next bar's open.
+The run uses the pre-registered cost model: a half-spread of **2% of the premium** on every fill (MODELED-SPREAD; amended from 5% before any run, see SPRINT_PLAN), plus a stress rerun at 5%, because the desk's chain logs (which would give MEASURED-SPREAD) only start on 2026-11-02 and don't cover the development period. Option trades (for exact stop fills) are optional and not part of this first run; without them a stop that trades through inside a minute fills at the stop price, and a stop gapped through fills at the next bar's open.
 
 ## Message for Chart (one paste)
 
@@ -33,8 +33,10 @@ If a step fails, show the error and stop. Don't change any code; re-running the 
    cd ~/sprint && .venv/bin/python tools/sprint_pull.py --symbols SPY,QQQ,IWM --from 2024-08-01 --to 2026-06-30 2>&1 | tail -25 ; du -sh ~/sprint/data/alpaca
 5. Run the first question (10-30 min):
    cd ~/sprint && .venv/bin/python tools/sprint_run.py sprint/specs/orb_exits_v1.json 2>&1 | tail -70
+   then the cost stress test (same runs, 5% half-spread):
+   cd ~/sprint && .venv/bin/python tools/sprint_run.py sprint/specs/orb_exits_v1.json --spread-pct 0.05 2>&1 | tail -40
 6. Show the results so Nick can paste them back:
-   cd ~/sprint && ls -la data/sprint/ && cat "$(ls -t data/sprint/report_*.md | head -1)"
+   cd ~/sprint && ls -la data/sprint/ && for f in $(ls -t data/sprint/report_*.md | head -2); do echo "== $f"; cat "$f"; done
    cat data/sprint/runs_*.csv
 ```
 
@@ -70,7 +72,7 @@ Why C, E and the trails use B without an R:R minimum: with the 5% modeled half-s
 ## Later (only when Nick asks)
 
 - **Option trades for exact stop fills:** add `--trades` to step 4 (strikes within ±1.5% of the open). This is much bigger: roughly 5-10 GB and 3-6 hours. The engine uses trades automatically where they exist.
-- **Spread sensitivity:** `tools/sprint_run.py SPEC --spread-pct 0.01` reruns with a 1% half-spread, labeled "MODELED-SPREAD 1.0% (sensitivity)". It is not the pre-registered model and never replaces it.
+- **Spread sensitivity:** `tools/sprint_run.py SPEC --spread-pct 0.05` reruns with a 5% half-spread (the cost stress test in step 5), labeled "MODELED-SPREAD 1.0% (sensitivity)". It is not the pre-registered model and never replaces it.
 - **MEASURED-SPREAD:** once the desk has logged a few weeks of chains, Nick can decide whether to copy `data/chains/*.csv.gz` into `~/sprint/data/chains/`, and the runner picks them up automatically.
 - **Locked periods L1 and L2** are refused by both tools. They run once, on 3-5 frozen finalists, after their spec is committed: `--locked L1 --frozen <sha256>`. Chart never runs that unless Nick sends the exact command.
 

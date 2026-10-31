@@ -19,7 +19,7 @@ import statistics
 from pathlib import Path
 
 INDEX_ETFS = {"SPY", "QQQ", "IWM", "DIA", "XSP", "SPX"}
-DEFAULT_PCT_INDEX = 0.05
+DEFAULT_PCT_INDEX = 0.02   # amended 2026-10-31 before any run: Option Alpha T1a fills sat within $0.03 of mid on ~$1.44 premium
 DEFAULT_PCT_STOCK = 0.10
 TICK_HALF = 0.005
 MIN_CELL = 50
