@@ -170,8 +170,11 @@ def live_step(now=None, fetch=None):
     """Today's eligible catalysts (as known now) -> evaluate -> at most one paper contract per catalyst cluster."""
     import catalysts
     import paper
+    import retire
     import scanner
     import store
+    if retire.is_retired(LEDGER):                      # v4: retired; news_drift logs these events instead
+        return []
     now = now or core.now_et()
     sp = spec()
     day = now.date()

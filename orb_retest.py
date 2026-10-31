@@ -441,6 +441,12 @@ def live_step(ticker, s, now, fetch_chain=None):
             _record(e, "SKIP", why, {"quote": {"px": px, "t": str(qt)}})
             out.append((e["id"], "SKIP", why))
             continue
+        import retire
+        if all(retire.is_retired(led) for led in LEDGERS):          # v4: retired (stages still recorded)
+            _set_state(e["id"], "SKIPPED", retire.REASON)
+            _record(e, "SKIP", retire.REASON)
+            out.append((e["id"], "SKIP", retire.REASON))
+            continue
         rows, err = (fetch_chain or _chain)(ticker, e["side"])
         import scanner
         best, _, rej = scanner.score_contracts(rows, e["side"], pd.Timestamp(now).to_pydatetime(), None)

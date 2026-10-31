@@ -1,0 +1,13 @@
+{
+ "version": "2026-10-31.v4",
+ "notes": "v4 desk switches. Read by retire.py (retirements, Kronos) and v4 modules. config/policy.json stays frozen for the main v3 ledger and is not read for any of this.",
+ "retire_active": true,
+ "retired": ["paper", "research", "exit31", "gated", "orbx_swing", "orbx_atr", "orbx_2r", "orbx_ormid", "old",
+             "news_mom", "inplay", "board", "earn_post", "earn_pre"],
+ "retired_prefixes": ["lab_", "spec_"],
+ "retired_why": "docs/STRATEGY_PLAN.md section 1: no edge over matched random entries on the desk's own data (v3, ORBX, lab families), or rules that pay the IV crush (earn_pre). Code and history are kept; open trades are still managed to their exit.",
+ "kronos_enabled": false,
+ "kronos_why": "Kronos forecasts are off by default in v4 (STRATEGY_PLAN section 1). The KRONOS=1 environment switch alone no longer starts it; this flag must also be true.",
+ "fomc_decision_days": ["2026-01-28", "2026-03-18", "2026-04-29", "2026-06-17", "2026-07-29", "2026-09-16", "2026-10-28", "2026-12-09"],
+ "fomc_source": "Federal Reserve 2026 FOMC meeting calendar (second day of each meeting = statement day). Used only when config/events.json has no calendar for the day. Verify against federalreserve.gov before relying on it."
+}

@@ -350,11 +350,12 @@ def step(now=None):
                 _state["cal_thread"] = None
         _state["cal_thread"] = threading.Thread(target=_cal, daemon=True, name="earnings-calendar")
         _state["cal_thread"].start()
-    if c["earn_post"]:
+    import retire                         # v4: these three ledgers are retired (open trades still managed)
+    if c["earn_post"] and not retire.is_retired("earn_post"):
         earn_post(now)
-    if c["earn_pre"]:
+    if c["earn_pre"] and not retire.is_retired("earn_pre"):
         earn_pre(now)                     # exits are managed by the engine tick (one place, no double sells)
-    if c["board"]:
+    if c["board"] and not retire.is_retired("board"):
         board(now)
     if not store.kv_get("paper_pause"):
         _state["status"] = "running"

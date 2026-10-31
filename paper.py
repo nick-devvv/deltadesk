@@ -123,6 +123,9 @@ def sim_quote(symbol):
 def buy(portfolio, idea, ticker, side, plan, qty, signal_t):
     """Simulated entry. Returns (position_id or None, reason)."""
     sym = plan["symbol"]
+    import retire
+    if retire.is_retired(portfolio):                  # v4: retired ledgers take no new entries (exits still run)
+        return None, retire.REASON
     if store.kv_get("paper_pause"):
         return None, "paper entries are paused (emergency pause on the Markets page)"
     import health

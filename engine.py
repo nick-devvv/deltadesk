@@ -23,6 +23,7 @@ import noiseband
 import optionmath
 import paper
 import policy_old
+import retire
 import scanner
 import store
 import strategy
@@ -621,6 +622,8 @@ def paper_scan(ticker):
             reasons, limit = list(base), None
             if not sess["entries_allowed"]:
                 reasons.append(f"session {sess['state']}")
+            if retire.is_retired(pf):                 # v4: retired ledger, recorded but never filled
+                limit = retire.REASON
             if pf == "paper" and not paper_enabled():
                 limit = "paper entries paused"
             gate = discipline_gate(pf, g)
@@ -696,7 +699,7 @@ def _mirror_exit31(idea_id, ticker, idea, plan, qty, t):
     """Research variant exit31: the SAME entry as the research ledger (same tick, same quote), managed with the v3.1
     exits, so the only difference between the two ledgers is the exit rules."""
     v = (core.policy().get("research_variants") or {}).get("exit31") or {}
-    if not v.get("enabled"):
+    if not v.get("enabled") or retire.is_retired("exit31"):
         return None
     ok, _ = paper.reserve_idea("exit31", idea_id, ticker, idea["side"])
     if not ok:
@@ -738,6 +741,9 @@ def _gated_independent(idea_id, ticker, idea, plan, rows, v3, s, g, t, sess, pna
         return None
     if store.q("SELECT id FROM candidates WHERE id=?", (f"gated-{idea_id}",)):
         return None                                              # decided once per idea
+    if retire.is_retired("gated"):                               # v4: retired
+        _record(f"gated-{idea_id}", sess, idea, "gated", "BLOCKED-LIMIT", [], retire.REASON, plan, pname)
+        return None
     sn = entrygate.snap_from(s)
     gs = entrygate.define(ticker, idea["side"], idea["family"].lower(), float(idea["level"]), float(idea["invalidation"]),
                           plan.get("t1_level"), plan.get("t1"), sn, idea["confirm_rule"], confirmed_at=t, scope="gated")
@@ -1068,7 +1074,7 @@ def tick():
                     noiseband.tick(t, s, chain_rows)       # half-hour checks: manages open noise trades, enters if allowed
                 except Exception as e:
                     _state["last_error"] = f"noise: {type(e).__name__}: {e}"
-                if sess["entries_allowed"]:
+                if sess["entries_allowed"] and not retire.is_retired("old"):    # v4: old shadow retired (saves 4 chain calls a tick)
                     if core.policy()["v3"]["old_policy_shadow"]["enabled"]:
                         try:
                             policy_old.scan(t, s, {"C": chain_rows(t, "C")[0], "P": chain_rows(t, "P")[0]})

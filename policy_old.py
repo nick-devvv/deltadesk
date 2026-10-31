@@ -209,6 +209,9 @@ def _pick(rows, price, side):
 
 
 def _open(idea, ticker, st, g, c):
+    import retire
+    if retire.is_retired("old"):                       # v4: retired (no new entries; open trades still managed)
+        return None
     q, err = paper.sim_quote(c["symbol"])
     if not q:
         return None

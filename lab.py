@@ -922,6 +922,9 @@ def paper_attempt(s, now, c=None):
     def skip(decision, why, plan=None):
         _rec(cid, t, side, s["family"], led, decision, [why], plan)
         return f"{decision}: {why}"
+    import retire
+    if retire.is_retired(led):                         # v4: lab families retired (the tape and the scorer keep running)
+        return skip("SKIP", retire.REASON)
     if store.kv_get("paper_pause") or not store.kv_get("paper_enabled", True):
         return skip("SKIP", "paper entries are paused or off")
     if fam.get("main_has_own") and t in core.policy()["instruments"]:
@@ -1210,7 +1213,8 @@ def status():
             "total": {"signals": tot["n"], "days": tot["days"], "resolved": tot["done"] or 0},
             "archive_days": len(archive_days()), "archived_today": store.kv_get(f"lab_archived:{day}"),
             "contracts": _contracts_status(),
-            "families": {f: {"ledger": v["ledger"], "label": v["label"], "source": v["source"]} for f, v in FAMILIES.items()},
+            "families": {f: {"ledger": v["ledger"], "label": v["label"], "source": v["source"],
+                             "retired": __import__("retire").is_retired(v["ledger"])} for f, v in FAMILIES.items()},
             "conditions": CONDITIONS, "open": [{k: p[k] for k in ("ledger", "ticker", "contract", "fill", "opened")} for p in _lab_open()],
             "recent": [{k: e[k] for k in ("ts", "text")} for e in store.q("SELECT ts, text FROM events WHERE kind='lab' ORDER BY seq DESC LIMIT 12")],
             "config": {k: cfg()[k] for k in ("window", "max_open_per_ledger", "max_ideas_per_ledger", "max_open_total", "attempts_per_min",

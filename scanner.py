@@ -476,6 +476,11 @@ def on_minute(day, now):
 
 def _take(day, now, r, trig):
     v, side, t = vcfg(), r["direction"], r["ticker"]
+    import retire
+    if retire.is_retired("inplay"):                    # v4: retired; the scanner still ranks and alerts
+        r.update(status=f"triggered {trig[0].strftime('%H:%M')}, not traded: inplay ledger retired in v4")
+        _save_row(day, r)
+        return
     bar_ts, px = trig
     e = r.get("earnings")
     if e and date.fromisoformat(e) < day:

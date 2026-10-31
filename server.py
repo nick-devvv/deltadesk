@@ -541,8 +541,10 @@ class H(BaseHTTPRequestHandler):
             if u.path == "/api/research":
                 import evaluation
                 since = q.get("since", ["2026-10-30"])[0][:10]
-                return self._json(clean({"since": since, "ledgers": {led: evaluation.ledger_report(led, since) for led in
-                                                                      ("paper", "research", "exit31", "noise", "inplay", "old", "real")},
+                import retire
+                return self._json(clean({"since": since, "ledgers": {led: dict(evaluation.ledger_report(led, since), retired=retire.is_retired(led))
+                                                                      for led in ("paper", "research", "exit31", "noise", "inplay", "old", "real")},
+                                         "retired": retire.retired_list(),
                                          "variants": core.policy().get("research_variants"),
                                          "note": "Each ledger is separate. Under 30 trades is not evidence. Option results of the variants are "
                                                  "simulated fills on live Schwab quotes; replays and backtests use MODELED option prices."}))
@@ -774,7 +776,8 @@ def start_kronos():
     """Kronos runs in its own process, without broker keys or the desk token, and can never block the desk.
     v3.4.1: leftover copies from earlier servers are stopped first, the child holds a lock (one copy at most) and
     exits when this server dies, so restarts can't pile copies up."""
-    if os.environ.get("KRONOS") != "1":
+    import retire
+    if os.environ.get("KRONOS") != "1" or not retire.kronos_enabled():     # v4: off by default (config/v4.json)
         return None
     import subprocess
     try:

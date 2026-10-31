@@ -14,6 +14,17 @@ def _no_network(*a, **k):
 
 
 @pytest.fixture(autouse=True)
+def _v4_retirement(request, monkeypatch):
+    """v4 retires many v3 ledgers (no new entries). The legacy suites below still exercise those code paths, so they
+    run with retirement switched off; every v4 suite (test_v4*.py) runs with the production setting from
+    config/v4.json and checks that each retired ledger refuses new entries."""
+    import retire
+    if not request.module.__name__.split(".")[-1].startswith("test_v4"):
+        monkeypatch.setattr(retire, "_override", False)
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _hermetic(monkeypatch, tmp_path):
     for k in ("NTFY_TOPIC", "CHAT_WEBHOOK", "GROK_WEBHOOK", "SCHWAB_APP_KEY", "SCHWAB_APP_SECRET",
               "ALPACA_KEY", "ALPACA_SECRET", "QUIVER_KEY", "XAI_API_KEY", "SEC_USER_AGENT"):
