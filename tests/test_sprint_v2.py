@@ -168,3 +168,34 @@ def test_runner_end_to_end_with_v2_options(tmp_path):
     assert rows["v2t-002"]["trades"] <= n0 and rows["v2t-004"]["trades"] <= n1
     with pytest.raises(ValueError):
         runner.validate(engine.expand({"spec_id": "bad", "blocks": [{"name": "x", "grid": {"entry": ["failed_break"], "risk": ["max"]}}]}))
+
+
+def test_time_entries_and_day_filters():
+    ctx = _ctx_from({0: 500.0, 50: 500.6})                     # Wednesday 2025-03-12, flat prior days at 500
+    s = entries.signals(ctx, "time_1030")
+    assert [(x.side, x.idx, x.invalid) for x in s] == [("C", 59, None), ("P", 59, None)]
+    assert [x.idx for x in entries.signals(ctx, "time_1100", "P")] == [89]
+    g = _with_future_changed(ctx, 59, seed=1)
+    assert [(x.side, x.idx, x.price) for x in entries.signals(g, "time_1030")] == [(x.side, x.idx, x.price) for x in s]
+    r = lambda fs: {"filters": tuple(fs)}
+    sig = s[1]
+    assert engine._filters_ok(r(["day_up", "wed_fri"]), ctx, sig, 0) is None
+    assert engine._filters_ok(r(["day_down"]), ctx, sig, 0).startswith("day_down")
+    assert engine._filters_ok(r(["skip_opex"]), ctx, sig, 0) is None
+    fri, _ = SS.make_ctx(date(2025, 3, 21), {0: 500.0}, {0: 1.0}, prior_days=12)       # third Friday
+    assert engine._filters_ok(r(["skip_opex"]), fri, sig, 0).startswith("monthly expiration")
+    mon, _ = SS.make_ctx(date(2025, 3, 10), {0: 500.0}, {0: 1.0}, prior_days=12)
+    assert engine._filters_ok(r(["wed_fri"]), mon, sig, 0).startswith("wed_fri")
+
+
+def test_far_otm_contract_rules(tmp_path):
+    import pull_alpaca as PA
+    days = SS.weekdays(date(2025, 3, 10), 3)
+    st = SS.stock_day(days[-1], 500.0, seed=4)
+    s = Series("SPY", st)
+    PA._write_gz(tmp_path / "options" / "SPY" / days[-1].isoformat() / "bars.csv.gz", SS.option_bars(days[-1], st, "SPY", band=0.03))
+    ctx = DayContext(s, days[-1], read_option_day("SPY", days[-1], tmp_path), SS.ConstSpread(), early_close=False)
+    for rule, lo, hi in (("d03-12t07", 0.03, 0.12), ("d06-15t10", 0.06, 0.15)):
+        for side in ("C", "P"):
+            tape, info = contracts.pick(ctx, side, 59, rule)
+            assert tape is not None and lo <= abs(info["delta"]) <= hi, (rule, side, info)

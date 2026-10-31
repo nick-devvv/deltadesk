@@ -51,6 +51,11 @@ IMPLEMENTED
                   than $0.01, then within 5 bars a finished close back below it, the highest high since the break
                   within 0.5 x ATR(14, 5m) of the level. invalid = the highest high since the break. Tests whether
                   the failed-break idea works on both sides (SPRINT_PLAN robustness: "works on both sides").
+  time_1030 / time_1100   (otm_v1, pre-registered 2026-10-31 from Option Alpha's Top Backtests list, where far
+                  out-of-the-money 0DTE SPX/XSP long puts at 10:30 and long calls at 11:00 fill the top ranks): a signal on
+                  the bar that finishes at 10:30 (index 59) / 11:00 (index 89), on the side(s) the run asks for, every
+                  session. invalid = none (these runs use a fixed premium exit). The edge, if any, comes from the
+                  contract (far OTM) and the day filters, not from the timing.
   flush           Reversal after a flush, both sides. Calls: within the last 5 finished 1-minute bars the low fell at
                   least 1.5 x ATR(14, 5m) below the highest high of those 5 bars, that high came BEFORE the low (a drop),
                   the flush low is the session's low so far, and at least one of the 5 bars had volume >= 2x the mean of
@@ -331,6 +336,14 @@ def failed_break(ctx, side="both", setup="failed_break"):
     return _failed_break(ctx, setup, up, window, probe, kinds)
 
 
+# ---------------------------------------------------------------- fixed-time entries (otm_v1)
+def time_entry(ctx, side, idx, setup):
+    if idx >= ctx.close_idx - 2 or math.isnan(ctx.c[idx]):
+        return []
+    sides = ("C", "P") if side == "both" else (side,)
+    return [Signal(setup, ctx.sym, ctx.day, s, idx, float(ctx.c[idx]), None, {}) for s in sides]
+
+
 # ---------------------------------------------------------------- reversal after a flush
 def flush(ctx, side="both"):
     out, done = [], set()
@@ -384,10 +397,14 @@ SETUPS = {
 }
 for _n in FB_VARIANTS:
     SETUPS[_n] = (lambda n: lambda ctx, side="both": failed_break(ctx, side, n))(_n)
+TIME_ENTRIES = {"time_1030": 59, "time_1100": 89}
+for _n, _i in TIME_ENTRIES.items():
+    SETUPS[_n] = (lambda n, i: lambda ctx, side="both": time_entry(ctx, side, i, n))(_n, _i)
 ENTRY_WINDOWS = {"orb15": (15, ORB_CUTOFF), "orb30": (30, ORB_CUTOFF), "orb60": (60, ORB_CUTOFF), "noise": (29, 329),
                  "noise_nocap": (29, 329), "vwap_macd": (DESK_FIRST, DESK_LAST), "pd_retest": (DESK_FIRST, DESK_LAST),
                  "flush": (DESK_FIRST, DESK_LAST)}
 ENTRY_WINDOWS.update({_n: (DESK_FIRST, DESK_LAST) for _n in FB_VARIANTS})
+ENTRY_WINDOWS.update({_n: (DESK_FIRST, DESK_LAST) for _n in TIME_ENTRIES})
 
 
 def signals(ctx, setup, side="both"):

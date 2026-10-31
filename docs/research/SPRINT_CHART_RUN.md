@@ -29,6 +29,23 @@ If a step fails, show the error and stop. Don't change any code; re-running the 
 
 What Nick sends back: step 2's last line, step 3's lines (sessions pulled per symbol, any "no_expiry_found" dates, MB on disk), step 4's lines, and `~/sprint_results2.zip`. Check on the way in: run setups_v2-001 is setups_v1-049 rerun unchanged, so it must show 676 trades and +$10.95 a trade.
 
+## Run 3: Option Alpha's top-list family, the learner and the combined book (about 30-45 minutes, after run 2)
+
+1. `otm_v1` (54 runs, base cost and the 5% stress): far out-of-the-money 0DTE calls and puts bought at 10:30 or 11:00 and held, the family that fills Option Alpha's Top Backtests (SPRINT_PLAN Amendment 4). It uses the 0DTE bars already pulled, plus VIXY daily bars. Step 3 fetches those if run 2 didn't (2 requests, resumable).
+2. `tools/sprint_study.py auto` reads the run logs and trade files from runs 1-3. It picks the candidate runs (SPRINT_PLAN Amendment 3), runs the walk-forward learner on each, and combines the best run of each strategy family into one book. Trade files written before run 3 have no feature columns; the tool recomputes them from the cached bars.
+
+```
+Sprint run 3 (research only, about 45 minutes). Show me every output.
+Same rules as before: never trade, never touch ~/desk, never pass --locked or --frozen, stop and show the error if a step fails.
+1. cd ~/sprint && git fetch -q origin sprint/exits && git reset -q --hard origin/sprint/exits && git log -1 --oneline
+2. cd ~/sprint && .venv/bin/python -m pytest -q tests/test_sprint_*.py 2>&1 | tail -3
+3. cd ~/sprint && .venv/bin/python tools/sprint_pull.py --symbols "" --from 2024-08-01 --to 2026-06-30 2>&1 | tail -4
+4. cd ~/sprint && mkdir -p data/sprint/logs && for a in "sprint/specs/otm_v1.json" "sprint/specs/otm_v1.json --spread-pct 0.05"; do L="data/sprint/logs/$(echo "$a" | tr ' /.' '___').log"; echo "=== $a"; .venv/bin/python tools/sprint_run.py $a > "$L" 2>&1 && grep -E "^sprint |VIX|pass [12] done|^report:" "$L" || { echo "FAILED: $a"; tail -30 "$L"; }; done
+5. cd ~/sprint && .venv/bin/python tools/sprint_study.py auto > data/sprint/logs/study.log 2>&1; tail -80 data/sprint/logs/study.log
+6. cd ~/sprint && .venv/bin/python -m zipfile -c ~/sprint_results3.zip $(ls data/sprint/report_*otm_v1*.md data/sprint/study_auto_*) data/sprint/runs_*.csv && ls -la ~/sprint_results3.zip
+   (send Nick the file ~/sprint_results3.zip)
+```
+
 ## What runs (run 1)
 
 | Spec | Runs | Period | Cost runs | Question |

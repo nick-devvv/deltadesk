@@ -34,7 +34,7 @@ VALID = {"stop": {"premium", "level", "noise", "fixed"}, "mechanics": {"desk", "
                    "gb50", "gb60", "vwap", "ema9"}, "side": {"both", "C", "P"},
          "filters": {"after14", "chop2", "trend_only", "noise_trend", "sma20_side", "sma20_side_1pct", "skip_fomc", "skip_fomc_cpi",
                      "vixy_falling", "gap_side_075", "vixy_pctl_le40", "vixy_pctl_ge60", "vixy_not_rising",
-                     "vixy_rising_1pct"}, "risk": {"none", "bot"}}
+                     "vixy_rising_1pct", "day_up", "day_down", "wed_fri", "skip_opex"}, "risk": {"none", "bot"}}
 
 
 def label_for(tag):
@@ -67,8 +67,8 @@ def validate(runs):
         if x.stop == "noise" and not r["entry"].startswith("noise"):
             raise ValueError(f"{r['run_id']}: the noise stop needs a noise entry")
         if x.stop == "fixed":
-            if not (x.fixed_stop and x.fixed_target and 0 < x.fixed_stop < 1 and 0 < x.fixed_target <= 10):
-                raise ValueError(f"{r['run_id']}: the fixed stop needs fixed_stop in (0, 1) and fixed_target in (0, 10]")
+            if not (x.fixed_stop and x.fixed_target and 0 < x.fixed_stop < 1 and 0 < x.fixed_target <= 100):
+                raise ValueError(f"{r['run_id']}: the fixed stop needs fixed_stop in (0, 1) and fixed_target in (0, 100]")
             if x.tp != "none" or x.trail != "none":
                 raise ValueError(f"{r['run_id']}: the fixed stop/target exit takes no other take-profit or trail")
         elif x.fixed_stop or x.fixed_target or x.mechanics != "desk":

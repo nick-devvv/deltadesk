@@ -194,6 +194,43 @@ Run 1 (`docs/research/SPRINT_RESULTS_1.md`) left one lead: failed-break calls wi
   - Streaks reset daily. A trade the risk pass removes cannot free its symbol for a signal that was skipped as "busy", so the pass is slightly conservative.
 - **Keep rule:** a change survives only if it raises expectancy after costs on DEV and passes its own robustness checks (filters must also beat random day-skips). Then 3-5 finalists are frozen and run once on L1 and L2. If no failed-break version passes every robustness check, the report says "nothing held up" and no locked period is used.
 
+## Amendment 3, 2026-10-31: learning when to trade, and several strategies as one book (written before any result)
+
+Nick's goals (2026-10-31): several strategies at once for more trades a day, losses kept small and wins large, and a desk that learns from its own trades when each strategy works best. Built as tested research tools, not as live behavior:
+- **Entry features** (`sprint/features.py`) are stamped on every trade from sprint run 3 on: time of day, weekday, ADX, efficiency, VWAP crosses, bar overlap, range vs ATR, relative volume, trend votes, DI spread, noise-trend count, gap, move so far, distance from VWAP, prior-day range, FOMC/CPI day, and the VIXY percentile. All are known at the end of the signal bar. Older trade files get the same values recomputed from cached bars, and a test checks the two match.
+- **Learner** (`sprint/learn.py`): walk-forward by month, fit only on earlier months, scored only on later months.
+  - Three fixed models: L2 logistic regression on win/loss, ridge regression on winsorized P/L, and a 12-cell time-of-day x day-type skip table.
+  - **PASS** needs all four:
+    - at least 60 trades taken;
+    - out-of-sample expectancy above taking every trade;
+    - a total above the 95th percentile of skipping the same number of trades at random;
+    - PF above 1.0 at 2x slippage.
+  - Each model counts as a trial.
+- **Combined book** (`sprint/book.py`):
+  - every session counts, including sessions with no trades;
+  - reports per-sleeve and book metrics, correlation of daily P/L, and same-symbol overlaps;
+  - optional desk daily stop that counts closed trades only.
+- **Candidate rule for `tools/sprint_study.py auto`**:
+  - base-cost DEV runs with at least 60 trades, PF >= 1.25 and PF 2x > 1.0;
+  - the best expectancy per strategy family;
+  - the book is shown with and without a $150 desk daily stop.
+- **The journal** (phase 2, needs Nick's yes because it touches the live desk): the v4 paper ledgers stamp the same features at entry from the same code. The learner then retrains on backtest plus paper trades after each week. A learned skip rule reaches paper trading only after it passes on held-out data, through a new versioned ledger. The original ledger keeps running unchanged next to it.
+
+## Amendment 4, 2026-10-31: Option Alpha's Top Backtests, the far out-of-the-money family (written before any run)
+
+Option Alpha's Top Backtests list is the best of about 1.5 million saved user backtests, so its numbers are heavily selected. Its top ranks are 0DTE SPX/XSP options bought far out of the money at a fixed time and held to expiration:
+- **Puts at about 0.06-0.10 delta, around 10:30.** Example: "0DTE Put Hedge", 1 contract, 196 trades, PF 4.91, average win $4.1K, average loss -$90. Filters: IV rank < 40, VIX <= 20 and not rising, day up, Wed-Fri only, skip CPI and monthly expiration.
+- **Calls at 0.10 delta, at 11:00.** Example: "Long Call Bounce", 5 years, 97 trades, PF 4.67. Filters: VIX >= 17, VIX change <= 5, negative GEX; skip FOMC, NFP, triple witching and monthly expiration.
+
+`sprint/specs/otm_v1.json` (54 runs, DEV) tests this family on SPY/QQQ/IWM:
+- 10:30 and 11:00 entries, calls and puts as separate runs;
+- |delta| 0.03-0.12 (target 0.07) and 0.06-0.15 (target 0.10): with $1 strikes a narrower band often holds no strike;
+- held with a -95% stop and no target until 15:50 or 15:25;
+- three filter sets: none, the put-hedge proxy (VIXY percentile <= 40%, VIXY not up > 1%, day up, Wed-Fri, skip third Friday) and the call-bounce proxy (VIXY percentile >= 60%, day down, skip third Friday; a down day stands in for GEX, which isn't available);
+- plus +300/+500/+1000% take-profits.
+
+The cost floor ($0.005 half-spread) binds on these cheap options. The same robustness checks apply, and "positive without the best 5 trades" is expected to be the hard one, since these payoffs come from a few big days. As a book sleeve, this family's value may be its correlation with the call setups rather than its own profit factor, which the combined-book tool measures.
+
 ## Limits
 
 - Backtests only.

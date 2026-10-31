@@ -78,7 +78,7 @@ from dataclasses import asdict, dataclass, field
 
 import numpy as np
 
-from . import bs, contracts
+from . import bs, contracts, features
 from .fills import ENTRY_WAIT, FEE, MULT, pnl
 
 N = 390
@@ -238,7 +238,7 @@ def simulate(ctx, sig, cfg, levels=None, tape=None, cinfo=None, k_plan=1):
     if tp == "C" and trail == "none":
         trail = "lvl"
     out = dict(base, invalid=sig.invalid, contract=cinfo["symbol"], strike=K, delta_est=cinfo["delta"], iv_est=round(iv, 4), tp_eff=tp,
-               trend_at_entry=trend, day_type=feats["day_type"], rvol=feats.get("rvol"))
+               trend_at_entry=trend, day_type=feats["day_type"], rvol=feats.get("rvol"), **features.entry_features(ctx, j, side))
     # ---------------- planning at the decision time
     buf_s = stop_buffer(atr1)
     stop_s = None

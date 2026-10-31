@@ -38,6 +38,7 @@ import gzip
 import io
 import itertools
 import json
+import math
 import random
 import time
 import zlib
@@ -47,18 +48,19 @@ from dataclasses import replace
 import numpy as np
 
 from . import contracts, data, entries
+from .features import FEATURES
 from .sim import ExitCfg, simulate
 
 LEAN = ("symbol", "day", "setup", "side", "entry_idx", "exit_idx", "entry_time", "exit_time", "pnl", "pnl_2x", "pct_peak_kept",
         "planned_rr_opt", "planned_rr_stock", "actual_rr", "exit_reason", "exit_is_stop", "opt_mfe_pct", "opt_mae_pct",
         "stock_mfe", "stock_mae", "peak_level", "minutes_held", "peak_profit", "tp_eff", "day_type", "signal_price",
-        "stop_stock", "target_stock", "invalid")
+        "stop_stock", "target_stock", "invalid") + tuple(FEATURES)
 TRADE_COLS = ["run_id", "symbol", "day", "setup", "side", "contract", "strike", "delta_est", "iv_est", "signal_idx", "signal_price",
               "entry_time", "entry_basis", "entry_hs", "entry_fill", "cost_basis", "stock_entry", "exit_time", "exit_basis",
               "exit_reason", "exit_is_stop", "stock_exit", "pnl", "pnl_2x", "opt_mfe_pct", "opt_mae_pct", "stock_mfe", "stock_mae",
               "peak_time", "peak_px", "peak_profit", "pct_peak_kept", "peak_level", "planned_rr_stock", "planned_rr_opt",
               "planned_risk", "actual_rr", "stop_stock", "target_stock", "target_level", "ceiling", "tp_eff", "trend_at_entry",
-              "day_type", "rvol", "minutes_held", "legs"]
+              "day_type", "rvol", "minutes_held", "legs"] + FEATURES
 
 
 def run_key(r):
@@ -94,7 +96,7 @@ def expand(spec):
 
 
 def _filters_ok(r, ctx, sig, day_count):
-    fs = r.get("filters") or ()
+    fs = set(r.get("filters") or ())
     if not fs:
         return None
     dt = ctx.daytype()
@@ -156,6 +158,19 @@ def _filters_ok(r, ctx, sig, day_count):
             return "VIXY percentile above 40% (not calm)"
         if "vixy_pctl_ge60" in fs and pr < 0.60:
             return "VIXY percentile below 60%"
+    if fs & {"day_up", "day_down"}:
+        prev = ctx.series.prev_day(ctx.day)
+        if prev is None or math.isnan(ctx.c[sig.idx]):
+            return "no prior close for the day-direction rule"
+        up = float(ctx.c[sig.idx]) >= prev["close"]
+        if "day_up" in fs and not up:
+            return "day_up: below the prior close at the decision"
+        if "day_down" in fs and up:
+            return "day_down: at or above the prior close at the decision"
+    if "wed_fri" in fs and ctx.day.weekday() not in (2, 3, 4):
+        return "wed_fri: Monday or Tuesday"
+    if "skip_opex" in fs and ctx.day.weekday() == 4 and 15 <= ctx.day.day <= 21:
+        return "monthly expiration (third Friday) skipped"
     if "gap_side_075" in fs:
         prev = ctx.series.prev_day(ctx.day)
         if prev is None or np.isnan(ctx.o[0]):
@@ -212,8 +227,8 @@ def run_pass(runs, a, b, root=None, spread=None, progress=None, writer=None, lim
     syms = sorted({s for r in runs for s in r["symbols"]})
     aux = {}
     used = {f for r in runs for f in (r.get("filters") or ())}
-    if used & {"vixy_pctl_le40", "vixy_pctl_ge60"}:
-        aux["VIXY_D"] = data.read_daily("VIXY", root)              # split-adjusted daily closes (proxy: VIXY percentile)
+    aux["VIXY_D"] = data.read_daily("VIXY", root)                  # split-adjusted daily closes (proxy: VIXY percentile);
+    if used & {"vixy_pctl_le40", "vixy_pctl_ge60"}:                  # also stamped on every trade as f_vixy_pctl
         if progress:
             n = None if aux["VIXY_D"] is None else len(aux["VIXY_D"])
             progress(f"  VIX percentile proxy: VIXY daily {'MISSING (percentile filters skip every signal)' if n is None else str(n) + ' closes'}")

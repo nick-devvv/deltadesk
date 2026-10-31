@@ -1,0 +1,110 @@
+{
+ "spec_id": "otm_v1",
+ "description": "Far out-of-the-money 0DTE options bought at a fixed time and held (pre-registered 2026-10-31, before any run). Source: Option Alpha's Top Backtests (1.5M saved backtests; Moderate filter, last 30 days), whose top ranks are SPX/XSP 0DTE long puts at ~0.06-0.10 delta bought ~10:30 on calm up days ('0DTE Put Hedge': IV rank < 40, VIX not rising, day up, Wed-Fri, skip CPI/monthly expiration) and long calls at ~0.10 delta bought 11:00 on high-VIX days with negative dealer gamma ('Long Call Bounce': VIX >= 17, GEX < 0), both held to expiration with no exit. Those lists are the best of a huge number of user backtests, so their numbers are heavily selected. Here: SPY/QQQ/IWM pooled, 10:30 and 11:00 entries, calls and puts as separate runs, |delta| 0.03-0.12 (t 0.07) and 0.06-0.15 (t 0.10; bands wide enough for $1 strikes), held (a -95% stop, no target) until 15:50 (closest to expiration the desk allows) or 15:25, with no filter, the put-hedge PROXY filters (VIXY percentile <= 40%, VIXY not up > 1%, at or above the prior close, Wed-Fri, skip third Friday) and the call-bounce PROXY filters (VIXY percentile >= 60%, below the prior close, skip third Friday; GEX is not available, a down day stands in for it). Plus fixed take-profits of +300/+500/+1000% on the base 10:30 puts and 11:00 calls. Desk fills; the half-spread floor ($0.005) binds on these cheap options, so PF at 2x slippage is the key cost check. 54 runs.",
+ "period": "DEV",
+ "symbols": [
+  "SPY",
+  "QQQ",
+  "IWM"
+ ],
+ "defaults": {
+  "entry": "time_1030",
+  "side": "P",
+  "contract": "d03-12t07",
+  "allout": "15:50",
+  "mechanics": "desk",
+  "filters": [],
+  "risk": "none",
+  "tp_buffer": "$0.03",
+  "rr_min": null,
+  "stop": "fixed",
+  "fixed_stop": 0.95,
+  "fixed_target": 99.0,
+  "tp": "none",
+  "trail": "none",
+  "time": "b"
+ },
+ "blocks": [
+  {
+   "name": "grid",
+   "why": "time x side x contract x all-out x filter set.",
+   "grid": {
+    "entry": [
+     "time_1030",
+     "time_1100"
+    ],
+    "side": [
+     "P",
+     "C"
+    ],
+    "contract": [
+     "d03-12t07",
+     "d06-15t10"
+    ],
+    "allout": [
+     "15:50",
+     "15:25"
+    ],
+    "filters": [
+     [],
+     [
+      "vixy_pctl_le40",
+      "vixy_not_rising",
+      "day_up",
+      "wed_fri",
+      "skip_opex"
+     ],
+     [
+      "vixy_pctl_ge60",
+      "day_down",
+      "skip_opex"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "take_profit",
+   "why": "Sell the lottery ticket at +300/+500/+1000% instead of holding.",
+   "grid": {
+    "exit": [
+     {
+      "entry": "time_1030",
+      "side": "P",
+      "fixed_target": 3.0
+     },
+     {
+      "entry": "time_1030",
+      "side": "P",
+      "fixed_target": 5.0
+     },
+     {
+      "entry": "time_1030",
+      "side": "P",
+      "fixed_target": 10.0
+     },
+     {
+      "entry": "time_1100",
+      "side": "C",
+      "fixed_target": 3.0
+     },
+     {
+      "entry": "time_1100",
+      "side": "C",
+      "fixed_target": 5.0
+     },
+     {
+      "entry": "time_1100",
+      "side": "C",
+      "fixed_target": 10.0
+     }
+    ]
+   }
+  }
+ ],
+ "robustness": {
+  "top_k": 6,
+  "random_paths": 5,
+  "fake_seeds": 0,
+  "min_trades": 60
+ }
+}
