@@ -8,6 +8,8 @@ half-spread comes from:
      premium-bucket median over all times is used, otherwise the default below.
   2. MODELED-SPREAD (default): 5% of the premium for SPY/QQQ/IWM (index ETFs), 10% for single stocks. Floor: half a
      $0.01 tick ($0.005), because a listed option spread can't be under one tick.
+  3. Sensitivity only (never the default): a spec's "spread_pct" or the runner's --spread-pct sets the half-spread
+     to that share of the premium for every symbol, labeled "MODELED-SPREAD x% (sensitivity)" in the run log.
 Every result carries its label, and the run log names the model used.
 """
 import csv
@@ -37,15 +39,21 @@ def _tb(minute):
 
 
 class SpreadModel:
-    def __init__(self, table=None, coverage=None):
+    def __init__(self, table=None, coverage=None, pct=None):
         self.table = table or {}            # (under, pb, tb) -> median half-spread $, (under, pb, None) -> all times
         self.coverage = coverage or {}      # under -> {"days": n, "rows": n}
+        self.pct = pct                      # sensitivity override: half-spread = pct x premium for every symbol
 
     @property
     def label(self):
+        if self.pct is not None:
+            return f"MODELED-SPREAD {self.pct:.1%} (sensitivity)"
         return "MEASURED-SPREAD" if self.table else "MODELED-SPREAD"
 
     def describe(self):
+        if self.pct is not None:
+            return (f"MODELED-SPREAD {self.pct:.1%} of premium for every symbol (a SENSITIVITY run, not the pre-registered "
+                    f"5% default), floor ${TICK_HALF}")
         if not self.table:
             return (f"MODELED-SPREAD: half-spread = {DEFAULT_PCT_INDEX:.0%} of premium (SPY/QQQ/IWM), "
                     f"{DEFAULT_PCT_STOCK:.0%} single stocks, floor ${TICK_HALF}")
@@ -55,6 +63,8 @@ class SpreadModel:
     def half_spread(self, under, px, minute=None):
         """(half-spread in $, label) for an option of underlying `under` trading at `px`, `minute` after 09:30."""
         px = max(float(px), 0.0)
+        if self.pct is not None:
+            return max(self.pct * px, TICK_HALF), "MODELED-SPREAD"
         if self.table:
             pb = _pb(px)
             if minute is not None:

@@ -150,3 +150,31 @@ def test_never_fills_at_a_price_the_option_did_not_trade(seed):
                 assert tape.has_print(i), (cfg, leg)
                 assert tape.l[i] - 1e-9 <= leg["basis"] <= tape.h[i] + 1e-9, (cfg, leg, tape.l[i], tape.h[i])
             assert sum(x["qty"] for x in t["legs"]) == pytest.approx(1.0)
+
+
+def test_spread_model_default_measured_from_chains_and_sensitivity(tmp_path):
+    import csv as _csv
+    import gzip as _gz
+    from sprint import spread as SP
+    m = SP.SpreadModel()
+    assert m.half_spread("SPY", 2.0) == (pytest.approx(0.10), "MODELED-SPREAD")          # 5% of premium
+    assert m.half_spread("NVDA", 2.0)[0] == pytest.approx(0.20)                          # 10% single stocks
+    assert m.half_spread("SPY", 0.05)[0] == SP.TICK_HALF and m.label == "MODELED-SPREAD"
+    assert SP.from_chains(tmp_path / "missing").label == "MODELED-SPREAD"
+    rows = []
+    for k in range(120):
+        rows.append({"logged_at": f"2026-11-02T10:{k % 60:02d}:00-05:00", "underlying": "SPY", "spot": 600, "symbol": f"S{k}", "type": "C",
+                     "expiry": "2026-11-02", "strike": 600, "bid": 1.20, "ask": 1.22, "last": 1.21, "volume": 1, "oi": 1, "delta": 0.5,
+                     "gamma": 0.1, "iv": 0.2, "quote_time": ""})
+    rows.append(dict(rows[0], expiry="2026-11-03", bid=1.0, ask=2.0))                    # not 0DTE: ignored
+    with _gz.open(tmp_path / "2026-11-02.csv.gz", "wt") as f:
+        w = _csv.DictWriter(f, fieldnames=list(rows[0]))
+        w.writeheader()
+        w.writerows(rows)
+    mm = SP.from_chains(tmp_path, {"SPY"})
+    assert mm.label == "MEASURED-SPREAD" and mm.coverage["SPY"] == {"days": 1, "rows": 120}
+    assert mm.half_spread("SPY", 1.21, 60) == (pytest.approx(0.01), "MEASURED-SPREAD")
+    assert mm.half_spread("QQQ", 1.21, 60)[1] == "MODELED-SPREAD"                        # no QQQ rows: the default
+    assert mm.spread_ok("SPY", 1.21, 60) and not SP.SpreadModel({("SPY", 3, 1): 0.2, ("SPY", 3, None): 0.2}).spread_ok("SPY", 1.5, 60)
+    s = SP.SpreadModel(pct=0.01)
+    assert s.half_spread("SPY", 2.0)[0] == pytest.approx(0.02) and "sensitivity" in s.label

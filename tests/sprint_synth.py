@@ -51,27 +51,33 @@ def stock_day(day, px0, seed, drift=0.0, vol=0.0005, trend_at=None):
 def option_bars(day, stock, under, iv=0.18, band=0.03, skip=None, seed=0):
     """BS-priced 1-minute bars for $1 strikes within band of the open; skip = set of (symbol, minute_idx) with no print."""
     rng = np.random.default_rng(seed)
-    r = stock[(stock["ts"].dt.hour * 60 + stock["ts"].dt.minute >= 570) & (stock["ts"].dt.hour * 60 + stock["ts"].dt.minute < 960)]
-    S_o, S_c = r["o"].to_numpy(), r["c"].to_numpy()
+    mins = stock["ts"].dt.hour * 60 + stock["ts"].dt.minute
+    r = stock[(mins >= 570) & (mins < 960)]
+    S_o, S_c = r["o"].to_numpy(float), r["c"].to_numpy(float)
     o0 = float(S_o[0])
-    rows = []
+    i = np.arange(390)
+    Ta = np.maximum(390 - i, bs.MIN_T_MIN) / bs.YEAR_MIN
+    Tb = np.maximum(390 - i - 1, bs.MIN_T_MIN) / bs.YEAR_MIN
+    t0 = pd.Timestamp(f"{day} 09:30", tz=ET)
+    stamps = np.array([t0 + pd.Timedelta(minutes=int(k)) for k in i])
+    frames = []
     for k in range(int(o0 * (1 - band)), int(o0 * (1 + band)) + 2):
         for right in ("C", "P"):
             sym = f"{under}{day:%y%m%d}{right}{k * 1000:08d}"
-            for i in range(390):
-                if skip and (sym, i) in skip:
-                    continue
-                Ta, Tb = bs.t_years(390 - i), bs.t_years(390 - i - 1)
-                po, pc = bs.price(S_o[i], k, Ta, iv, right), bs.price(S_c[i], k, Tb, iv, right)
-                if max(po, pc) < 0.01:
-                    continue
-                h, l = max(po, pc) * 1.01, min(po, pc) * 0.99
-                rows.append((pd.Timestamp(f"{day} 09:30", tz=ET) + pd.Timedelta(minutes=i), round(po, 2), round(h, 2), round(l, 2),
-                             round(pc, 2), float(rng.integers(1, 500)), 10, round(pc, 2), sym))
-    return pd.DataFrame(rows, columns=["ts", "o", "h", "l", "c", "v", "n", "vw", "symbol"])
+            call = right == "C"
+            po = bs.price_v(S_o, float(k), Ta, iv, call)
+            pc = bs.price_v(S_c, float(k), Tb, iv, call)
+            keep = np.maximum(po, pc) >= 0.01
+            if skip:
+                keep &= np.array([(sym, int(m)) not in skip for m in i])
+            h, l = np.maximum(po, pc) * 1.01, np.minimum(po, pc) * 0.99
+            frames.append(pd.DataFrame({"ts": stamps[keep], "o": po[keep].round(2), "h": h[keep].round(2), "l": l[keep].round(2),
+                                        "c": pc[keep].round(2), "v": rng.integers(1, 500, keep.sum()).astype(float), "n": 10,
+                                        "vw": pc[keep].round(2), "symbol": sym}))
+    return pd.concat(frames, ignore_index=True)
 
 
-def write_cache(root, under, days, px0=500.0, seed=1, iv=0.18, drifts=None, trend=None):
+def write_cache(root, under, days, px0=500.0, seed=1, iv=0.18, drifts=None, trend=None, band=0.03):
     """Write stock months + option days for `days`. Returns {day: stock_df}."""
     import pull_alpaca as PA
     root = Path(root)
@@ -81,7 +87,7 @@ def write_cache(root, under, days, px0=500.0, seed=1, iv=0.18, drifts=None, tren
         out[d] = df
         frames.append(df)
         px = float(df["c"].iloc[-1])
-        ob = option_bars(d, df, under, iv=iv, seed=seed + n)
+        ob = option_bars(d, df, under, iv=iv, seed=seed + n, band=band)
         PA._write_gz(root / "options" / under / d.isoformat() / "bars.csv.gz", ob)
     allb = pd.concat(frames, ignore_index=True)
     for m, g in allb.groupby(allb["ts"].dt.strftime("%Y-%m")):

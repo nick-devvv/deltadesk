@@ -1,0 +1,392 @@
+"""sprint/runner.py - runs a sprint spec file end to end (used by tools/sprint_run.py; importable for tests).
+
+  1. guard the period (DEV by default; L1/L2 only with --locked <name> --frozen <spec sha256>, see periods.guard)
+  2. expand the spec into runs (entry x exit x params), validate every field
+  3. pass 1: every run over the period (sprint/engine.py), all trades to data/sprint/trades_<spec>_<date>.csv.gz
+  4. robustness on the top-K runs (by expectancy, at least `min_trades` trades): one-step nudges, matched random
+     entries, made-up levels (level-based runs), plus random day-skips for every filtered run that has its
+     unfiltered twin in the spec, by-stretch, without-best-5, both sides, day-block bootstrap CI, deflated Sharpe
+  5. append one row per run to data/sprint/runs_<host>.csv (columns = docs/research/sprint_runs.csv), write
+     data/sprint/report_<date>.md, print a compact summary table
+Every number is a BACKTEST on cached Alpaca data with a MODELED (or MEASURED) spread; nothing here trades.
+"""
+import csv
+import hashlib
+import json
+import math
+import re
+import socket
+import statistics
+import sys
+import time
+from collections import Counter
+from dataclasses import replace
+from datetime import date, datetime
+from pathlib import Path
+
+from . import VERSION, contracts, engine, entries, periods, report as R, sim, spread as SP
+
+REPO = Path(__file__).resolve().parents[1]
+RUN_LOG = REPO / "docs" / "research" / "sprint_runs.csv"
+VALID = {"stop": {"premium", "level", "noise"}, "tp": {"none", "A", "B", "C", "D", "E"}, "time": {"a", "b", "c", "d"},
+         "allout": set(sim.ALLOUT), "tp_buffer": {"$0.03", "0.05%", "0.1atr"}, "contract": set(contracts.RULES),
+         "trail": {"none", "be6", "be8", "be10", "be15", "belevel", "L1", "L2", "L3", "hl1m", "hl5m", "lvl", "gb20", "gb30", "gb40",
+                   "gb50", "gb60", "vwap", "ema9"}, "side": {"both", "C", "P"},
+         "filters": {"after14", "chop2", "trend_only", "noise_trend"}}
+
+
+def host():
+    return re.sub(r"[^A-Za-z0-9_.-]", "_", socket.gethostname() or "host")[:40]
+
+
+def validate(runs):
+    for r in runs:
+        if r["entry"] not in entries.SETUPS:
+            raise ValueError(f"{r['run_id']}: unknown entry {r['entry']}")
+        x = r["exit"]
+        for k in ("stop", "tp", "time", "allout", "tp_buffer", "contract", "trail"):
+            if getattr(x, k) not in VALID[k]:
+                raise ValueError(f"{r['run_id']}: {k}={getattr(x, k)!r} not in {sorted(VALID[k])}")
+        if r["side"] not in VALID["side"]:
+            raise ValueError(f"{r['run_id']}: side {r['side']}")
+        for f in r.get("filters") or ():
+            if f not in VALID["filters"]:
+                raise ValueError(f"{r['run_id']}: filter {f}")
+        if x.rr_min is not None and not (0 < float(x.rr_min) < 20):
+            raise ValueError(f"{r['run_id']}: rr_min {x.rr_min}")
+        if x.stop == "noise" and not r["entry"].startswith("noise"):
+            raise ValueError(f"{r['run_id']}: the noise stop needs a noise entry")
+
+
+def count_prior_trials(out_dir):
+    n = 0
+    for p in [RUN_LOG] + sorted(Path(out_dir).glob("runs_*.csv")):
+        try:
+            with open(p) as f:
+                n += max(0, sum(1 for _ in csv.reader(f)) - 1)
+        except OSError:
+            pass
+    return n
+
+
+def _twin(r, by_key):
+    """The unfiltered twin of a filtered run (rr_min removed / filters removed), if the spec has it."""
+    if r["exit"].rr_min:
+        k = engine.run_key(dict(r, exit=replace(r["exit"], rr_min=None)))
+        if k in by_key:
+            return by_key[k]
+    if r.get("filters"):
+        k = engine.run_key(dict(r, filters=()))
+        if k in by_key:
+            return by_key[k]
+    return None
+
+
+def run_spec(spec_path, a=None, b=None, locked=None, frozen=None, data_root=None, chains_dir=None, out_dir=None, host_name=None,
+             top_k=None, random_paths=None, fake_seeds=None, robust=True, limit_days=None, trials=None, log=print, today=None,
+             spread_pct=None):
+    spec_path = Path(spec_path)
+    spec = json.loads(spec_path.read_text())
+    sha = periods.sha256_file(spec_path)
+    if locked:
+        names = [x.strip().upper() for x in str(locked).split(",") if x.strip()]
+        if len(names) != 1:
+            raise periods.LockedPeriod("REFUSED: --locked takes exactly one period (L1 or L2), run once each")
+        pa, pb = periods.period_range(names[0])
+        a, b = a or pa, b or pb
+        tag = names[0]
+    else:
+        pa, pb = periods.period_range(spec.get("period", "DEV"))
+        a, b = a or pa, b or pb
+        tag = spec.get("period", "DEV") if (a, b) == (pa, pb) else f"{spec.get('period', 'DEV')}[{a}..{b}]"
+    periods.guard(a, b, locked, frozen, spec_path)
+    out_dir = Path(out_dir or REPO / "data" / "sprint")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    host_name = host_name or host()
+    today = today or date.today()
+    rob = dict(spec.get("robustness") or {})
+    top_k = rob.get("top_k", 5) if top_k is None else top_k
+    random_paths = rob.get("random_paths", 5) if random_paths is None else random_paths
+    fake_seeds = rob.get("fake_seeds", 20) if fake_seeds is None else fake_seeds
+    min_trades = rob.get("min_trades", 60)
+    runs = engine.expand(spec)
+    validate(runs)
+    syms = sorted({s for r in runs for s in r["symbols"]})
+    spread_pct = spread_pct if spread_pct is not None else spec.get("spread_pct")
+    spread = SP.SpreadModel(pct=float(spread_pct)) if spread_pct is not None else \
+        SP.from_chains(chains_dir or REPO / "data" / "chains", unders=set(syms))
+    log(f"sprint {VERSION}: spec {spec['spec_id']} ({len(runs)} runs, sha256 {sha[:12]}), period {tag} {a}..{b}, symbols "
+        f"{','.join(syms)}, {spread.describe()}")
+    t0 = time.time()
+    writer = engine.TradeWriter(out_dir / f"trades_{spec['spec_id']}_{today}.csv.gz")
+    res, sessions = engine.run_pass(runs, a, b, data_root, spread, progress=log, writer=writer, limit_days=limit_days)
+    writer.close()
+    log(f"pass 1 done in {time.time() - t0:.0f}s")
+    all_sessions = sorted({d for v in sessions.values() for d in v})
+    summ = {r["run_id"]: R.summarize(res[r["run_id"]]["trades"]) for r in runs}
+    sr = {}
+    for r in runs:
+        tr = res[r["run_id"]]["trades"]
+        ses = sorted({d for s in r["symbols"] for d in sessions.get(s, [])})
+        sr[r["run_id"]] = R.sharpe(R.daily_pnl(tr, ses)) if tr else None
+    srs = [x for x in sr.values() if x is not None]
+    sr_var = statistics.pvariance(srs) if len(srs) > 1 else 0.0
+    n_trials = trials or (count_prior_trials(out_dir) + len(runs))
+    by_key = {engine.run_key(r): r for r in runs}
+    robx = {r["run_id"]: {} for r in runs}
+    for r in runs:
+        tr = res[r["run_id"]]["trades"]
+        ses = sorted({d for s in r["symbols"] for d in sessions.get(s, [])})
+        robx[r["run_id"]]["ci95"] = R.bootstrap_ci(tr, ses)
+        robx[r["run_id"]]["dsr"] = R.deflated_sharpe(R.daily_pnl(tr, ses), n_trials, sr_var) if tr else None
+        tw = _twin(r, by_key)
+        if tw is not None:
+            t = R.random_skip_test(tr, res[tw["run_id"]]["trades"])
+            if t:
+                robx[r["run_id"]]["skip_test"] = dict(t, twin=tw["run_id"])
+                robx[r["run_id"]]["skip_p"] = t.get("p_value")
+    ranked = sorted((r for r in runs if summ[r["run_id"]].get("trades", 0) >= min_trades),
+                    key=lambda r: -(summ[r["run_id"]].get("expectancy") or -1e9))
+    top_note = None
+    if not ranked:
+        ranked = sorted((r for r in runs if summ[r["run_id"]].get("trades", 0) > 0), key=lambda r: -(summ[r["run_id"]].get("expectancy") or -1e9))
+        top_note = f"no run reached {min_trades} trades: robustness ran on the best runs anyway (flagged)"
+    top = ranked[:top_k] if robust else []
+    jobs, job_meta = [], {}
+    for r in top:
+        rid = r["run_id"]
+        for what, val, nr in engine.nudges(r):
+            k = engine.run_key(nr)
+            if k in by_key:
+                job_meta.setdefault(rid, {}).setdefault("nudges", []).append((what, val, by_key[k]["run_id"], "spec"))
+                continue
+            nid = f"{rid}~n{what}={val}"
+            jobs.append(dict(nr, run_id=nid, nudge=True))
+            job_meta.setdefault(rid, {}).setdefault("nudges", []).append((what, val, nid, "extra"))
+        for p in range(random_paths):
+            j = engine.random_job(r, res[rid]["trades"], p)
+            jobs.append(j)
+            job_meta.setdefault(rid, {}).setdefault("random", []).append(j["run_id"])
+        if engine.uses_levels(r):
+            for sd in range(1, fake_seeds + 1):
+                jobs.append(dict(r, run_id=f"{rid}~fake{sd}", fake_seed=sd))
+                job_meta.setdefault(rid, {}).setdefault("fake", []).append(f"{rid}~fake{sd}")
+    res2 = {}
+    if jobs:
+        log(f"pass 2 (robustness): {len(jobs)} jobs for the top {len(top)} runs")
+        t1 = time.time()
+        res2, _ = engine.run_pass(jobs, a, b, data_root, spread, progress=log, limit_days=limit_days)
+        log(f"pass 2 done in {time.time() - t1:.0f}s")
+    allres = dict(res, **res2)
+    for r in top:
+        rid = r["run_id"]
+        m = job_meta.get(rid, {})
+        exp = summ[rid].get("expectancy")
+        nud = []
+        for what, val, nid, src in m.get("nudges", []):
+            s2 = R.metrics(R.ordered(allres[nid]["trades"]))
+            nud.append({"param": what, "value": val, "run": nid, "src": src, "trades": s2.get("trades", 0),
+                        "pf": s2.get("profit_factor"), "expectancy": s2.get("expectancy")})
+        robx[rid]["nudges"] = nud
+        pfs = [x["pf"] for x in nud if x["pf"] is not None]
+        robx[rid]["nudge_min_pf"] = min(pfs) if pfs else None
+        rnd = [R.metrics(allres[j]["trades"]).get("expectancy") for j in m.get("random", [])]
+        rnd = [x for x in rnd if x is not None]
+        robx[rid]["random_exp"] = rnd
+        robx[rid]["random_beat"] = R.beat_share(exp, rnd)
+        fk = [R.metrics(allres[j]["trades"]).get("expectancy") for j in m.get("fake", [])]
+        fk = [x for x in fk if x is not None]
+        robx[rid]["fake_exp"] = fk
+        robx[rid]["fake_beat"] = R.beat_share(exp, fk)
+    stamp = datetime.now().isoformat(timespec="seconds")
+    csv_path = out_dir / f"runs_{host_name}.csv"
+    new = not csv_path.exists()
+    rows = []
+    for r in runs:
+        rid = r["run_id"]
+        s, rb, sk = summ[rid], robx[rid], res[rid]["skips"]
+        notes = [f"spec {spec['spec_id']} sha {sha[:12]}", f"host {host_name}", f"engine {VERSION}", "BACKTEST in-sample" if tag == "DEV" else f"BACKTEST {tag}",
+                 spread.label, f"signals {res[rid]['signals']}"]
+        if sk:
+            notes.append("skips: " + ", ".join(f"{k} {v}" for k, v in sk.most_common(4)))
+        if rb.get("ci95"):
+            notes.append(f"exp CI95 {rb['ci95'][0]}..{rb['ci95'][1]}")
+        if rb.get("dsr") is not None:
+            notes.append(f"DSR {rb['dsr']} (N={n_trials})")
+        if rb.get("skip_test"):
+            notes.append(f"random day-skip p {rb['skip_test']['p_value']} vs {rb['skip_test']['twin']}")
+        if rid in [x["run_id"] for x in top]:
+            if rb.get("nudge_min_pf") is not None:
+                notes.append(f"nudge min PF {rb['nudge_min_pf']}")
+            if rb.get("random_beat") is not None:
+                notes.append(f"beats {rb['random_beat']:.0%} of random paths")
+            if rb.get("fake_beat") is not None:
+                notes.append(f"beats {rb['fake_beat']:.0%} of made-up-level seeds")
+        rows.append(R.csv_row(r, s, stamp, tag, spread.label, "; ".join(notes)))
+    with open(csv_path, "a", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=R.COLUMNS, lineterminator="\n")
+        if new:
+            w.writeheader()
+        w.writerows(rows)
+    md = render(spec, sha, tag, a, b, runs, summ, robx, res, sessions, top, top_note, spread, n_trials, host_name, csv_path,
+                writer.path, time.time() - t0)
+    rp = out_dir / f"report_{today}.md"
+    if rp.exists():
+        rp = out_dir / f"report_{today}_{spec['spec_id']}_{datetime.now():%H%M%S}.md"
+    rp.write_text(md)
+    log(summary_table(runs, summ))
+    log(f"\nrun log: {csv_path}\nreport:  {rp}\ntrades:  {writer.path}")
+    return {"runs": runs, "summary": summ, "robust": robx, "csv": csv_path, "report": rp, "results": res, "sessions": sessions,
+            "trials": n_trials}
+
+
+def _lab(r):
+    x = r["exit"]
+    s = f"{r['entry']} {x.stop[:4]} tp{x.tp}"
+    if x.tp in ("B", "C", "D", "E"):
+        s += f"/{x.tp_buffer}"
+    if x.rr_min:
+        s += f" rr{x.rr_min:g}"
+    if x.trail != "none":
+        s += f" tr:{x.trail}"
+    return s + f" t{x.time} {x.allout}"
+
+
+def summary_table(runs, summ, limit=None):
+    rows = sorted(runs, key=lambda r: -(summ[r["run_id"]].get("expectancy") if summ[r["run_id"]].get("expectancy") is not None else -1e9))
+    lines = [f"{'run':<18} {'config':<48} {'n':>5} {'win%':>5} {'exp$':>7} {'PF':>5} {'PF2x':>5} {'maxDD$':>8}"]
+    for r in rows[:limit] if limit else rows:
+        s = summ[r["run_id"]]
+        wr = s.get("win_rate")
+        lines.append(f"{r['run_id'][-18:]:<18} {_lab(r)[:48]:<48} {s.get('trades', 0):>5} {('-' if wr is None else f'{100 * wr:.0f}'):>5} "
+                     f"{R.fmt(s.get('expectancy')):>7} {R.fmt(s.get('profit_factor')):>5} {R.fmt(s.get('pf_2x_slip')):>5} {R.fmt(s.get('max_dd'), 0):>8}")
+    return "\n".join(lines)
+
+
+def _best(runs, summ, pred, min_n):
+    c = [r for r in runs if pred(r) and summ[r["run_id"]].get("trades", 0) >= min_n]
+    if not c:
+        c = [r for r in runs if pred(r) and summ[r["run_id"]].get("trades", 0) > 0]
+    return max(c, key=lambda r: summ[r["run_id"]].get("expectancy") or -1e9) if c else None
+
+
+def render(spec, sha, tag, a, b, runs, summ, robx, res, sessions, top, top_note, spread, n_trials, host_name, csv_path, trades_path, secs):
+    min_n = (spec.get("robustness") or {}).get("min_trades", 60)
+    L = []
+    L.append(f"# Sprint report: {spec['spec_id']} ({tag})\n")
+    L.append(f"Generated {datetime.now():%Y-%m-%d %H:%M} on `{host_name}` by sprint engine `{VERSION}` in {secs / 60:.1f} min. "
+             f"Spec sha256 `{sha}`.\n")
+    L.append(f"**Every number below is a BACKTEST** ({'in-sample, development period' if tag == 'DEV' else tag}) on Alpaca 1-minute "
+             f"bars, {a} to {b}. Option fills are real traded prices +/- a half-spread: **{spread.describe()}**. "
+             "Fees $0.65 per contract per side. P/L is per 1-contract unit. Deltas are BS-EST (Black-Scholes from the option's "
+             "price). Nothing here is a live or paper fill.\n")
+    cov = ", ".join(f"{s}: {len(v)} sessions" for s, v in sorted(sessions.items()))
+    L.append(f"Data: {cov}. Runs in this spec: {len(runs)}. Trials counted for the deflated Sharpe: {n_trials} "
+             f"(docs/research/sprint_runs.csv + data/sprint/runs_*.csv + this spec).\n")
+    L.append("Known limits: July 2024 is locked (L2), so early-August 2024 sessions have partial history; news and VIX are "
+             "unknown in the backtest (rules that need them never fire); a contract needs BS-EST |delta| inside the band, "
+             "so some signals have no contract (counted as skips).\n")
+    if spread.label == "MODELED-SPREAD":
+        L.append("**Cost caveat:** the pre-registered default charges a half-spread of 5% of the premium on every fill (10% "
+                 "round trip). That is a deliberately conservative placeholder until the desk's logged chains exist; the desk's "
+                 "own replay model (replay.py) assumes SPY/QQQ 0DTE near-the-money spreads of a few cents. Results that "
+                 "depend on small option moves (near level targets, tight trails) are the most sensitive to it. Rerun with "
+                 "MEASURED-SPREAD once data/chains has enough days.\n")
+    if spec.get("description"):
+        L.append(f"Spec: {spec['description']}\n")
+    # first answer
+    plain = _best(runs, summ, lambda r: r["exit"].tp == "none" and r["exit"].trail == "none", min_n)
+    A = _best(runs, summ, lambda r: r["exit"].tp == "A" and r["exit"].trail == "none", min_n)
+    B = _best(runs, summ, lambda r: r["exit"].tp == "B" and r["exit"].trail == "none", min_n)
+    T = _best(runs, summ, lambda r: r["exit"].trail != "none", min_n)
+    O = _best(runs, summ, lambda r: r["exit"].tp in ("C", "D", "E") and r["exit"].trail == "none", min_n)
+    L.append("## First answer: current plan vs best level target vs best trail\n")
+    L.append(f"Best of each family by expectancy among runs with at least {min_n} trades (else the best with any trades).\n")
+    picks = [("plain stop + time", plain), ("A: current fixed-% plan", A), ("B: best level target", B), ("best trail", T),
+             ("best C/D/E", O)]
+    picks = [(n, r) for n, r in picks if r is not None]
+    L.append(R.table(picks, [("family", lambda p: p[0]), ("run", lambda p: p[1]["run_id"]), ("config", lambda p: _lab(p[1])),
+                             ("trades", lambda p: summ[p[1]["run_id"]].get("trades")),
+                             ("win%", lambda p: None if summ[p[1]["run_id"]].get("win_rate") is None else 100 * summ[p[1]["run_id"]]["win_rate"]),
+                             ("avg win", lambda p: summ[p[1]["run_id"]].get("avg_win")), ("avg loss", lambda p: summ[p[1]["run_id"]].get("avg_loss")),
+                             ("exp $", lambda p: summ[p[1]["run_id"]].get("expectancy")), ("PF", lambda p: summ[p[1]["run_id"]].get("profit_factor")),
+                             ("PF 2x", lambda p: summ[p[1]["run_id"]].get("pf_2x_slip")), ("max DD", lambda p: summ[p[1]["run_id"]].get("max_dd")),
+                             ("CI95 exp", lambda p: "-" if not robx[p[1]["run_id"]].get("ci95") else f"{robx[p[1]['run_id']]['ci95'][0]}..{robx[p[1]['run_id']]['ci95'][1]}")]))
+    L.append("")
+    # top-K robustness
+    L.append(f"## Robustness on the top {len(top)} runs\n")
+    if top_note:
+        L.append(f"**{top_note}**\n")
+    for r in top:
+        rid = r["run_id"]
+        s, rb = summ[rid], robx[rid]
+        L.append(f"### {rid}: {_lab(r)}\n")
+        L.append(f"Trades {s.get('trades')}, win {R.fmt(100 * (s.get('win_rate') or 0), 0)}%, avg win {R.fmt(s.get('avg_win'))}, avg loss "
+                 f"{R.fmt(s.get('avg_loss'))}, expectancy **{R.fmt(s.get('expectancy'))}** (2x slippage {R.fmt(s.get('expectancy_2x'))}), "
+                 f"PF {R.fmt(s.get('profit_factor'))} (2x {R.fmt(s.get('pf_2x_slip'))}), max DD {R.fmt(s.get('max_dd'))}, "
+                 f"% of peak kept {R.fmt(s.get('pct_peak_kept'))}, planned R:R {R.fmt(s.get('planned_rr'))} vs actual {R.fmt(s.get('actual_rr'))}, "
+                 f"expectancy CI95 {rb.get('ci95')}, deflated Sharpe {R.fmt(rb.get('dsr'), 3)} (N={n_trials}).\n")
+        L.append("Checklist (SPRINT_PLAN robustness):\n")
+        for name, ok in R.checklist(s, rb):
+            L.append(f"- [{'x' if ok else ' '}] {name}")
+        L.append("")
+        st = s.get("stretches") or {}
+        L.append(R.table(list(st.items()), [("stretch", lambda kv: kv[0]), ("trades", lambda kv: kv[1].get("trades")),
+                                            ("net $", lambda kv: kv[1].get("net")), ("exp $", lambda kv: kv[1].get("expectancy")),
+                                            ("PF", lambda kv: kv[1].get("profit_factor"))]))
+        sides = s.get("sides") or {}
+        L.append("\nSides: " + "; ".join(f"{'calls' if k == 'C' else 'puts'} n={v.get('trades')} exp {R.fmt(v.get('expectancy'))} "
+                                          f"PF {R.fmt(v.get('profit_factor'))}" for k, v in sides.items()))
+        L.append("Symbols: " + "; ".join(f"{k} n={v.get('trades')} exp {R.fmt(v.get('expectancy'))} PF {R.fmt(v.get('profit_factor'))}"
+                                          for k, v in (s.get("symbols") or {}).items()))
+        wb = s.get("without_best5") or {}
+        L.append(f"Without the best 5 trades: net {R.fmt(wb.get('net'))}, expectancy {R.fmt(wb.get('expectancy'))}.")
+        if rb.get("nudges"):
+            L.append("One-step nudges: " + "; ".join(f"{x['param']}={x['value']} n={x['trades']} PF {R.fmt(x['pf'])} exp {R.fmt(x['expectancy'])}"
+                                                    for x in rb["nudges"]))
+        if rb.get("random_exp"):
+            L.append(f"Matched random entries ({len(rb['random_exp'])} paths): expectancy {', '.join(R.fmt(x) for x in rb['random_exp'])}; "
+                     f"the run beats {R.fmt(100 * (rb.get('random_beat') or 0), 0)}% of paths.")
+        if rb.get("fake_exp"):
+            L.append(f"Made-up levels ({len(rb['fake_exp'])} seeds): mean expectancy {R.fmt(statistics.mean(rb['fake_exp']))}; "
+                     f"real levels beat {R.fmt(100 * (rb.get('fake_beat') or 0), 0)}% of seeds.")
+        if rb.get("skip_test"):
+            t = rb["skip_test"]
+            L.append(f"Filter vs random day-skips (twin {t['twin']}, {t['skipped_days']} days removed): p = {t['p_value']} "
+                     f"(filtered exp {t['filtered_exp']}, random-skip mean {t.get('random_skip_exp_mean')}).")
+        L.append(f"Exit reasons: {s.get('exit_reasons')}.")
+        L.append(f"Median option MFE {R.fmt(s.get('opt_mfe_median'), 3)}, MAE {R.fmt(s.get('opt_mae_median'), 3)}; median stock MFE "
+                 f"${R.fmt(s.get('stock_mfe_median'), 3)}; median distance from the stock's price at the option's peak to the nearest "
+                 f"level ${R.fmt(s.get('peak_to_level_median'), 3)}; median minutes held {s.get('minutes_held_median')}.")
+        sk = res[rid]["skips"]
+        if sk:
+            L.append("Skipped signals: " + ", ".join(f"{k} {v}" for k, v in sk.most_common()) + ".")
+        L.append("")
+    # filters vs random day-skips (all filtered runs)
+    sk_rows = [r for r in runs if robx[r["run_id"]].get("skip_test")]
+    if sk_rows:
+        L.append("## Filters vs random day-skips (every filtered run with its unfiltered twin)\n")
+        L.append(R.table(sk_rows, [("run", lambda r: r["run_id"]), ("config", _lab), ("twin", lambda r: robx[r["run_id"]]["skip_test"]["twin"]),
+                                   ("days skipped", lambda r: robx[r["run_id"]]["skip_test"]["skipped_days"]),
+                                   ("filtered exp", lambda r: robx[r["run_id"]]["skip_test"]["filtered_exp"]),
+                                   ("random-skip exp", lambda r: robx[r["run_id"]]["skip_test"].get("random_skip_exp_mean")),
+                                   ("p", lambda r: robx[r["run_id"]]["skip_test"]["p_value"])]))
+        L.append("")
+    # all runs
+    L.append("## All runs (sorted by expectancy)\n")
+    order = sorted(runs, key=lambda r: -(summ[r["run_id"]].get("expectancy") if summ[r["run_id"]].get("expectancy") is not None else -1e9))
+    sk_share = lambda r: None if not res[r["run_id"]]["signals"] else 100 * (1 - summ[r["run_id"]].get("trades", 0) / res[r["run_id"]]["signals"])
+    L.append("`sig` = signals seen, `skip%` = share not traded (no contract, level stop beyond the ceiling, R:R minimum, busy, "
+             "no print); the top skip reasons per run are in the run log's notes.\n")
+    L.append(R.table(order, [("run", lambda r: r["run_id"]), ("config", _lab), ("sig", lambda r: res[r["run_id"]]["signals"]),
+                             ("skip%", sk_share), ("n", lambda r: summ[r["run_id"]].get("trades")),
+                             ("win%", lambda r: None if summ[r["run_id"]].get("win_rate") is None else 100 * summ[r["run_id"]]["win_rate"]),
+                             ("avg win", lambda r: summ[r["run_id"]].get("avg_win")), ("avg loss", lambda r: summ[r["run_id"]].get("avg_loss")),
+                             ("exp", lambda r: summ[r["run_id"]].get("expectancy")), ("PF", lambda r: summ[r["run_id"]].get("profit_factor")),
+                             ("PF2x", lambda r: summ[r["run_id"]].get("pf_2x_slip")), ("maxDD", lambda r: summ[r["run_id"]].get("max_dd")),
+                             ("kept", lambda r: summ[r["run_id"]].get("pct_peak_kept")), ("pRR", lambda r: summ[r["run_id"]].get("planned_rr")),
+                             ("aRR", lambda r: summ[r["run_id"]].get("actual_rr")), ("DSR", lambda r: robx[r["run_id"]].get("dsr"))]))
+    L.append("")
+    L.append(f"Run log rows appended to `{csv_path}`; every trade in `{trades_path}`.\n")
+    L.append("Labels: BACKTEST (in-sample on DEV). Spread: " + spread.label + ". Delta: BS-EST. Not financial advice: evidence for Nick to decide.\n")
+    return "\n".join(L)

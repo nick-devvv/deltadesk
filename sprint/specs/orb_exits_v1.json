@@ -1,0 +1,54 @@
+{
+  "spec_id": "orb_exits_v1",
+  "description": "The sprint's FIRST question (SPRINT_PLAN 'First answer'): ORB breakout both sides (15/30/60-minute ranges, first finished 1-minute close beyond, first break per side, signal bars finishing by 12:00) on SPY, QQQ and IWM 0DTE options, delta 0.40-0.55 (target 0.45, BS-EST). Which exit makes the most money after costs: the current fixed-% plan A (about 1:1), a key-level target B, the half-and-trail C, the rejection-or-next-level E, or a trailing stop? Each block below varies one thing; every run uses the same entries, so the exits differ only in their rule. 195 runs. Robustness (nudges, matched random entries, made-up levels) runs on the top 5 by expectancy with at least 60 trades.",
+  "period": "DEV",
+  "symbols": ["SPY", "QQQ", "IWM"],
+  "defaults": {
+    "side": "both",
+    "contract": "d40-55t45",
+    "allout": "15:25",
+    "time": "a",
+    "stop": "level",
+    "tp": "none",
+    "tp_buffer": "$0.03",
+    "rr_min": null,
+    "trail": "none",
+    "filters": []
+  },
+  "blocks": [
+    {
+      "name": "plain",
+      "why": "Build step 1: entry + hard stop + time exit. Premium ceiling of the entry's window (20/12/10%, costs included), no target, no time tightening, all out 15:25. The floor every rule must beat. 3 runs.",
+      "grid": {"entry": ["orb15", "orb30", "orb60"], "stop": ["premium"], "tp": ["none"], "time": ["b"]}
+    },
+    {
+      "name": "A_current_plan",
+      "why": "Plan A, the one to beat: the time-of-day table as it is (max stop 20/12/10%, breakeven at +10/8/6%, T1 +20/15/12%, if-flat 5/3/3 min, all costs included), premium stop, all out at 15:25 and at 15:50. 6 runs.",
+      "grid": {"entry": ["orb15", "orb30", "orb60"], "stop": ["premium"], "tp": ["A"], "time": ["a"], "allout": ["15:25", "15:50"]}
+    },
+    {
+      "name": "B_level_target",
+      "why": "Plan B: sell all just before the first key level beyond the entry (levels known at the decision). Approach buffers $0.03 / 0.05% / 0.1 ATR(14,1m). Stop = the broken range edge -/+ max($0.02, 0.05 ATR) on a finished 1-minute close; skipped if it doesn't fit the window's ceiling. R:R minimums 1.5/2/2.5/3 on the stock AND the option (after spread, fees, 15-minute decay), plus no minimum (the unfiltered twin each filter is tested against with random day-skips). Time versions (a) and (c). 90 runs.",
+      "grid": {"entry": ["orb15", "orb30", "orb60"], "stop": ["level"], "tp": ["B"], "tp_buffer": ["$0.03", "0.05%", "0.1atr"],
+               "rr_min": [null, 1.5, 2.0, 2.5, 3.0], "time": ["a", "c"]}
+    },
+    {
+      "name": "C_half_and_trail",
+      "why": "Plan C: sell half at the first level, trail the rest under the last level cleared; if price closes through the level and a retest holds, the rest targets the next level. Same trades as B with the $0.03 buffer and no R:R minimum (level stop, skipped if it doesn't fit the ceiling), so C and B differ only in the exit. Time (a) and (c). 6 runs.",
+      "grid": {"entry": ["orb15", "orb30", "orb60"], "stop": ["level"], "tp": ["C"], "tp_buffer": ["$0.03"], "rr_min": [null], "time": ["a", "c"]}
+    },
+    {
+      "name": "E_rejection_or_next_level",
+      "why": "Plan E: at the level, exit only on a measurable rejection (wick >= 50% of the bar, volume >= 2x the 20-bar mean, or the 1m MACD histogram fading 2 bars), otherwise hold to the next level. Same trades as B with the $0.03 buffer and no R:R minimum. Time (a) and (c). 6 runs.",
+      "grid": {"entry": ["orb15", "orb30", "orb60"], "stop": ["level"], "tp": ["E"], "tp_buffer": ["$0.03"], "rr_min": [null], "time": ["a", "c"]}
+    },
+    {
+      "name": "trails_on_B_base",
+      "why": "Trails 1-4 on plan B's base: the same trades as B with the $0.03 buffer and no R:R minimum (level stop on a finished 1m close, skipped if it doesn't fit the ceiling), but the exit is the trail instead of the level target (a target hit first would make most trails identical to B; a dry run confirmed it). No R:R minimum because, with the 5% modeled half-spread, the option-side R:R to the nearest level is usually below 1 and a minimum would leave almost no trades; the R:R minimums are tested in the B block. Breakeven move at +6/8/10/15% or once the first level clears; profit-lock ladders L1-L3; structure trails under 1-minute and 5-minute pivot lows and under the last level cleared; giveback 30/40/50% of the peak open profit. Time (a) and (c). 84 runs.",
+      "grid": {"entry": ["orb15", "orb30", "orb60"], "stop": ["level"], "tp": ["none"], "tp_buffer": ["$0.03"], "rr_min": [null],
+               "trail": ["be6", "be8", "be10", "be15", "belevel", "L1", "L2", "L3", "hl1m", "hl5m", "lvl", "gb30", "gb40", "gb50"],
+               "time": ["a", "c"]}
+    }
+  ],
+  "robustness": {"top_k": 5, "random_paths": 5, "fake_seeds": 20, "min_trades": 60}
+}
