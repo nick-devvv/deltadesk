@@ -117,13 +117,16 @@ def tick(ticker, m1, now=None):
     why = v4risk.admit(LEDGER, BOOK, ticker, "long" if side == "P" else "short", now)
     if why:
         return done("BLOCKED-RISK", why, data)
-    rows, err = SP.chain(SP.chain_symbol(ticker), side, day)
-    if not rows:
-        return None if (pd.Timestamp(now) - signal_t).total_seconds() < SP.ENTRY_WINDOW_MIN * 60 - 15 else \
-            done("MISSED", f"no {side} chain ({err})", data)
-    legs, lwhy = pick_legs(rows, side, orr)
+    legs = store.kv_get(f"{dkey}:legs")                   # chosen once; retries only re-quote the legs (rate budget)
     if not legs:
-        return done("SKIP", lwhy, data)
+        rows, err = SP.chain(SP.chain_symbol(ticker), side, day)
+        if not rows:
+            return None if (pd.Timestamp(now) - signal_t).total_seconds() < SP.ENTRY_WINDOW_MIN * 60 - 15 else \
+                done("MISSED", f"no {side} chain ({err})", data)
+        legs, lwhy = pick_legs(rows, side, orr)
+        if not legs:
+            return done("SKIP", lwhy, data)
+        store.kv_set(f"{dkey}:legs", legs)
     plan = {"structure": data["structure"], "or_high": orr["high"], "or_low": orr["low"], "or_open": orr["open"],
             "signal": data["signal"], "exit_rule": "15:25, no stop, no target"}
     pid, owhy = SP.open_spread(LEDGER, BOOK, VERSION, ticker, f"{day}-{ticker}-ORBC", legs, signal_t,

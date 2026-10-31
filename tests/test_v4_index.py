@@ -439,3 +439,18 @@ def test_noise_variants_restart_without_double_entry(env):
         v4index.tick("SPY", engine.snapshot("SPY"), engine.chain_rows, clock())
     assert len(S.positions(ledger="noise_v2")) == n
     assert len([d for d in S.decisions(ledger="noise_v2", kind="check") if d["ticker"] == "SPY"]) == 1
+
+
+def test_entry_retries_requote_legs_without_refetching_chains(env):
+    clock, fk = chain_world(env, orb_path(WED), WED)
+    calls = []
+    real = fk.chain
+    fk.chain = lambda t, side, first, through=None: (calls.append((t, side)), real(t, side, first, through))[1]
+    fk.lag = 600                                              # quotes too old: the entry keeps waiting
+    for sec in (0, 10, 20, 30, 40):
+        at(clock, WED, "10:42", sec)
+        orb_credit.tick("SPY", m1_now(fk), clock())
+    assert len(calls) == 1                                    # legs picked once, then only re-quoted
+    fk.lag = 0.5
+    at(clock, WED, "10:43", 0)
+    assert orb_credit.tick("SPY", m1_now(fk), clock()) == "ORDER" and len(calls) == 1

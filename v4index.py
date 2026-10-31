@@ -50,7 +50,11 @@ def tick_extra(now=None):
         if not SP.extra_available(now):
             return None
         ic_20d.tick(SP.EXTRA, now)
-        if now.strftime("%H:%M") >= orb_credit.OR_END and not S.decided(f"{orb_credit.LEDGER}:{SP.EXTRA}:{now.date()}"):
+        minute = now.strftime("%Y-%m-%d %H:%M")
+        if now.strftime("%H:%M") >= orb_credit.OR_END and not S.decided(f"{orb_credit.LEDGER}:{SP.EXTRA}:{now.date()}") \
+                and (_state.get("xsp_minute") != minute or store.kv_get(f"{orb_credit.LEDGER}:{SP.EXTRA}:{now.date()}:legs")) \
+                and now.second >= 3:
+            _state["xsp_minute"] = minute                  # $XSP bars at most once a minute (rate budget)
             m1, src = SP.extra_bars(now)
             if m1 is not None:
                 orb_credit.tick(SP.EXTRA, m1, now)

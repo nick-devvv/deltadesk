@@ -293,6 +293,13 @@ def step(now=None):
         except Exception as e:
             _state["last_error"] = f"discover: {type(e).__name__}: {e}"[:200]
         for r in rows(status="PENDING", limit=50):
+            t0c = pd.Timestamp(_et(r["t0"])).ceil("1min")
+            spread_due = r.get("spread_quote_t") is None and pd.Timestamp(now) >= t0c + pd.Timedelta(minutes=1)
+            final_due = pd.Timestamp(now) >= t0c + pd.Timedelta(minutes=5)
+            last = _state.setdefault("tried", {}).get(r["id"])
+            if not (spread_due or final_due) or (not spread_due and last is not None and 0 <= (now - last).total_seconds() < 30):
+                continue                                         # nothing can have changed yet (rate budget)
+            _state["tried"][r["id"]] = now
             try:
                 observe(r, now)
             except Exception as e:

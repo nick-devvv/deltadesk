@@ -127,11 +127,15 @@ def _entry_attempt(v, ticker, data, t_end, chain_rows_fn, now):
     if why:
         return final("BLOCKED-RISK", why)
     expired = (pd.Timestamp(now) - t_end).total_seconds() >= ENTRY_WINDOW_MIN * 60 - 15     # the last tick of the window
-    rows, err = chain_rows_fn(ticker, side)
-    k = noiseband.pick_contract(rows, side)
+    k = store.kv_get(f"{ekey}:contract")                  # chosen once per check; retries only re-quote it (rate budget)
     if not k:
-        return final("SKIP", f"no contract fits delta {c.get('delta_min')}-{c.get('delta_max')} and the spread rule"
-                     + (f" ({err})" if err else ""))
+        rows, err = chain_rows_fn(ticker, side)
+        k = noiseband.pick_contract(rows, side)
+        if not k:
+            return final("SKIP", f"no contract fits delta {c.get('delta_min')}-{c.get('delta_max')} and the spread rule"
+                         + (f" ({err})" if err else ""))
+        k = {x: k.get(x) for x in ("symbol", "strike", "delta", "bid", "ask")}
+        store.kv_set(f"{ekey}:contract", k)
     q, qerr = marketdata.option_quote(k["symbol"])
     ok, qwhy = C.quote_after(q, t_end, marketdata.MAX_OPT_QUOTE_AGE_S)
     if not ok:

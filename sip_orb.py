@@ -606,7 +606,11 @@ def step(now=None):
     w = watching(day) if "09:35" <= hm < "16:00" else []
     syms = sorted({p["ticker"] for p in opens} | {s["ticker"] for s in w})
     quotes = {}
+    last_q = _state.get("q_t")
+    if syms and not opens and last_q is not None and 0 <= (now - last_q).total_seconds() < 9:
+        syms = []                                                   # watch-only: quotes every 10 s (rate budget)
     if syms:
+        _state["q_t"] = now
         with schwab.priority("risk" if opens else "normal"):
             try:
                 quotes, _ = f.quotes(syms)

@@ -12,6 +12,7 @@ Symbols: SPY, QQQ, and XSP when Schwab lists it that day.
 import pandas as pd
 
 import core
+import store
 import v4common as C
 import v4risk
 import v4spreads as SP
@@ -69,14 +70,17 @@ def tick(ticker, now=None):
     why = v4risk.admit(LEDGER, BOOK, ticker, "neutral", now)
     if why:
         return done("BLOCKED-RISK", why)
-    sym = SP.chain_symbol(ticker)
-    calls, e1 = SP.chain(sym, "C", day)
-    puts, e2 = SP.chain(sym, "P", day)
-    if not calls or not puts:
-        return done("MISSED", f"no chain ({e1 or e2})") if late else None
-    legs, lwhy = pick_legs(calls, puts)
+    legs = store.kv_get(f"{dkey}:legs")                   # chosen once; retries only re-quote the legs (rate budget)
     if not legs:
-        return done("SKIP", lwhy)
+        sym = SP.chain_symbol(ticker)
+        calls, e1 = SP.chain(sym, "C", day)
+        puts, e2 = SP.chain(sym, "P", day)
+        if not calls or not puts:
+            return done("MISSED", f"no chain ({e1 or e2})") if late else None
+        legs, lwhy = pick_legs(calls, puts)
+        if not legs:
+            return done("SKIP", lwhy)
+        store.kv_set(f"{dkey}:legs", legs)
     plan = {"structure": "iron condor", "target_delta": TARGET_DELTA, "stop": f"close debit >= {STOP_MULT:g}x credit, else 15:25"}
     pid, owhy = SP.open_spread(LEDGER, BOOK, VERSION, ticker, f"{day}-{ticker}-IC20", legs, signal_t, "neutral", plan, now)
     if pid:
