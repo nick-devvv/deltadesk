@@ -13,6 +13,8 @@ by +1 for calls and -1 for puts, so a positive number always means "in the trade
   f_day_ret        side-signed close at j vs the open, in %
   f_vwap_dist      side-signed (close at j - VWAP) / daily ATR
   f_prev_range     prior session's high - low / daily ATR
+  f_prev_ret       side-signed prior session's close vs the close before it, in % (added before run 3, after Chart's
+                   in-sample look at v2-034 found "prior day up > 0.3%" days losing; the learner tests it walk-forward)
   f_event          1 on an FOMC statement or CPI release day, 0 otherwise, empty if the calendar doesn't cover the date
   f_vixy_pctl      VIX proxy: VIXY's percentile among 252 daily closes up to the prior session (empty when not loaded)
 """
@@ -21,7 +23,7 @@ import math
 import numpy as np
 
 FEATURES = ["f_minute", "f_weekday", "f_adx", "f_er30", "f_vwap_x60", "f_overlap30", "f_range_atr", "f_rvol", "f_trend_votes",
-            "f_di", "f_noise_true", "f_gap", "f_day_ret", "f_vwap_dist", "f_prev_range", "f_event", "f_vixy_pctl"]
+            "f_di", "f_noise_true", "f_gap", "f_day_ret", "f_vwap_dist", "f_prev_range", "f_prev_ret", "f_event", "f_vixy_pctl"]
 
 
 def _num(x, nd=4):
@@ -51,7 +53,10 @@ def entry_features(ctx, j, side):
            "f_day_ret": _num(sg * (cj / o0 - 1) * 100) if not (math.isnan(o0) or math.isnan(cj)) else None,
            "f_vwap_dist": _num(sg * (cj - vw) / datr) if datr and not (math.isnan(cj) or math.isnan(vw)) else None,
            "f_prev_range": _num((prev["high"] - prev["low"]) / datr) if prev and datr else None,
-           "f_event": None, "f_vixy_pctl": None}
+           "f_prev_ret": None, "f_event": None, "f_vixy_pctl": None}
+    pp = ctx.series.prev_day(prev["day"]) if prev else None
+    if pp and pp.get("close"):
+        out["f_prev_ret"] = _num(sg * (prev["close"] / pp["close"] - 1) * 100)
     from . import events
     fo, cp = events.is_fomc(ctx.day), events.is_cpi(ctx.day)
     if fo is not None and cp is not None:

@@ -197,7 +197,7 @@ Run 1 (`docs/research/SPRINT_RESULTS_1.md`) left one lead: failed-break calls wi
 ## Amendment 3, 2026-10-31: learning when to trade, and several strategies as one book (written before any result)
 
 Nick's goals (2026-10-31): several strategies at once for more trades a day, losses kept small and wins large, and a desk that learns from its own trades when each strategy works best. Built as tested research tools, not as live behavior:
-- **Entry features** (`sprint/features.py`) are stamped on every trade from sprint run 3 on: time of day, weekday, ADX, efficiency, VWAP crosses, bar overlap, range vs ATR, relative volume, trend votes, DI spread, noise-trend count, gap, move so far, distance from VWAP, prior-day range, FOMC/CPI day, and the VIXY percentile. All are known at the end of the signal bar. Older trade files get the same values recomputed from cached bars, and a test checks the two match.
+- **Entry features** (`sprint/features.py`) are stamped on every trade from sprint run 3 on: time of day, weekday, ADX, efficiency, VWAP crosses, bar overlap, range vs ATR, relative volume, trend votes, DI spread, noise-trend count, gap, move so far, distance from VWAP, prior-day range, prior-day return (added before run 3, after Chart's in-sample look at v2-034), FOMC/CPI day, and the VIXY percentile. All are known at the end of the signal bar. Older trade files get the same values recomputed from cached bars, and a test checks the two match.
 - **Learner** (`sprint/learn.py`): walk-forward by month, fit only on earlier months, scored only on later months.
   - Three fixed models: L2 logistic regression on win/loss, ridge regression on winsorized P/L, and a 12-cell time-of-day x day-type skip table.
   - **PASS** needs all four:
