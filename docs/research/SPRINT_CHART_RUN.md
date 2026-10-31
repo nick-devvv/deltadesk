@@ -4,7 +4,7 @@ This runs the sprint's backtests on Chart's computer, the only machine that can 
 
 ## Run 2 (setups_v2): the failed-break deep dive
 
-Run 1's results are in `docs/research/SPRINT_RESULTS_1.md`. Run 2 changes one thing at a time on the only lead, failed-break calls (58 runs on DEV; what each block tests is in `sprint/specs/setups_v2.json` and SPRINT_PLAN "Amendment 2"). It needs one new pull: each session's prices of the **next listed expiry** (bars only, strikes within 1.5% of the open widened to the day's range; about 30-45 minutes, about 100-250 MB). Then it runs the spec at the base cost and at the 5% stress cost (about 15-30 minutes).
+Run 1's results are in `docs/research/SPRINT_RESULTS_1.md`. Run 2 changes one thing at a time on the only lead, failed-break calls (58 runs on DEV; what each block tests is in `sprint/specs/setups_v2.json` and SPRINT_PLAN "Amendment 2"). It needs one new pull: each session's prices of the **next listed expiry** (bars only, strikes within 1.5% of the open widened to the day's range; about 30-45 minutes, about 100-250 MB). Then it runs the spec at the base cost and at the 5% stress cost, and the former optional step 5b, `oa_crosscheck_v2` (66 runs): Option Alpha's "calm market" filters (VIX level and VIX change via the VIXY proxy, small gap up) on the 15 months Option Alpha never saw. Its VIXY daily bars come with step 3's pull. About 20-35 minutes for the three runs.
 
 ### Message for Chart, run 2 (one paste)
 
@@ -19,10 +19,10 @@ If a step fails, show the error and stop. Don't change any code; re-running the 
    cd ~/sprint && .venv/bin/pip install -q -r requirements.txt && .venv/bin/python -m pytest -q tests/test_sprint_*.py 2>&1 | tail -3
 3. Pull the next-expiry option bars (30-45 min, safe to re-run):
    cd ~/sprint && .venv/bin/python tools/sprint_pull.py --symbols SPY,QQQ,IWM --from 2024-08-01 --to 2026-06-30 --next-only --band 0.015 2>&1 | tail -12 ; du -sh ~/sprint/data/alpaca/options_next
-4. Run setups_v2 at the base cost, then at the 5% stress cost (15-30 min):
-   cd ~/sprint && mkdir -p data/sprint/logs && for a in "sprint/specs/setups_v2.json" "sprint/specs/setups_v2.json --spread-pct 0.05"; do L="data/sprint/logs/$(echo "$a" | tr ' /.' '___').log"; echo "=== $a"; .venv/bin/python tools/sprint_run.py $a > "$L" 2>&1 && grep -E "^sprint |VIX|pass [12] done|^report:" "$L" || { echo "FAILED: $a"; tail -30 "$L"; }; done
+4. Run setups_v2 at the base cost, then at the 5% stress cost, then the Option Alpha calm-market check (20-35 min):
+   cd ~/sprint && mkdir -p data/sprint/logs && for a in "sprint/specs/setups_v2.json" "sprint/specs/setups_v2.json --spread-pct 0.05" "sprint/specs/oa_crosscheck_v2.json"; do L="data/sprint/logs/$(echo "$a" | tr ' /.' '___').log"; echo "=== $a"; .venv/bin/python tools/sprint_run.py $a > "$L" 2>&1 && grep -E "^sprint |VIX|pass [12] done|^report:" "$L" || { echo "FAILED: $a"; tail -30 "$L"; }; done
 5. Zip the results and show the base report:
-   cd ~/sprint && .venv/bin/python -m zipfile -c ~/sprint_results2.zip $(ls data/sprint/report_*setups_v2*.md) data/sprint/runs_*.csv && ls -la ~/sprint_results2.zip
+   cd ~/sprint && .venv/bin/python -m zipfile -c ~/sprint_results2.zip $(ls data/sprint/report_*setups_v2*.md data/sprint/report_*oa_crosscheck_v2*.md) data/sprint/runs_*.csv && ls -la ~/sprint_results2.zip
    cat "$(ls -t data/sprint/report_*setups_v2.md | head -1)"
    (send Nick the file ~/sprint_results2.zip)
 ```
