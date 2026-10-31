@@ -336,6 +336,22 @@ class H(BaseHTTPRequestHandler):
             if u.path == "/api/health":            # v3.5: workers, feed, clock skew, rate budget, memory (no secrets)
                 import health
                 return self._json(clean(health.summary()))
+            if u.path == "/api/learning":          # v3.5: opportunities, decisions, shadow outcomes, hypotheses, ORBX stages
+                import learning
+                return self._json(clean(learning.view(q.get("day", [None])[0])))
+            if u.path == "/api/learning/export":   # CSV: decisions | shadow | opportunities | hypotheses
+                import learning
+                what = q.get("what", ["decisions"])[0]
+                if what not in ("decisions", "shadow", "opportunities", "hypotheses"):
+                    return self._json({"error": "unknown export"}, 400)
+                return self._send(200, learning.export_csv(what, q.get("from", [None])[0], q.get("to", [None])[0]), "text/csv; charset=utf-8",
+                                  {"Content-Disposition": f"attachment; filename=deltadesk-{what}.csv"})
+            if u.path == "/api/research/registry":  # v3.5: the GitHub/paper research registry (docs/research)
+                pth = os.path.join(HERE, "docs", "research", "strategy_registry.json")
+                if not os.path.exists(pth):
+                    return self._json({"entries": [], "note": "no registry file yet"})
+                with open(pth) as f:
+                    return self._json(json.load(f))
             if u.path == "/api/state":
                 return self._json(state(int(q.get("since", ["0"])[0] or 0)))
             if u.path == "/api/journal":
@@ -776,6 +792,14 @@ if __name__ == "__main__":
         print("Strategy lab (signal tape + lab paper ledgers):", "started" if lab.start() else "off", flush=True)
     except Exception as e:
         print("Scanner not started:", e, flush=True)
+    try:                                           # v3.5: journal/learning tables + the preregistered hypotheses
+        import learning
+        learning.migrate()
+        learning.seed_hypotheses()
+        import release
+        print("Release", release.RELEASE_ID, flush=True)
+    except Exception as e:
+        print("Learning journal not ready:", e, flush=True)
     start_kronos()
     print(f"DeltaDesk running: http://localhost:{PORT}  policy {core.policy()['version']}", flush=True)
     ThreadingHTTPServer(("127.0.0.1", PORT), H).serve_forever()

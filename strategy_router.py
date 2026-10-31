@@ -78,7 +78,6 @@ def admit(family, ticker, side, now=None, ctx=None):
 
 def portfolio_admission(day=None):
     """Shared limits across ALL actionable specialists together (not one allowance each)."""
-    import engine
     day = day or core.now_et().strftime("%Y-%m-%d")
     led = sorted({r["ledger"] for r in store.q("SELECT DISTINCT ledger FROM positions WHERE ledger LIKE 'spec_%'")} |
                  {r["portfolio"] for r in store.q("SELECT DISTINCT portfolio FROM ideas WHERE portfolio LIKE 'spec_%'")})
@@ -88,10 +87,36 @@ def portfolio_admission(day=None):
     ideas = sum(len(store.q("SELECT idea FROM ideas WHERE portfolio=? AND created LIKE ?", (l, f"{day}%"))) for l in led)
     if ideas >= core.policy()["v3"]["limits"]["main_ideas_per_day"]:
         return "max ideas today across specialists"
-    for l in led:
-        g = engine.discipline_gate(l, "A")
-        if g and g.startswith("STOP FOR TODAY"):
-            return f"loss-streak stop ({l})"
+    g = actionable_discipline(led, day)
+    if g:
+        return g
+    return None
+
+
+def actionable_discipline(ledgers, day, grade=None, now=None):
+    """v3.5 (E2): ONE chronological losing streak across every actionable specialist ledger together, so switching
+    symbols or ledgers never resets it. Same thresholds as the main policy: stop for the day after N losses in a row,
+    A-only after M (specialist entries carry no grade, so they count as not-A), cooldown after any loss."""
+    from datetime import datetime as _dt
+    d = core.policy()["discipline"]
+    now = now or core.now_et()
+    closed = []
+    for l in ledgers:
+        closed += [p for p in store.positions(ledger=l, day=day) if p["status"] == "CLOSED"]
+    closed.sort(key=lambda p: p["closed"] or "")
+    n = 0
+    for p in reversed(closed):
+        if (p["realized"] or 0) <= -1.0:
+            n += 1
+        else:
+            break
+    if n >= d.get("stop_day_after_consecutive_losses", 99):
+        return f"loss-streak stop: {n} losses in a row across actionable specialists"
+    if n >= d["a_only_after_consecutive_losses"] and grade != "A":
+        return f"A setups only now ({n} losses in a row across actionable specialists)"
+    if closed and (closed[-1]["realized"] or 0) < 0 and closed[-1]["closed"]:
+        if now - _dt.fromisoformat(closed[-1]["closed"]) < __import__("datetime").timedelta(minutes=d["cooldown_min_after_loss"]):
+            return f"cooldown {d['cooldown_min_after_loss']} min after a loss (any actionable specialist)"
     return None
 
 

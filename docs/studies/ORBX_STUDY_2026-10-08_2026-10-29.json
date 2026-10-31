@@ -1,0 +1,553 @@
+{
+ "version": "2026-10-31.orbx1",
+ "params": {
+  "or_minutes": 15,
+  "tf_min": 5,
+  "clear_ticks": 1,
+  "tol_ticks": 2,
+  "tol_atr": 0.1,
+  "fail_ticks": 3,
+  "fail_atr": 0.3,
+  "confirm_timeout": 6,
+  "retest_timeout": 9,
+  "last_entry": "15:00",
+  "max_resets": 1,
+  "max_extension_atr": 0.5,
+  "stop_buf_atr": 0.05,
+  "max_stop_atr": 1.5,
+  "latency_s": 1,
+  "atr_n": 14
+ },
+ "results": [
+  {
+   "universe": "SPY and QQQ (the ORBX paper ledger's instruments)",
+   "sessions": 16,
+   "first": "2026-10-08",
+   "last": "2026-10-29",
+   "split_at": "2026-10-22",
+   "episode_states": {
+    "EXPIRED": 15,
+    "ENTRY CONFIRMED": 11,
+    "INVALIDATED": 36
+   },
+   "entries_confirmed": 11,
+   "skipped_by_chase_gate": 1,
+   "orbx": {
+    "swing": {
+     "n": 10,
+     "missing": 0,
+     "sessions": 8,
+     "win_pct": 10.0,
+     "avg_r": -0.93,
+     "ci95": [
+      -1.315,
+      -0.229
+     ],
+     "median_r": -1.105,
+     "avg_win": 1.446,
+     "avg_loss": -1.194,
+     "sum_r": -9.3,
+     "max_dd_r": -10.74
+    },
+    "atr": {
+     "n": 10,
+     "missing": 0,
+     "sessions": 8,
+     "win_pct": 10.0,
+     "avg_r": 0.05,
+     "ci95": [
+      -1.322,
+      3.452
+     ],
+     "median_r": -1.105,
+     "avg_win": 11.272,
+     "avg_loss": -1.196,
+     "sum_r": 0.5,
+     "max_dd_r": -10.77
+    },
+    "fixed2r": {
+     "n": 10,
+     "missing": 0,
+     "sessions": 8,
+     "win_pct": 30.0,
+     "avg_r": -0.297,
+     "ci95": [
+      -0.958,
+      0.722
+     ],
+     "median_r": -1.077,
+     "avg_win": 1.605,
+     "avg_loss": -1.112,
+     "sum_r": -2.97,
+     "max_dd_r": -5.53
+    },
+    "ormid1r": {
+     "n": 10,
+     "missing": 0,
+     "sessions": 8,
+     "win_pct": 50.0,
+     "avg_r": -0.037,
+     "ci95": [
+      -0.667,
+      0.721
+     ],
+     "median_r": -0.039,
+     "avg_win": 0.964,
+     "avg_loss": -1.037,
+     "sum_r": -0.37,
+     "max_dd_r": -4.16
+    },
+    "hold": {
+     "n": 10,
+     "missing": 0,
+     "sessions": 8,
+     "win_pct": 10.0,
+     "avg_r": 0.05,
+     "ci95": [
+      -1.322,
+      3.452
+     ],
+     "median_r": -1.105,
+     "avg_win": 11.272,
+     "avg_loss": -1.196,
+     "sum_r": 0.5,
+     "max_dd_r": -10.77
+    }
+   },
+   "orbx_later_third": {
+    "swing": {
+     "n": 3,
+     "missing": 0,
+     "sessions": 3,
+     "win_pct": 0.0,
+     "avg_r": -1.105,
+     "ci95": [
+      -1.205,
+      -1.054
+     ],
+     "median_r": -1.055,
+     "avg_win": null,
+     "avg_loss": -1.105,
+     "sum_r": -3.31,
+     "max_dd_r": -3.31
+    },
+    "atr": {
+     "n": 3,
+     "missing": 0,
+     "sessions": 3,
+     "win_pct": 0.0,
+     "avg_r": -1.105,
+     "ci95": [
+      -1.205,
+      -1.054
+     ],
+     "median_r": -1.055,
+     "avg_win": null,
+     "avg_loss": -1.105,
+     "sum_r": -3.31,
+     "max_dd_r": -3.31
+    },
+    "fixed2r": {
+     "n": 3,
+     "missing": 0,
+     "sessions": 3,
+     "win_pct": 33.3,
+     "avg_r": -0.105,
+     "ci95": [
+      -1.055,
+      1.795
+     ],
+     "median_r": -1.054,
+     "avg_win": 1.795,
+     "avg_loss": -1.055,
+     "sum_r": -0.31,
+     "max_dd_r": -1.05
+    },
+    "ormid1r": {
+     "n": 3,
+     "missing": 0,
+     "sessions": 3,
+     "win_pct": 66.7,
+     "avg_r": 0.306,
+     "ci95": [
+      -1.028,
+      0.983
+     ],
+     "median_r": 0.965,
+     "avg_win": 0.974,
+     "avg_loss": -1.028,
+     "sum_r": 0.92,
+     "max_dd_r": -1.03
+    },
+    "hold": {
+     "n": 3,
+     "missing": 0,
+     "sessions": 3,
+     "win_pct": 0.0,
+     "avg_r": -1.105,
+     "ci95": [
+      -1.205,
+      -1.054
+     ],
+     "median_r": -1.055,
+     "avg_win": null,
+     "avg_loss": -1.105,
+     "sum_r": -3.31,
+     "max_dd_r": -3.31
+    }
+   },
+   "orbx_vs_controls": {
+    "fixed2r_minus_controls": {
+     "n": 10,
+     "missing": 0,
+     "sessions": 8,
+     "win_pct": 30.0,
+     "avg_r": -0.01,
+     "ci95": [
+      -0.814,
+      1.171
+     ],
+     "median_r": -0.75,
+     "avg_win": 2.15,
+     "avg_loss": -0.936,
+     "sum_r": -0.1,
+     "max_dd_r": -4.13
+    }
+   },
+   "old_orb15_base": {
+    "n": 30,
+    "missing": 0,
+    "sessions": 16,
+    "win_pct": 16.7,
+    "avg_r": -0.565,
+    "ci95": [
+     -0.964,
+     -0.065
+    ],
+    "median_r": -1.049,
+    "avg_win": 1.923,
+    "avg_loss": -1.063,
+    "sum_r": -16.96,
+    "max_dd_r": -17.78
+   },
+   "old_orb15_controls": {
+    "n": 30,
+    "missing": 0,
+    "sessions": 16,
+    "win_pct": 43.3,
+    "avg_r": -0.055,
+    "ci95": [
+     -0.314,
+     0.22
+    ],
+    "median_r": -0.033,
+    "avg_win": 0.484,
+    "avg_loss": -0.467,
+    "sum_r": -1.65,
+    "max_dd_r": -4.64
+   },
+   "orbx_controls_2r": {
+    "n": 10,
+    "missing": 0,
+    "sessions": 8,
+    "win_pct": 30.0,
+    "avg_r": -0.287,
+    "ci95": [
+     -0.618,
+     -0.078
+    ],
+    "median_r": -0.183,
+    "avg_win": 0.056,
+    "avg_loss": -0.433,
+    "sum_r": -2.87,
+    "max_dd_r": -3.03
+   },
+   "stop_and_cost": {
+    "median_stop_atr5": 0.327,
+    "median_cost_r": 0.137,
+    "stop_gap_losses": 0
+   },
+   "old_vs_controls": {
+    "n": 30,
+    "missing": 0,
+    "sessions": 16,
+    "win_pct": 16.7,
+    "avg_r": -0.51,
+    "ci95": [
+     -1.019,
+     0.086
+    ],
+    "median_r": -0.9,
+    "avg_win": 1.925,
+    "avg_loss": -0.997,
+    "sum_r": -15.31,
+    "max_dd_r": -15.69
+   }
+  },
+  {
+   "universe": "Individual stocks (signal-only observation: ORB never authorizes a stock entry without news)",
+   "sessions": 19,
+   "first": "2026-10-05",
+   "last": "2026-10-29",
+   "split_at": "2026-10-21",
+   "episode_states": {
+    "INVALIDATED": 1857,
+    "EXPIRED": 782,
+    "ENTRY CONFIRMED": 681
+   },
+   "entries_confirmed": 681,
+   "skipped_by_chase_gate": 204,
+   "orbx": {
+    "swing": {
+     "n": 477,
+     "missing": 0,
+     "sessions": 19,
+     "win_pct": 22.2,
+     "avg_r": -0.388,
+     "ci95": [
+      -0.621,
+      -0.133
+     ],
+     "median_r": -1.137,
+     "avg_win": 3.304,
+     "avg_loss": -1.443,
+     "sum_r": -185.14,
+     "max_dd_r": -188.07
+    },
+    "atr": {
+     "n": 477,
+     "missing": 0,
+     "sessions": 19,
+     "win_pct": 16.1,
+     "avg_r": -0.223,
+     "ci95": [
+      -0.553,
+      0.133
+     ],
+     "median_r": -1.198,
+     "avg_win": 6.639,
+     "avg_loss": -1.544,
+     "sum_r": -106.36,
+     "max_dd_r": -126.63
+    },
+    "fixed2r": {
+     "n": 477,
+     "missing": 0,
+     "sessions": 19,
+     "win_pct": 34.4,
+     "avg_r": -0.46,
+     "ci95": [
+      -0.578,
+      -0.336
+     ],
+     "median_r": -1.102,
+     "avg_win": 1.57,
+     "avg_loss": -1.523,
+     "sum_r": -219.24,
+     "max_dd_r": -219.24
+    },
+    "ormid1r": {
+     "n": 477,
+     "missing": 0,
+     "sessions": 19,
+     "win_pct": 47.0,
+     "avg_r": -0.092,
+     "ci95": [
+      -0.21,
+      0.037
+     ],
+     "median_r": -0.12,
+     "avg_win": 0.773,
+     "avg_loss": -0.858,
+     "sum_r": -43.95,
+     "max_dd_r": -63.01
+    },
+    "hold": {
+     "n": 477,
+     "missing": 0,
+     "sessions": 19,
+     "win_pct": 12.2,
+     "avg_r": -0.274,
+     "ci95": [
+      -0.609,
+      0.111
+     ],
+     "median_r": -1.214,
+     "avg_win": 8.985,
+     "avg_loss": -1.556,
+     "sum_r": -130.71,
+     "max_dd_r": -147.75
+    }
+   },
+   "orbx_later_third": {
+    "swing": {
+     "n": 193,
+     "missing": 0,
+     "sessions": 7,
+     "win_pct": 19.2,
+     "avg_r": -0.437,
+     "ci95": [
+      -0.664,
+      -0.188
+     ],
+     "median_r": -1.151,
+     "avg_win": 3.42,
+     "avg_loss": -1.352,
+     "sum_r": -84.37,
+     "max_dd_r": -85.55
+    },
+    "atr": {
+     "n": 193,
+     "missing": 0,
+     "sessions": 7,
+     "win_pct": 13.0,
+     "avg_r": -0.49,
+     "ci95": [
+      -0.887,
+      -0.083
+     ],
+     "median_r": -1.226,
+     "avg_win": 6.211,
+     "avg_loss": -1.487,
+     "sum_r": -94.58,
+     "max_dd_r": -97.8
+    },
+    "fixed2r": {
+     "n": 193,
+     "missing": 0,
+     "sessions": 7,
+     "win_pct": 32.1,
+     "avg_r": -0.523,
+     "ci95": [
+      -0.686,
+      -0.385
+     ],
+     "median_r": -1.121,
+     "avg_win": 1.519,
+     "avg_loss": -1.489,
+     "sum_r": -100.91,
+     "max_dd_r": -100.91
+    },
+    "ormid1r": {
+     "n": 193,
+     "missing": 0,
+     "sessions": 7,
+     "win_pct": 40.9,
+     "avg_r": -0.215,
+     "ci95": [
+      -0.336,
+      -0.07
+     ],
+     "median_r": -0.421,
+     "avg_win": 0.762,
+     "avg_loss": -0.893,
+     "sum_r": -41.53,
+     "max_dd_r": -42.71
+    },
+    "hold": {
+     "n": 193,
+     "missing": 0,
+     "sessions": 7,
+     "win_pct": 8.3,
+     "avg_r": -0.608,
+     "ci95": [
+      -0.975,
+      -0.244
+     ],
+     "median_r": -1.261,
+     "avg_win": 9.046,
+     "avg_loss": -1.48,
+     "sum_r": -117.3,
+     "max_dd_r": -121.7
+    }
+   },
+   "orbx_vs_controls": {
+    "fixed2r_minus_controls": {
+     "n": 477,
+     "missing": 0,
+     "sessions": 19,
+     "win_pct": 35.8,
+     "avg_r": -0.01,
+     "ci95": [
+      -0.127,
+      0.122
+     ],
+     "median_r": -0.74,
+     "avg_win": 1.876,
+     "avg_loss": -1.064,
+     "sum_r": -4.64,
+     "max_dd_r": -39.89
+    }
+   },
+   "old_orb15_base": {
+    "n": 1947,
+    "missing": 0,
+    "sessions": 19,
+    "win_pct": 32.7,
+    "avg_r": -0.224,
+    "ci95": [
+     -0.292,
+     -0.163
+    ],
+    "median_r": -1.06,
+    "avg_win": 1.792,
+    "avg_loss": -1.205,
+    "sum_r": -436.42,
+    "max_dd_r": -438.63
+   },
+   "old_orb15_controls": {
+    "n": 1947,
+    "missing": 0,
+    "sessions": 19,
+    "win_pct": 36.9,
+    "avg_r": -0.173,
+    "ci95": [
+     -0.216,
+     -0.133
+    ],
+    "median_r": -0.211,
+    "avg_win": 0.46,
+    "avg_loss": -0.543,
+    "sum_r": -337.1,
+    "max_dd_r": -340.06
+   },
+   "orbx_controls_2r": {
+    "n": 477,
+    "missing": 0,
+    "sessions": 19,
+    "win_pct": 30.0,
+    "avg_r": -0.45,
+    "ci95": [
+     -0.562,
+     -0.351
+    ],
+    "median_r": -0.294,
+    "avg_win": 0.384,
+    "avg_loss": -0.807,
+    "sum_r": -214.6,
+    "max_dd_r": -215.08
+   },
+   "stop_and_cost": {
+    "median_stop_atr5": 0.326,
+    "median_cost_r": 0.261,
+    "stop_gap_losses": 11
+   },
+   "old_vs_controls": {
+    "n": 1947,
+    "missing": 0,
+    "sessions": 19,
+    "win_pct": 32.9,
+    "avg_r": -0.051,
+    "ci95": [
+     -0.135,
+     0.031
+    ],
+    "median_r": -0.584,
+    "avg_win": 1.85,
+    "avg_loss": -0.984,
+    "sum_r": -99.33,
+    "max_dd_r": -133.1
+   }
+  }
+ ]
+}

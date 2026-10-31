@@ -57,3 +57,8 @@ The plan is always computed first, so it's valid even if Chart is slow or offlin
 - **Which option contract** (Markets → Strategy lab, bottom): for the same live signals, 12 contracts each (same day, 1–2, 3–5 and 6–10 days out, at delta 0.35 / 0.45 / 0.60), followed on real quotes and nothing bought. It shows how often each choice made money with your 20% line, the average dollars, and how often the 20% line hit before the stock trade was over.
 - **Exits selector:** "Same yardstick for all" or "Each strategy's own exits" (the noise band only at its half-hour checks).
 - Rows stay "too few" until they have 30 signals over 10 trading days.
+
+**v3.5:**
+- **Learning tab** (new, at the end of the menu): what the desk looked at today, why it took or skipped each one, how skipped setups would have done under one fixed rule, and the experiments with their pass/fail rules written down before the results.
+- **ORB retest** (top of Learning): your ORB sequence, live for SPY and QQQ: range forming, waiting for the break, waiting for a separate candle fully outside, waiting for the retest, entry confirmed. Paper only.
+- **Health links** (safe to share with an uptime checker, no data inside): `/healthz` and `/readyz` on the desk address.

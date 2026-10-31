@@ -52,3 +52,20 @@ Base: `http://127.0.0.1:8765` on Chart's computer. Add `?k=DESK_TOKEN` (or `&k=`
 
 ## GET /api/chain?t=SPY&side=C|P[&exp=YYYY-MM-DD][&n=10]&k=DESK_TOKEN (v2.9)
 View-only option chain around the money: {ticker, side, exp, dte, expiries, spot, feed (the provider name; Schwab when connected, otherwise a labeled fallback that is not tradable), rows:[{symbol, label, strike, bid, ask, mark, chg_pct, delta, delta_src, iv, breakeven, to_be_pct, volume, oi, spread_pct, itm, fits}]}. With no exp it uses today (0DTE) or the nearest expiry. No order path exists.
+
+## v3.5 additions (read-only for Chart)
+| Call | Who | What | Side effects |
+|---|---|---|---|
+| `GET /healthz` | uptime checker | `{"alive": true}`. No token, no data | none |
+| `GET /readyz` | uptime checker, morning routine | `{"ready": bool, "reasons": [...]}` (HTTP 503 when not ready): database writable, engine heartbeat fresh in market hours, Schwab connected, feed not stale. No token, nothing secret | none |
+| `GET /api/health` | debugging | every worker's last heartbeat and age, the stock-feed check, future-dated quotes seen, the Schwab request budget by priority (risk / normal / research), memory, DB size, release | none |
+| `GET /api/learning[?day=YYYY-MM-DD]` | review routine, Nick's "why" questions | opportunities (repeated checks of one setup grouped, with every decision and reason), shadow outcomes of skipped setups (one fixed rule, stock only, options unknown), hypotheses with their preregistered criteria and status, study runs, ORB-retest stages and episodes for SPY/QQQ | none |
+| `GET /api/learning/export?what=decisions\|shadow\|opportunities\|hypotheses&from=&to=` | weekly review | CSV | none |
+| `GET /api/research/registry` | research questions | the inspected GitHub/paper strategy registry with ranks | none |
+
+**How to talk about v3.5 data:**
+- ORB retest stages (OPENING RANGE FORMING → WAITING FOR BREAKOUT → WAITING FOR INDEPENDENT CANDLE → WAITING FOR RETEST → ENTRY CONFIRMED → POSITION OPEN, or INVALIDATED / EXPIRED / DONE FOR THE DAY) are research. Say "RESEARCH SETUP / PAPER ONLY", never "enter now".
+- News momentum candidates need BOTH a verified catalyst (the desk fetched the source itself) AND a measured price/volume reaction. Quote the stage and the exact unmet requirement (`why`). An unverified headline is a lead, not a reason.
+- Shadow outcomes are "what one fixed hypothetical rule would have done", underlying only. Never call a skipped setup a "missed winner".
+- Never add paper, shadow and real results together, and never present a simulated fill as Nick's fill.
+- Every claim about a result cites its event id, position id or run manifest id. If a field is missing or unknown, say so; don't fill it in.

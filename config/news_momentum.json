@@ -1,0 +1,43 @@
+{
+  "id": "NEWS-MOM-1",
+  "version": "2026-10-31.newsmom1",
+  "status": "RESEARCH ONLY (forward paper collection from 2026-11-02; no news backtest exists, none is fabricated)",
+  "instruments": "individual stocks only (SPY/QQQ excluded). Calls for an upward reaction, puts for a downward one. No shorting, no naked options, no new broker connection.",
+  "thresholds": {
+    "catalyst": {
+      "eligible": "catalysts.entry_eligible(): confirmed or attributed source, CONTENT VERIFIED by the desk's own fetch, not a resurfacing story",
+      "categories": ["earnings", "guidance", "acquisition", "contract", "partnership", "regulatory", "lawsuit", "financing", "management", "product"],
+      "max_tickers": 3,
+      "max_age_min": 90,
+      "max_pub_to_detect_min": 30,
+      "why": "company-specific (a headline naming more than 3 tickers is treated as market-wide); fresh enough that the reaction is still developing; a story the desk received more than 30 min after publication is flagged LATE because most of the move may already be gone"
+    },
+    "reaction": {
+      "min_move_atr5": 1.5,
+      "max_move_atr5": 6.0,
+      "min_rvol_time": 2.0,
+      "rvol_sessions": 10,
+      "min_minutes_since_detect": 10,
+      "max_retrace_frac": 0.5,
+      "why": "a real response is at least 1.5 five-minute ATRs from the price when the news arrived, on at least 2x the usual volume for those minutes (same minutes, prior 10 sessions); it must survive 10 minutes and keep at least half its gain (a spike that gave back over half is a spike, not momentum); beyond 6 ATRs the move is treated as exhausted"
+    },
+    "liquidity": {"min_price": 10.0, "min_avg_volume": 1000000, "max_option_spread_pct": 10.0},
+    "entry": {
+      "earliest": "09:45", "latest": "15:00",
+      "confirm": "a completed 1m candle closes beyond the prior completed 1m candle's extreme in the news direction, with the last 3 completed 1m closes on the news side of VWAP",
+      "max_extension_vwap_atr5": 2.0,
+      "max_stop_atr5": 1.5,
+      "timeout_min": 60,
+      "why": "enter on a continuation close, not on the spike; at most 2 ATR5 from VWAP (anti-chasing); give up 60 min after the news"
+    },
+    "stop": {"initial": "beyond the more conservative of VWAP and the last completed 5m candle's extreme, +/- 0.05 x ATR5", "never_widened": true},
+    "trail": {
+      "activate_after_r": 1.0,
+      "method": "best close since entry - 2 x ATR5 (calls; mirrored for puts)",
+      "normal_vs_failure": "a pullback that holds VWAP and stays above the trail is normal; a completed 5m close back through VWAP or a touch of the trail is momentum failure"
+    },
+    "exits_precedence": ["the 20% planned premium loss line (bid)", "15:25 all out", "underlying stop/trail on the latest price", "completed 5m close back through VWAP"],
+    "dedupe": "one entry per catalyst cluster per day; reposts and syndicated copies of one story share a cluster; a repost never restarts the age clock"
+  },
+  "latency_stats": ["publication -> first received", "first received -> reaction confirmed", "first received -> entry", "share of the total move that happened before the desk received the news"]
+}

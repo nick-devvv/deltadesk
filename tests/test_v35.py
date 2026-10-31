@@ -4,6 +4,7 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -668,3 +669,286 @@ def test_both_chart_roots_share_one_bounded_sizing_contract():
     box = re.search(r"\.chartbox\{([^}]*)\}", h).group(1)
     assert "contain:size" in box and "min-height:160px" in box and "overflow:hidden" in box
     assert 'id="mkDesk" class="chartroot"' in h and 'id="desk" class="chartroot"' in h
+
+
+# ================================================================ ORBX live paper ledgers
+def _orbx_day(offset=500.0, extra=()):
+    import test_orbx as TO
+    sh = lambda c: tuple(round(x + offset, 2) for x in c)
+    c5 = [sh(c) for c in TO.OR3 + [(100.85, 101.30, 100.80, 101.20), (101.2, 101.60, 101.05, 101.50), TO.FLAT,
+                                    (101.4, 101.45, 101.02, 101.30)] + list(extra)]
+    return TO.bars(c5)
+
+
+def test_orbx_live_entry_opens_each_exit_variant_once_and_manages_exits(env, monkeypatch):
+    import orb_retest as O
+    import scanner
+    clock, fk = _world(env)
+    now = DAY.replace(hour=10, minute=7)
+    clock.t = now
+    m1 = _orbx_day()
+    best = {"symbol": "SPY261028C00600000", "strike": 600, "exp": "2026-10-28", "bid": 1.98, "ask": 2.02, "delta": 0.5}
+    monkeypatch.setattr(scanner, "score_contracts", lambda rows, side, now, e: (best, [], {}))
+    s = {"m1": m1, "quote": {"last": 601.32, "quote_time": pd.Timestamp(now) - pd.Timedelta(seconds=30), "age_s": 1.0}}
+    out = O.live_step("SPY", s, now, fetch_chain=lambda t, side: ([], None))
+    assert out and out[0][1] == "ORDER" and len(out[0][2]) == 4
+    assert {p["ledger"] for p in store.positions(status="OPEN")} == set(O.LEDGERS)
+    assert O.live_step("SPY", s, now + timedelta(seconds=5), fetch_chain=lambda t, side: ([], None)) == []   # never twice
+    assert store.q("SELECT state FROM orbx_episodes")[0]["state"] == "POSITION OPEN"
+    st = store.kv_get("orbx_stage:SPY")
+    assert st["stage"]["C"] == "ENTRY CONFIRMED" and st["or"]["high"] == 601.0
+    p = next(x for x in store.positions(status="OPEN") if x["ledger"] == "orbx_2r")
+    s2 = dict(s, quote={"last": p["plan"]["stop_px"] - 0.01})
+    O.manage(p, s2, now + timedelta(minutes=2))
+    assert store.pos_get(p["id"])["status"] == "CLOSED" and "stop" in store.pos_get(p["id"])["plan"]["exit_reason"]
+
+
+def test_orbx_too_extended_at_the_first_valid_quote_is_skipped_for_good(env, monkeypatch):
+    import orb_retest as O
+    import scanner
+    clock, fk = _world(env)
+    now = DAY.replace(hour=10, minute=7)
+    clock.t = now
+    monkeypatch.setattr(scanner, "score_contracts", lambda *a: ({"symbol": "SPY261028C00600000", "strike": 600, "exp": "2026-10-28",
+                                                                   "bid": 1.98, "ask": 2.02}, [], {}))
+    s = {"m1": _orbx_day(), "quote": {"last": 602.50, "quote_time": pd.Timestamp(now), "age_s": 1.0}}
+    out = O.live_step("SPY", s, now, fetch_chain=lambda t, side: ([], None))
+    assert out[0][1] == "SKIP" and "too extended" in out[0][2]
+    s["quote"]["last"] = 601.30                                                     # price comes back later: still no chase
+    assert O.live_step("SPY", s, now + timedelta(minutes=1), fetch_chain=lambda t, side: ([], None)) == []
+    assert not store.positions()
+
+
+# ================================================================ G3 learning journal
+def test_decision_events_are_append_only_and_mirror_candidates(env):
+    import sqlite3
+    import learning
+    store.conn()
+    learning.migrate()
+    for d in ("SKIP", "ORDER"):                                                 # INSERT OR REPLACE twice on one id
+        store.x("INSERT OR REPLACE INTO candidates(id,date,ts,decision_t,ticker,side,family,tags,portfolio,decision,reasons,limit_blocked,"
+                "evidence,plan,policy_version,provider,outcome) VALUES('c1','2026-10-28','2026-10-28T10:00:00-04:00',"
+                "'2026-10-28T10:00:01-04:00','NVDA','C','board_orb','','board',?,'[\"x\"]',NULL,NULL,'{}','v',NULL,NULL)", (d,))
+    ev = store.q("SELECT decision FROM decision_events WHERE source='candidates' ORDER BY seq")
+    assert [e["decision"] for e in ev] == ["SKIP", "ORDER"]                      # history kept, not overwritten
+    with pytest.raises(sqlite3.DatabaseError):
+        store.x("UPDATE decision_events SET decision='X'")
+    with pytest.raises(sqlite3.DatabaseError):
+        store.x("DELETE FROM decision_events")
+    eid = learning.record_decision("orbx_2r", "SPY", "C", "ORBX-15-5", "v", "SKIP", ["too extended"], opportunity="op1",
+                                   snapshot={"px": 601.2, "iv": None}, now=DAY.replace(hour=10, minute=7))
+    row = store.q("SELECT * FROM decision_events WHERE event_id=?", (eid,))[0]
+    assert row["min_since_open"] == 37 and row["decision_t"].endswith("Z") is False and "+00:00" in row["decision_t"]
+    assert json.loads(row["quality"])["missing"] == ["iv"]                       # missing is recorded, never filled
+
+
+def test_hypotheses_are_preregistered_and_cannot_be_quietly_edited(env):
+    import learning
+    store.conn()
+    learning.seed_hypotheses()
+    assert {h["id"] for h in store.q("SELECT id FROM hypotheses")} >= {"H-ORBX-1", "H-NEWS-1", "H-REACH-1"}
+    h = learning.INITIAL_HYPOTHESES[0]
+    with pytest.raises(ValueError):
+        learning.register_hypothesis(h[0], h[1], h[2], dict(h[3], min_trades=10), h[4], h[5], h[6])
+    learning.set_status("H-ORBX-1", "VALIDATING", "forward data started", {"run": "M-x"})
+    hist = store.q("SELECT status FROM hypothesis_events WHERE hypothesis_id='H-ORBX-1' ORDER BY seq")
+    assert [x["status"] for x in hist] == ["OPEN", "VALIDATING"]
+
+
+def test_shadow_outcomes_are_separate_idempotent_and_unknown_when_data_is_missing(env):
+    import learning
+    import test_orbx as TO
+    store.conn()
+    learning.migrate()
+    now = DAY.replace(hour=10, minute=7)
+    learning.record_decision("board", "NVDA", "C", "board_orb", "v", "SKIP-GATE", ["too extended"], opportunity="o1",
+                             snapshot={"stop_dist": 0.30}, now=now)
+    learning.record_decision("board", "AMD", "P", "board_orb", "v", "SKIP", ["no contract"], opportunity="o2", now=now)
+    learning.record_decision("board", "TSLA", "C", "board_orb", "v", "ORDER", [], opportunity="o3", now=now)
+    m = TO.bars(TO.OR3 + [(100.85, 101.30, 100.80, 101.20)] * 20)
+    fn = lambda day, t: m if t == "NVDA" else None
+    assert learning.shadow_eod("2026-10-28", fn) == 2
+    assert learning.shadow_eod("2026-10-28", fn) == 0                            # idempotent
+    rows = {r["ticker"]: r for r in store.q("SELECT * FROM shadow_outcomes")}
+    assert set(rows) == {"NVDA", "AMD"} and rows["AMD"]["r"] is None and "unknown" in rows["AMD"]["why"]
+    assert rows["NVDA"]["options"] == "unknown" and rows["NVDA"]["stop_dist"] == 0.3
+    assert not store.positions()                                                  # nothing simulated as a fill
+
+
+def test_backup_is_a_consistent_snapshot_and_eod_resumes(env, tmp_path):
+    import sqlite3
+    import learning
+    store.conn()
+    learning.migrate()
+    store.kv_set("probe", 42)
+    p, ok = learning.backup(tmp_path / "bk")
+    assert ok == "ok" and sqlite3.connect(p).execute("SELECT v FROM kv WHERE k='probe'").fetchone()[0] == "42"
+    env.setattr(core, "now_et", lambda: DAY.replace(hour=16, minute=15))
+    env.setattr(learning, "backup", lambda: (tmp_path / "x.db", "ok"))
+    d1 = learning.eod(bars_fn=lambda d, t: None)
+    d2 = learning.eod(bars_fn=lambda d, t: (_ for _ in ()).throw(AssertionError("must not rerun")))
+    assert d1["backup"] and d2 == d1
+    assert "decision_t" in learning.export_csv("decisions") or learning.export_csv("decisions") == ""
+
+
+def test_learning_view_keeps_ledgers_apart(env):
+    import learning
+    store.conn()
+    env.setattr(core, "now_et", lambda: DAY.replace(hour=11))
+    for i in range(3):
+        learning.record_decision("board", "NVDA", "C", "board_orb", "v", "SKIP-GATE", ["waiting"], opportunity="same",
+                                 now=DAY.replace(hour=10, minute=i))
+    v = learning.view("2026-10-28")
+    o = [x for x in v["opportunities"] if x["opportunity_id"] == "same"][0]
+    assert o["evaluations"] == 3 and o["entered"] == 0                            # one opportunity, three checks
+    assert "never summed" in v["note"] and v["shadow_rule"]["options"].startswith("unknown")
+
+
+# ================================================================ G2 news momentum (pure evaluation on synthetic bars)
+def _nm_day(day="2026-10-28", base=100.0, jump_at="09:50", jump=1.2, vol=1000.0, vol_after=5000.0, drift=0.04, until="10:06"):
+    idx = pd.date_range(f"{day} 09:30", f"{day} {until}", freq="1min", tz=core.ET, inclusive="left")
+    px, rows = base, []
+    for t in idx:
+        o = px
+        if t.strftime("%H:%M") == jump_at:
+            px += jump
+        elif t.strftime("%H:%M") > jump_at:
+            px += drift
+        rows.append((o, max(o, px) + 0.02, min(o, px) - 0.02, px, vol_after if t.strftime("%H:%M") >= jump_at else vol))
+    return pd.DataFrame(rows, index=idx, columns=["Open", "High", "Low", "Close", "Volume"])
+
+
+def _nm_prior(n=10):
+    out = []
+    for k in range(n):
+        d = (pd.Timestamp("2026-10-27") - pd.tseries.offsets.BDay(k)).date()
+        idx = pd.date_range(f"{d} 09:30", f"{d} 16:00", freq="1min", tz=core.ET, inclusive="left")
+        c = 100 + 0.4 * np.sin(np.arange(len(idx)) / 3)
+        out.append(pd.DataFrame({"Open": c, "High": c + 0.12, "Low": c - 0.12, "Close": c, "Volume": 1000.0}, index=idx))
+    return list(reversed(out))
+
+
+def _cat(**kw):
+    c = {"id": "N-1", "_rev": 2, "tickers": ["AMD"], "label": "confirmed", "category": "contract", "recycled": False,
+         "content_verified": True, "first_detected_at": "2026-10-28T09:49:30-04:00", "published_at": "2026-10-28T09:48:00-04:00",
+         "price_at_detect": 100.0, "headline": "AMD wins a large contract"}
+    c.update(kw)
+    return c
+
+
+def test_news_momentum_needs_a_verified_catalyst_and_a_real_reaction():
+    import news_momentum as N
+    now = pd.Timestamp("2026-10-28 10:05", tz=core.ET)
+    prior = _nm_prior()
+    ev = N.evaluate(_cat(), _nm_day(), prior, now)
+    assert ev["stage"] == "ENTRY CONFIRMED", (ev.get("why"), ev["numbers"])
+    assert ev["side"] == "C" and ev["stop"] < ev["entry_ref"] and ev["numbers"]["rvol_time"] >= 2
+    ev = N.evaluate(_cat(content_verified=False), _nm_day(), prior, now)
+    assert ev["stage"] == "WATCHING" and "not verified" in ev["why"]                       # a URL alone is not proof
+    ev = N.evaluate(_cat(tickers=["AMD", "NVDA", "INTC", "MU"]), _nm_day(), prior, now)
+    assert ev["stage"] == "SKIP" and "company-specific" in ev["why"]
+    ev = N.evaluate(_cat(), _nm_day(vol_after=1200.0), prior, now)
+    assert ev["stage"] == "WATCHING" and "relative volume" in ev["why"]                    # sentiment alone never enters
+    ev = N.evaluate(_cat(), _nm_day(jump=0.1, drift=0.0), prior, now)
+    assert ev["stage"] == "WATCHING" and "reaction" in ev["why"]
+    ev = N.evaluate(_cat(), _nm_day(jump=-1.2, drift=-0.04), prior, now)
+    assert ev["stage"] == "ENTRY CONFIRMED" and ev["side"] == "P"                          # down move -> puts
+
+
+def test_news_momentum_rejects_spikes_exhaustion_stale_news_and_missing_baselines():
+    import news_momentum as N
+    now = pd.Timestamp("2026-10-28 10:05", tz=core.ET)
+    prior = _nm_prior()
+    spike = _nm_day(jump=1.6, drift=-0.07)                                                # gave most of it back
+    assert N.evaluate(_cat(), spike, prior, now)["stage"] in ("SKIP", "WATCHING")
+    ev = N.evaluate(_cat(), _nm_day(jump=9.0), prior, now)
+    assert ev["stage"] == "SKIP" and "exhausted" in ev["why"]
+    ev = N.evaluate(_cat(first_detected_at="2026-10-28T08:00:00-04:00"), _nm_day(), prior, now)
+    assert ev["stage"] == "EXPIRED"
+    ev = N.evaluate(_cat(), _nm_day(), [], now)
+    assert ev["stage"] == "WATCHING" and "fails closed" in ev["why"]
+    ev = N.evaluate(_cat(first_detected_at="2026-10-28T10:00:00-04:00"), _nm_day(jump_at="10:00"), prior, now)
+    assert ev["stage"] in ("CONFIRMING", "WATCHING")                                       # must survive 10 minutes
+    late = N.evaluate(_cat(published_at="2026-10-28T08:40:00-04:00"), _nm_day(), prior, now)
+    assert late.get("late_news") is True                                                   # received 60 min late: flagged
+
+
+def test_loss_streak_spans_actionable_ledgers_chronologically(env):
+    import strategy_router as RT
+    store.conn()
+    env.setattr(core, "now_et", lambda: DAY.replace(hour=13))
+
+    def closed(i, led, t, pnl):
+        store.pos_save({"id": f"S{i}", "ledger": led, "date": "2026-10-28", "ticker": "SPY", "contract": "1C", "symbol": "S", "side": "C",
+                        "qty_init": 1, "qty_open": 0, "fill": 1.0, "opened": t, "closed": t, "status": "CLOSED", "setup_id": "x", "grade": "R",
+                        "setup": "X", "plan": {}, "realized": pnl, "mfe": 0, "mae": 0, "policy_version": "t", "verified": "t", "notes": ""})
+    closed(1, "spec_a", "2026-10-28T10:00:00-04:00", -20)
+    closed(2, "spec_b", "2026-10-28T10:30:00-04:00", -15)                  # a different ledger does not reset the streak
+    assert "A setups only" in RT.actionable_discipline(["spec_a", "spec_b"], "2026-10-28")
+    closed(3, "spec_c", "2026-10-28T11:00:00-04:00", -10)
+    assert "loss-streak stop: 3" in RT.portfolio_admission("2026-10-28")
+    closed(4, "spec_a", "2026-10-28T11:30:00-04:00", 30)
+    assert RT.actionable_discipline(["spec_a", "spec_b", "spec_c"], "2026-10-28") is None
+
+
+# ================================================================ underlying-first helpers
+def test_premium_trigger_is_the_exact_formula_rounded_to_a_protective_tick():
+    import underlying_first as U
+    t = U.premium_trigger(2.03, qty=2, bid=1.98)
+    assert t["trigger_bid"] == 1.64 and t["feasible"]
+    assert t["planned_loss_per_contract"] == round(100 * (2.03 - (1.64 - 0.01)) + 0.04, 2) <= t["budget_per_contract"]
+    assert t["planned_loss_total"] == round(2 * t["planned_loss_per_contract"], 2)
+    n = U.premium_trigger(4.20, bid=4.10, symbol_root="NVDA")
+    assert n["tick"] == 0.05 and n["trigger_bid"] == 3.40 and n["planned_loss_per_contract"] <= n["budget_per_contract"]
+    assert not U.premium_trigger(0.05, bid=0.04)["feasible"]
+    assert not U.premium_trigger(2.00, bid=1.55)["feasible"]                         # trigger at/above the bid
+    import contract_lab
+    assert t["trigger_bid"] == contract_lab.line_for(2.03)                          # same line everywhere
+
+
+def test_zero_dte_comes_from_the_chain_received_never_assumed():
+    import underlying_first as U
+    assert U.zero_dte([], "2026-10-28")[0] is None
+    assert U.zero_dte([{"exp": "2026-10-30"}, {"exp": "2026-11-06"}], "2026-10-28")[0] is False
+    assert U.zero_dte([{"exp": "2026-10-28"}], "2026-10-28")[0] is True
+
+
+def test_reach_odds_are_reproducible_conservative_and_symmetric_on_a_random_walk():
+    import underlying_first as U
+    rng = np.random.default_rng(1)
+    prior = []
+    for k in range(20):
+        d = (pd.Timestamp("2026-10-27") - pd.tseries.offsets.BDay(k)).date()
+        idx = pd.date_range(f"{d} 09:30", f"{d} 16:00", freq="1min", tz=core.ET, inclusive="left")
+        c = 100 * np.exp(np.cumsum(rng.normal(0, 0.0007, len(idx))))
+        o = np.r_[100, c[:-1]]
+        prior.append(pd.DataFrame({"Open": o, "High": np.maximum(o, c) * 1.0002, "Low": np.minimum(o, c) * 0.9998, "Close": c}, index=idx))
+    now = pd.Timestamp("2026-10-28 11:00", tz=core.ET)
+    today = prior[0].copy()
+    today.index = pd.date_range("2026-10-28 09:30", periods=len(today), freq="1min", tz=core.ET)
+    a, _ = U.reach_odds(prior, today, 100.0, 99.5, 100.5, "C", now)
+    b, _ = U.reach_odds(prior, today, 100.0, 99.5, 100.5, "C", now)
+    assert a == b and abs(a["p_target"] - a["p_stop"]) < 0.08 and abs(a["p_target"] + a["p_stop"] + a["p_neither"] - 1) < 0.01
+    far, _ = U.reach_odds(prior, today, 100.0, 99.5, 103.0, "C", now)
+    assert far["p_target"] < a["p_target"]
+    assert U.reach_odds(prior[:5], today, 100.0, 99.5, 100.5, "C", now)[0] is None      # too few sessions: no number
+
+
+def test_verify_day_recomputes_paper_pnl_read_only(env, capsys, monkeypatch):
+    import importlib.util
+    clock, fk = _world(env)
+    paper.reserve_idea("noise", "N1", "SPY", "C")
+    pid, _ = paper.buy("noise", "N1", "SPY", "C", _plan(), 2, clock().isoformat())
+    paper.sell(store.pos_get(pid), 1, "partial")
+    paper.sell(store.pos_get(pid), 1, "rest")
+    spec = importlib.util.spec_from_file_location("verify_day", ROOT / "tools" / "verify_day.py")
+    vd = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(vd)
+    monkeypatch.setattr(vd, "DB", store.DB)
+    monkeypatch.setattr(sys, "argv", ["verify_day.py", "2026-10-28", "noise"])
+    vd.main()
+    out = capsys.readouterr().out
+    assert "MISMATCH" not in out and "recomputed" in out and "not real money" in out
+    with pytest.raises(Exception):
+        import sqlite3
+        sqlite3.connect(f"file:{store.DB}?mode=ro", uri=True).execute("DELETE FROM positions")

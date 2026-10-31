@@ -472,6 +472,7 @@ td.n,th.n{text-align:right;white-space:nowrap}
 @media (max-width:1440px){ .hide-lg{display:none!important} .trade{grid-template-columns:310px minmax(0,1fr) 380px;gap:16px} header{gap:16px} }
 @media (max-width:1440px) and (min-width:1301px){ nav a{padding:8px 10px} }
 @media (max-width:1300px){ .hide-md{display:none!important} nav a{padding:8px 9px} .brand b{letter-spacing:.1em} }
+@media (max-width:1380px) and (min-width:1101px){ nav a{padding:8px 5px;font-size:13px} nav a[aria-current=page]:after{left:5px;right:5px} } /* v3.5: room for the Learning tab */
 @media (max-width:1100px){
   body{overflow:auto}
   .app{height:auto;min-height:100vh;grid-template-rows:auto auto 38px}
@@ -528,6 +529,7 @@ td.n,th.n{text-align:right;white-space:nowrap}
       <a href="#journal" data-v="journal">Journal<span class="badge" id="jBadge" hidden title="Trades waiting for a review"></span></a>
       <a href="#review" data-v="review">Review</a>
       <a href="#research" data-v="research">Rules</a>
+      <a href="#learning" data-v="learning" title="Every opportunity the desk evaluated, why it entered or skipped, shadow outcomes and the hypotheses under test">Learning</a>
     </nav>
     <div class="grow"></div>
     <div class="hud" aria-label="Status">
@@ -801,6 +803,19 @@ td.n,th.n{text-align:right;white-space:nowrap}
         <div class="box"><div class="ph"><h2>Paper engine<small>last 30 days</small></h2></div><div class="bd" id="rvPaper"></div></div>
       </div>
       <div class="box" style="margin-top:16px"><div class="ph"><h2>Lessons<small>nothing changes without your OK</small></h2></div><div class="bd" id="rvLessons"></div></div>
+    </section>
+
+    <!-- LEARNING (v3.5, a new tab: the existing tabs are unchanged) -->
+    <section class="view page" id="v-learning" hidden aria-label="Learning">
+      <h1>Learning</h1>
+      <p class="lead">What the desk evaluated, why it entered, waited or skipped, and what it is testing. Facts from the desk's own records; paper, shadow and real results are never added together.</p>
+      <div class="box"><div class="ph"><h2>ORB retest<small>corrected ORB: break, independent candle, retest (SPY/QQQ paper research)</small></h2></div><div class="bd" id="lnOrbx"></div></div>
+      <div class="box" style="margin-top:16px"><div class="ph"><h2>Opportunities today<small>repeated checks of one setup count once</small></h2><div class="r"><a class="m" id="lnExport" href="api/learning/export?what=decisions" download>Export decisions (CSV)</a></div></div><div class="bd" id="lnOpp"></div></div>
+      <div class="grid2" style="margin-top:16px">
+        <div class="box"><div class="ph"><h2>Skipped setups: shadow outcomes<small>one fixed rule, stock only</small></h2></div><div class="bd" id="lnShadow"></div></div>
+        <div class="box"><div class="ph"><h2>Hypotheses under test<small>criteria fixed before the results</small></h2></div><div class="bd" id="lnHyp"></div></div>
+      </div>
+      <div class="box" style="margin-top:16px"><div class="ph"><h2>Research registry<small>GitHub and papers, inspected, ranked by evidence</small></h2></div><div class="bd" id="lnReg"></div></div>
     </section>
 
     <!-- RULES -->
@@ -1182,12 +1197,12 @@ $$(".tab").forEach(b => b.onclick = () => {
 setInterval(() => { if (!$("#v-trade").hidden && !document.hidden) loadWatch(); }, 30000);
 
 /* ---------- views (the URL hash is the view) ---------- */
-const VIEWS = ["trade","scan","markets","paper","lab","journal","review","research"];
+const VIEWS = ["trade","scan","markets","paper","lab","journal","review","research","learning"];
 function show(v){
   v = VIEWS.includes(v) ? v : "trade";
   $$("nav a").forEach(a => a.dataset.v === v ? a.setAttribute("aria-current","page") : a.removeAttribute("aria-current"));
   $$(".view").forEach(s => s.hidden = s.id !== "v-" + v);
-  ({paper:loadPaper, scan:loadScanner, markets:loadMarkets, lab:loadLab, journal:()=>loadJournal(), review:loadReview, research:loadResearch}[v] || (()=>{}))();
+  ({paper:loadPaper, scan:loadScanner, markets:loadMarkets, lab:loadLab, journal:()=>loadJournal(), review:loadReview, research:loadResearch, learning:loadLearning}[v] || (()=>{}))();
 }
 window.addEventListener("hashchange", () => show(location.hash.slice(1)));
 
@@ -2209,6 +2224,40 @@ $$(".notes textarea").forEach(t => t.addEventListener("input", () => {
 window.addEventListener("beforeunload", e => { if ($("#jsave").textContent === "Saving…") { e.preventDefault(); e.returnValue = ""; } });
 
 /* ---------- review ---------- */
+const STAGE_CLS = {"ENTRY CONFIRMED":"up","POSITION OPEN":"up","INVALIDATED":"warn","EXPIRED":"dim","DONE FOR THE DAY":"dim","SKIPPED":"warn"};
+async function loadLearning(){
+  let d; try { d = await api("api/learning"); } catch(e){ $("#lnOpp").innerHTML = `<p class="d">${esc(e.message)}</p>`; return; }
+  const ox = d.orbx || {}, eps = d.orbx_episodes || [];
+  $("#lnOrbx").innerHTML = `<table><thead><tr><th>Ticker</th><th>Opening range</th><th>Calls side</th><th>Puts side</th><th>Updated</th></tr></thead><tbody>${
+    Object.entries(ox).map(([t, v]) => v ? `<tr><td><b>${esc(t)}</b></td><td class="mono">${v.or ? v.or.low.toFixed(2) + " – " + v.or.high.toFixed(2) : "—"}</td>
+      <td><span class="pill ${STAGE_CLS[v.stage.C] || ""}">${esc(v.stage.C)}</span></td><td><span class="pill ${STAGE_CLS[v.stage.P] || ""}">${esc(v.stage.P)}</span></td>
+      <td class="m">${esc(String(v.t || "").slice(11,16))}</td></tr>` : `<tr><td><b>${esc(t)}</b></td><td colspan="4" class="m">not evaluated yet today</td></tr>`).join("")}</tbody></table>
+    ${eps.length ? `<table style="margin-top:10px"><thead><tr><th>Episode</th><th>State</th><th>Break</th><th>Independent</th><th>Retest</th><th>Why</th></tr></thead><tbody>${
+      eps.map(e => `<tr><td class="mono">${esc(e.ticker)} ${e.side === "C" ? "calls" : "puts"} #${e.n}</td><td><span class="pill ${STAGE_CLS[e.state] || ""}">${esc(e.state)}</span></td>
+        <td class="mono">${e.B ? esc(e.B.close_time.slice(11,16)) : "—"}</td><td class="mono">${e.C ? esc(e.C.close_time.slice(11,16)) : "—"}</td>
+        <td class="mono">${e.R ? esc(e.R.close_time.slice(11,16)) : "—"}</td><td class="m" style="font-size:12px">${esc(e.why || (e.transitions && e.transitions.length ? e.transitions[e.transitions.length-1].why : ""))}</td></tr>`).join("")}</tbody></table>` : ""}
+    <p class="m" style="font-size:11.5px;margin-top:8px">Research only: entries go to four paper ledgers that differ only in their exits. Provisional parameters, not validated. You place every real trade.</p>`;
+  const opp = d.opportunities || [];
+  $("#lnOpp").innerHTML = opp.length ? `<p class="m" style="margin:0 0 8px">${(d.by_decision || []).map(x => `${esc(x.d || "?")} ${x.n}`).join(" · ")}</p>
+    <table><thead><tr><th>Time</th><th>Ticker</th><th>Strategy</th><th>Ledger</th><th class="n">Checks</th><th>Decision</th><th>Why</th></tr></thead><tbody>${
+    opp.slice(0, 120).map(o => `<tr><td class="mono">${esc(String(o.last_t || "").slice(11,16))}Z</td><td><b>${esc(o.ticker || "")}</b> ${o.side === "C" ? "calls" : o.side === "P" ? "puts" : ""}</td>
+      <td class="m">${esc(o.strategy || "")}</td><td class="m" style="font-size:12px">${esc(o.ledgers || "")}</td><td class="n">${o.evaluations}</td>
+      <td><span class="pill ${o.entered ? "up" : "dim"}">${esc(o.final_decision || "")}</span></td><td class="m" style="font-size:12px">${esc((o.reasons || []).join("; "))}</td></tr>`).join("")}</tbody></table>`
+    : '<div class="empty">No opportunities recorded today yet.</div>';
+  const st = d.shadow_stats || {}, sh = d.shadow || [];
+  $("#lnShadow").innerHTML = `<p class="m" style="margin:0 0 8px">${st.n || 0} scored${st.unknown ? `, ${st.unknown} unknown (no data, not imputed)` : ""}${st.avg_r != null ? ` · avg ${(+st.avg_r).toFixed(2)} R` : ""}. Rule ${esc(d.shadow_rule.id)}: ${esc(d.shadow_rule.entry)}; ${esc(d.shadow_rule.exit)}. Options: unknown. A skipped setup that later moved is not a "missed winner" unless this fixed rule says so.</p>
+    ${sh.length ? `<table><thead><tr><th>Day</th><th>Ticker</th><th>Skipped by</th><th class="n">R</th><th>Exit</th></tr></thead><tbody>${sh.slice(0, 30).map(x => `<tr><td class="mono">${esc(x.day.slice(5))}</td><td>${esc(x.ticker)} ${x.side === "C" ? "calls" : "puts"}</td><td class="m" style="font-size:12px">${esc(x.ledger || "")}: ${esc(x.decision || "")}</td><td class="n ${tone(x.r)}">${x.r == null ? "—" : (+x.r).toFixed(2)}</td><td class="m" style="font-size:12px">${esc(x.why || "")}</td></tr>`).join("")}</tbody></table>` : '<div class="empty">Scored after 4:10 PM ET each day.</div>'}`;
+  const hy = d.hypotheses || [];
+  $("#lnHyp").innerHTML = hy.length ? `<table><thead><tr><th>Id</th><th>Hypothesis</th><th>Status</th><th>Needs</th></tr></thead><tbody>${hy.map(h => `<tr><td class="mono">${esc(h.id)}</td><td style="font-size:12px">${esc(h.statement)}<div class="m" style="font-size:11px">${esc(h.metric)}</div></td>
+      <td><span class="pill ${h.status === "PAPER CANDIDATE" ? "up" : h.status === "REJECTED" ? "warn" : "dim"}">${esc(h.status)}</span></td><td class="m" style="font-size:11.5px">${esc(h.criteria.rule || "")}${h.criteria.min_trades ? ` (≥${h.criteria.min_trades} trades, ≥${h.criteria.min_sessions} sessions)` : ""}${h.validation_from ? `; validation data from ${esc(h.validation_from)}` : ""}</td></tr>`).join("")}</tbody></table>` : '<div class="empty">No hypotheses registered.</div>';
+  try {
+    const r = await api("api/research/registry");
+    const en = r.entries || r.candidates || [];
+    $("#lnReg").innerHTML = en.length ? `<table><thead><tr><th>Rank</th><th>Source</th><th>What</th><th>Evidence</th><th>Fit / next step</th></tr></thead><tbody>${en.map(x => `<tr><td><b>${esc(x.rank || "")}</b></td>
+      <td style="font-size:12px">${x.url ? `<a href="${esc(x.url)}" target="_blank" rel="noopener noreferrer">${esc(x.name || x.url)}</a>` : esc(x.name || "")}<div class="m" style="font-size:11px">${esc(x.license || "")}${x.inspected_commit ? " · " + esc(String(x.inspected_commit).slice(0,7)) : ""}</div></td>
+      <td class="m" style="font-size:12px">${esc(x.what || x.summary || "")}</td><td class="m" style="font-size:12px">${esc(x.evidence || x.reported || "")}</td><td class="m" style="font-size:12px">${esc(x.fit || x.next || x.rank_why || "")}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">${esc(r.note || "No registry yet.")}</div>`;
+  } catch(e) { $("#lnReg").innerHTML = `<p class="d">${esc(e.message)}</p>`; }
+}
 async function loadReview(){
   try{
     const [r, p, l] = await Promise.all([api("api/history?ledger=real"), api("api/history?ledger=paper"), api("api/lessons")]);

@@ -142,6 +142,12 @@ LEDGER_INFO = {
     "earn_post": ("Earnings: after the release", "post-release confirmation setups on reporting names"),
     "earn_pre": ("Earnings: held through", "research only: an ATM straddle held through the report, sized by the full premium"),
     "real": ("You", "your reported trades"),
+    # v3.5: new versioned research ledgers (the frozen main rules are untouched)
+    "orbx_swing": ("ORB retest: swing trail", "v3.5 corrected ORB (break, independent candle, retest) on SPY/QQQ; trail = last 2 finished 5m candles after +1R"),
+    "orbx_atr": ("ORB retest: ATR trail", "same entries; trail = best close - 2 x ATR5 after +1R"),
+    "orbx_2r": ("ORB retest: fixed 2R", "same entries; the desk's shared 2R yardstick"),
+    "orbx_ormid": ("ORB retest: OR-mid stop, 1R", "same entries; stop at the opening-range midpoint, 1R target (from day-trader-skill)"),
+    "news_mom": ("News momentum (stocks)", "v3.5 verified catalyst + price/volume confirmation; calls up, puts down; research only"),
 }
 try:                                              # v3.4: one lab ledger per strategy family
     import lab as _lab

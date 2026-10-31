@@ -962,6 +962,14 @@ def step(now=None):
         verify_pending(now)
     except Exception as e:
         _state["last_error"] = f"verify: {type(e).__name__}"
+    if "09:45" <= now.strftime("%H:%M") <= "15:00":       # v3.5: NEWS-MOM-1 paper research (verified catalyst + reaction)
+        try:
+            import news_momentum
+            import schwab
+            with schwab.priority("research"):
+                news_momentum.live_step(now)
+        except Exception as e:
+            _state["last_error"] = f"news momentum: {type(e).__name__}: {e}"[:200]
     _state["status"] = "watching" + ("" if ok else f" (xAI: {why})")
 
 

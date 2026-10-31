@@ -1024,6 +1024,12 @@ def _manage_open():
                     noiseband.manage(p)
                 elif p["ledger"] == "inplay":
                     scanner.manage(p)
+                elif str(p["ledger"]).startswith("orbx_"):        # v3.5: the corrected ORB's exit variants
+                    import orb_retest
+                    orb_retest.manage(p, snapshot(p["ticker"]))
+                elif p["ledger"] == "news_mom":
+                    import news_momentum
+                    news_momentum.manage(p)
                 elif p["plan"].get("v") == 3:
                     exits.evaluate(p, snapshot(p["ticker"]).get("v3") or {})
                 else:
@@ -1053,6 +1059,11 @@ def tick():
                 archive(t, s.get("m1"))
                 if sess["entries_allowed"]:
                     paper_scan(t)
+                try:                                       # v3.5: corrected ORB (ORBX) - stages always, paper entries in-window
+                    import orb_retest
+                    orb_retest.live_step(t, s, core.now_et())
+                except Exception as e:
+                    _state["last_error"] = f"orbx: {type(e).__name__}: {e}"[:200]
                 try:
                     noiseband.tick(t, s, chain_rows)       # half-hour checks: manages open noise trades, enters if allowed
                 except Exception as e:
@@ -1078,6 +1089,14 @@ def tick():
             except Exception:
                 pass
             check_watches()
+        if sess["time"] >= "16:10" and not sess["holiday"] and _state.get("learning_eod") != sess["date"]:
+            try:                                  # v3.5: shadow outcomes, opportunity summary, consistent backup (idempotent)
+                import learning
+                d = learning.eod()
+                if d.get("backup"):
+                    _state["learning_eod"] = sess["date"]
+            except Exception as e:
+                _state["last_error"] = f"learning eod: {type(e).__name__}: {e}"[:200]
         if sess["time"] >= "16:05" and not store.kv_get(f"summary:{sess['date']}") and not sess["holiday"]:
             store.journal_set(sess["date"], summary=day_summary(sess["date"]))
             store.kv_set(f"summary:{sess['date']}", True)

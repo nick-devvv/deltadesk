@@ -26,8 +26,9 @@ import store
 LAB_LEDGERS = ("lab_orb_break", "lab_orb_retest", "lab_orb_failed", "lab_lvl_break", "lab_lvl_retest", "lab_vwap_reclaim",
                "lab_vwap_reject", "lab_momo", "lab_pullback", "lab_v3", "lab_vwap_macd", "lab_orb15", "lab_orb15_rt",
                "lab_macd_video", "lab_noise")
-PORTFOLIOS = ("paper", "research", "old", "exit31", "noise", "inplay", "gated", "earn_post", "earn_pre", "board") + LAB_LEDGERS
-RESEARCH = ("research", "exit31", "noise", "inplay", "old", "gated", "earn_post", "earn_pre", "board") + LAB_LEDGERS   # experimental ledgers, never mixed into main paper
+V35_LEDGERS = ("orbx_swing", "orbx_atr", "orbx_2r", "orbx_ormid", "news_mom")    # v3.5 research ledgers (new versions, frozen main untouched)
+PORTFOLIOS = ("paper", "research", "old", "exit31", "noise", "inplay", "gated", "earn_post", "earn_pre", "board") + LAB_LEDGERS + V35_LEDGERS
+RESEARCH = ("research", "exit31", "noise", "inplay", "old", "gated", "earn_post", "earn_pre", "board") + LAB_LEDGERS + V35_LEDGERS   # experimental ledgers, never mixed into main paper
 
 
 def underlying_px(ticker):
@@ -51,7 +52,7 @@ EXEC_MODEL = {"strict": "2026-10-30.exec2 (ask+0.01 in, bid-0.01 out, $0.02/side
 
 
 def is_strict(portfolio):
-    return portfolio in STRICT or str(portfolio).startswith(("spec_", "lab_"))
+    return portfolio in STRICT or str(portfolio).startswith(("spec_", "lab_", "orbx_", "news_"))
 
 
 def _ev_kind(portfolio, main_kind):
