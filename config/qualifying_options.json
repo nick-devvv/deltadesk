@@ -1,0 +1,17 @@
+{
+ "quarter": "2026-Q3",
+ "source": "MIAX Qualifying Securities list for Q3 2026 as quoted in docs/STRATEGY_PLAN.md section 4 (names with Monday/Wednesday/Friday expiries). Verify against the current Cboe/Nasdaq/MIAX list each quarter and replace this file; penny-program names are not listed here yet.",
+ "tickers": ["AMD", "GOOGL", "AMZN", "AAPL", "AVGO", "XLF", "INTC", "META", "MU", "MSFT", "NVDA", "TSLA", "SMH"],
+ "rules": {
+  "abs_delta_min": 0.6,
+  "abs_delta_max": 0.8,
+  "abs_delta_target": 0.7,
+  "dte_min": 0,
+  "dte_max": 7,
+  "max_spread_pct_of_mid": 0.10,
+  "in_the_money": true,
+  "never_through_earnings": true,
+  "fee_per_contract_side": 0.65,
+  "fills": "buy at the ask, sell at the bid (shadow of the share trade, same entry and exit moments)"
+ }
+}

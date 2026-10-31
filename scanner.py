@@ -389,7 +389,7 @@ def scan(day, now):
     return top, bad
 
 
-def pulse(day, now, qs=None):
+def pulse(day, now, qs=None, include_watched=False):
     """Every minute, the whole universe in 2 batched quote calls: a QUICK MOVE alert when a name moves
     >= quick_move.pct_min % and >= atr_frac x its ATR in about 5 minutes on >= vol_mult x normal 5-minute volume.
     Covers names that weren't in play at 09:35. Uses the change in Schwab's cumulative day volume between snapshots."""
@@ -409,7 +409,7 @@ def pulse(day, now, qs=None):
         h.append((now, float(q["last"]), float(q["volume"])))
         while h and (now - h[0][0]).total_seconds() > 6 * 60:
             h.pop(0)
-        if t in watched or len(h) < 2 or (now - h[0][0]).total_seconds() < 4 * 60:
+        if (t in watched and not include_watched) or len(h) < 2 or (now - h[0][0]).total_seconds() < 4 * 60:
             continue                                   # watched names use their 1m bars in on_minute
         b = base.get(t) or {}
         t0, p0, v0 = h[0]
@@ -434,6 +434,15 @@ def pulse(day, now, qs=None):
 def on_minute(day, now):
     """Each minute after the scan: refresh watched names, alert quick moves, take qualified ORB triggers on paper."""
     v = vcfg()
+    import retire
+    if retire.is_retired("inplay"):
+        # v4: the in-play ledger is retired, so the per-name 1m pulls (about 20 calls a minute) stop; quick-move alerts
+        # for every name, watched or not, come from the batched quote pulse (2 calls a minute)
+        try:
+            pulse(day, now, include_watched=True)
+        except Exception as e:
+            _state["last_error"] = f"pulse: {type(e).__name__}"
+        return
     try:
         pulse(day, now)
     except Exception as e:

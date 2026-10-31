@@ -852,6 +852,9 @@ if __name__ == "__main__":
         threading.Thread(target=earnings.refresh_calendar, daemon=True, name="earnings-calendar").start()
         import lab
         print("Strategy lab (signal tape + lab paper ledgers):", "started" if lab.start() else "off", flush=True)
+        import sip_orb
+        print("v4 stock ledgers (sip_orb5, sip_orb5_x, sip_orb15, earn_day + options shadows):",
+              "started" if sip_orb.start() else "off", flush=True)
     except Exception as e:
         print("Scanner not started:", e, flush=True)
     try:                                           # v3.5: journal/learning tables + the preregistered hypotheses
