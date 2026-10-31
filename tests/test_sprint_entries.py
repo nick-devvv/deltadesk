@@ -15,10 +15,26 @@ from sprint.data import DayContext, Series
 DAY = date(2025, 3, 12)
 
 
-def _ctx_from(stock, stock_hl=None):
+def _ctx_from(stock, stock_hl=None, bars=None, vol=None, prior_range=0.01):
     """Context from a dict idx -> close (others carried), 12 flat prior days."""
-    ctx, _ = SS.make_ctx(DAY, stock, {0: 1.0}, prior_days=12, stock_hl=stock_hl)
+    ctx, _ = SS.make_ctx(DAY, stock, {0: 1.0}, prior_days=12, stock_hl=stock_hl, stock_bars=bars, vol=vol, prior_range=prior_range)
     return ctx
+
+
+def _pd_retest_ctx():
+    # PDH = 500.01; arm on the 500.50 close at 09:41; pull back to the level and the EMA at 09:50 and close green above both
+    return _ctx_from({0: 500.0, 11: 500.5}, bars={20: (500.30, 500.60, 500.02, 500.55)})
+
+
+def _failed_break_ctx():
+    # prior days 500 +/- 0.30 (PDL 499.70, ATR(5m) ~0.6): close below PDL at 09:50, back above two bars later
+    return _ctx_from({0: 500.0, 20: 499.60, 22: 499.80}, bars={20: (499.75, 499.76, 499.55, 499.60)}, prior_range=0.30)
+
+
+def _flush_ctx():
+    # a 1.1-point drop in 4 bars to a new session low on 5x volume, then a close above the prior bar's high
+    return _ctx_from({0: 500.0, 41: 499.7, 42: 499.4, 43: 499.1, 44: 499.0, 45: 499.5}, stock_hl={44: (499.01, 498.9)},
+                     vol={43: 5000.0}, prior_range=0.30)
 
 
 def _with_future_changed(ctx, after, seed=0):
@@ -62,16 +78,36 @@ def test_orb_first_finished_close_beyond_each_side_until_noon():
     assert [s.setup for s in entries.signals(ctx, "orb30")] == ["orb30"] * len(entries.signals(ctx, "orb30"))
 
 
-@pytest.mark.parametrize("setup", ["orb15", "orb30", "orb60", "vwap_macd", "pd_retest", "failed_break", "flush"])
-def test_entries_have_no_look_ahead(setup):
+def test_bot_setups_fire_on_their_defining_paths():
+    s = entries.pd_retest(_pd_retest_ctx())
+    assert [(x.side, x.idx) for x in s] == [("C", 20)] and s[0].invalid == pytest.approx(500.01 - 0.03, abs=0.01)
+    assert entries.pd_retest(_ctx_from({0: 500.0, 11: 500.5, 15: 499.9}, bars={20: (500.30, 500.60, 500.02, 500.55)})) == []   # failed first
+    s = entries.failed_break(_failed_break_ctx())
+    assert [(x.side, x.idx, x.info["kind"]) for x in s] == [("C", 22, "PDL")] and s[0].invalid == pytest.approx(499.55)
+    far = _ctx_from({0: 500.0, 20: 499.60, 22: 499.80}, bars={20: (499.75, 499.76, 498.0, 499.60)}, prior_range=0.30)
+    assert entries.failed_break(far) == []                                  # the probe went more than 0.5 ATR(5m) through
+    s = entries.flush(_flush_ctx())
+    assert [(x.side, x.idx) for x in s] == [("C", 45)] and s[0].invalid <= 499.0
+    assert entries.flush(_ctx_from({0: 500.0, 41: 499.7, 42: 499.4, 43: 499.1, 44: 499.0, 45: 499.5}, prior_range=0.30)) == []  # no volume
+
+
+def _random_ctx():
     rng = np.random.default_rng(3)
     px, stock = 500.0, {}
     for i in range(390):
         px += rng.normal(0, 0.12) + (0.04 if 60 < i < 120 else -0.05 if 200 < i < 240 else 0)
         stock[i] = round(px, 2)
-    ctx = _ctx_from(stock)
+    return _ctx_from(stock)
+
+
+@pytest.mark.parametrize("setup,make", [("orb15", _random_ctx), ("orb30", _random_ctx), ("orb60", _random_ctx),
+                                        ("vwap_macd", _random_ctx), ("pd_retest", _pd_retest_ctx),
+                                        ("failed_break", _failed_break_ctx), ("flush", _flush_ctx)])
+def test_entries_have_no_look_ahead(setup, make):
+    ctx = make()
     full = entries.signals(ctx, setup)
-    for cut in (40, 100, 180, 260):
+    assert full, f"{setup} never fired: the look-ahead check would be vacuous"
+    for cut in sorted({max(16, full[0].idx - 1), full[0].idx, full[0].idx + 1, 100, 260}):
         got = entries.signals(_with_future_changed(ctx, cut, seed=cut), setup)
         assert [(s.side, s.idx, s.price) for s in got if s.idx <= cut] == [(s.side, s.idx, s.price) for s in full if s.idx <= cut]
 

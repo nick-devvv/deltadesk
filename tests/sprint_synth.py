@@ -113,11 +113,11 @@ class ConstSpread:
 
 
 # ---------------------------------------------------------------- hand-built contexts for exit tests
-def flat_day_df(day, px=500.0, pre_hi=None, pre_lo=None):
+def flat_day_df(day, px=500.0, pre_hi=None, pre_lo=None, rng=0.01):
     rows = []
     for m in range(240, 960):
         p = px
-        hi, lo = p + 0.01, p - 0.01
+        hi, lo = p + rng, p - rng
         if m < 570 and pre_hi is not None:
             hi, lo = pre_hi, pre_lo
         rows.append((pd.Timestamp(f"{day} {m // 60:02d}:{m % 60:02d}", tz=ET), p, hi, lo, p, 1000.0))
@@ -125,13 +125,14 @@ def flat_day_df(day, px=500.0, pre_hi=None, pre_lo=None):
 
 
 def make_ctx(day, stock_path, opt_path, prior_days=2, px=500.0, spread=None, strike=500.0, right="C", vol=None,
-             stock_hl=None, opt_hl=None, no_print=(), early=False):
+             stock_hl=None, opt_hl=None, no_print=(), early=False, stock_bars=None, prior_range=0.01):
     """A DayContext whose regular-hours stock closes follow stock_path (dict idx -> close, carried forward) and a single
     option tape whose prices follow opt_path (dict idx -> price, carried forward). stock_hl / opt_hl: {idx: (high, low)}
-    overrides; no_print: option minutes without a bar."""
+    overrides; stock_bars: {idx: (open, high, low, close)} full overrides (the close carries forward); no_print: option
+    minutes without a bar; prior_range: +/- range of the flat prior days' bars."""
     days = weekdays(day - timedelta(days=7 * (prior_days // 5 + 2)), 10 * (prior_days // 5 + 2))
     prior = [d for d in days if d < day][-prior_days:]
-    frames = [flat_day_df(d, px) for d in prior]
+    frames = [flat_day_df(d, px, rng=prior_range) for d in prior]
     rows = []
     cur = px
     for m in range(240, 960):
@@ -142,6 +143,9 @@ def make_ctx(day, stock_path, opt_path, prior_days=2, px=500.0, spread=None, str
         hi, lo = c + 0.01, c - 0.01
         if stock_hl and i in stock_hl:
             hi, lo = stock_hl[i]
+        if stock_bars and i in stock_bars:
+            o, hi, lo, c = stock_bars[i]
+            cur = c
         v = (vol or {}).get(i, 1000.0)
         rows.append((pd.Timestamp(f"{day} {m // 60:02d}:{m % 60:02d}", tz=ET), o, hi, lo, c, v))
     frames.append(pd.DataFrame(rows, columns=["ts", "o", "h", "l", "c", "v"]))

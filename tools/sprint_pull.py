@@ -158,8 +158,11 @@ def gap_report(sym, a, b, out_dir=None):
         if not f.exists():
             rep["no_option_bars"].append(d.isoformat())
             continue
-        ob = pd.read_csv(f, compression="gzip", usecols=["symbol"]) if f.stat().st_size > 30 else pd.DataFrame(columns=["symbol"])
-        n = int(ob["symbol"].nunique())
+        try:
+            ob = pd.read_csv(f, compression="gzip")
+        except (ValueError, OSError, EOFError):
+            ob = pd.DataFrame()
+        n = int(ob["symbol"].nunique()) if "symbol" in ob and len(ob) else 0
         if n == 0:
             rep["no_option_bars"].append(d.isoformat())
         counts.append(n)

@@ -258,3 +258,40 @@ def test_no_new_trades_after_1530():
     ctx, tape = SS.make_ctx(DAY, {}, {0: 1.0})
     t = go(ctx, tape, ExitCfg(stop="premium", tp="none", time="b"), idx=360)
     assert t["status"] == "SKIP"
+
+
+# ---------------------------------------------------------------- noise exits and the put side
+def _noise_sig(cap=True):
+    bands = {29: (501.0, 499.0), 59: (501.0, 499.0), 89: (501.2, 498.8)}
+    return Signal("noise" if cap else "noise_nocap", "SPY", DAY, "C", 29, 501.5, 501.0, {"bands": bands, "cap": cap})
+
+
+def test_noise_stop_at_the_half_hour_check_and_the_20pct_ceiling_only_with_the_cap():
+    cfg = ExitCfg(stop="noise", tp="none", contract="d55-75t65")
+    ctx, tape = SS.make_ctx(DAY, {0: 500.0, 29: 501.5, 40: 501.6, 59: 500.9}, {0: 1.0, 61: 0.95})
+    info = {"symbol": tape.symbol, "px": 1.0, "iv": 0.2, "delta": 0.65}
+    t = simulate(ctx, _noise_sig(), cfg, None, tape, info)
+    assert t["exit_reason"].startswith("NOISE STOP at check") and t["exit_idx"] == 60 and t["exit_is_stop"]
+    ctx, tape = SS.make_ctx(DAY, {0: 500.0, 29: 501.5, 40: 501.6, 59: 500.9}, {0: 1.0, 45: 0.70, 61: 0.95})
+    t = simulate(ctx, _noise_sig(True), cfg, None, tape, info)
+    assert t["exit_reason"] == "CEILING STOP" and t["exit_idx"] == 45 and t["exit_basis"] == 0.70
+    t = simulate(ctx, _noise_sig(False), cfg, None, tape, info)
+    assert t["exit_reason"].startswith("NOISE STOP") and t["exit_idx"] == 60          # the twin has no 20% line
+    ctx, tape = SS.make_ctx(DAY, {0: 500.0, 29: 501.5}, {0: 1.0})
+    t = simulate(ctx, _noise_sig(), cfg, None, tape, info)
+    assert t["exit_reason"] == "ALL OUT 15:25"
+
+
+def test_b_on_the_put_side():
+    p_in = round(bs.price(499.5, K, bs.t_years(390 - 21), 0.2, "P"), 2)
+    ctx, tape = SS.make_ctx(DAY, {0: 500.0, 20: 499.5}, {0: 2.0, 20: p_in, 41: 3.2}, right="P", stock_hl={40: (499.51, 499.0)})
+    iv = bs.implied_vol(p_in, 499.5, K, bs.t_years(390 - 21), "P")
+    s = Signal("orb15", "SPY", DAY, "P", 20, 499.5, 499.7, {})
+    t = simulate(ctx, s, ExitCfg(stop="level", tp="B", time="b"), None, tape, {"symbol": tape.symbol, "px": p_in, "iv": iv, "delta": -0.5})
+    assert t["status"] == "TRADE", t
+    assert t["target_level"] == {"level": 499.0, "kind": "R1"} and t["target_stock"] == pytest.approx(499.03)
+    assert t["stop_stock"] == pytest.approx(499.72) and t["exit_reason"] == "LEVEL TARGET" and t["exit_idx"] == 41
+    assert t["pnl"] == pytest.approx((3.2 - HS - (p_in + HS)) * 100 - 1.30, abs=0.01)
+    ctx, tape = SS.make_ctx(DAY, {0: 500.0, 20: 499.5, 30: 499.8}, {0: 2.0, 20: p_in, 31: 1.0}, right="P")
+    t = simulate(ctx, s, ExitCfg(stop="level", tp="B", time="b"), None, tape, {"symbol": tape.symbol, "px": p_in, "iv": iv, "delta": -0.5})
+    assert t["exit_reason"].startswith("LEVEL STOP 499.72") and t["exit_idx"] == 31

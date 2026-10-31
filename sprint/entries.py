@@ -44,11 +44,13 @@ IMPLEMENTED
                   the break stayed within 0.5 x ATR(14, 5m) of the level (a probe, not a collapse). One signal per
                   level per day, signal bars finishing by 15:15. invalid = the lowest low since the break.
   flush           Reversal after a flush, both sides. Calls: within the last 5 finished 1-minute bars the low fell at
-                  least 1.5 x ATR(14, 5m) below the highest high of those 5 bars, the flush low is the session's low so
-                  far, and at least one of the 5 bars had volume >= 2x the mean of the 20 bars before them. SIGNAL: the
-                  first finished bar, within 5 bars after the flush low, that closes above the prior bar's high. Puts
-                  mirrored (spike to a new session high, close below the prior bar's low). One per side per day; signal
-                  bars from 09:45, finishing by 15:15. invalid = the flush low (calls) / spike high (puts).
+                  least 1.5 x ATR(14, 5m) below the highest high of those 5 bars, that high came BEFORE the low (a drop),
+                  the flush low is the session's low so far, and at least one of the 5 bars had volume >= 2x the mean of
+                  the 20 bars before them. The flush low moves down while the drop continues (a lower low resets it).
+                  SIGNAL: the first finished bar, within 5 bars after the flush low, that closes above the prior bar's
+                  high. Puts mirrored (a spike up to a new session high, then a close below the prior bar's low). One
+                  per side per day; signal bars from 09:45, finishing by 15:15. invalid = the flush low (calls) / spike
+                  high (puts).
 """
 import math
 from dataclasses import dataclass, field
@@ -291,16 +293,20 @@ def flush(ctx, side="both"):
                 w = slice(i - 4, i + 1)
                 vol20 = np.nanmean(ctx.v[i - 24:i - 4])
                 spike = np.nanmax(ctx.v[w]) >= 2 * vol20 if vol20 > 0 else False
+                k_hi, k_lo = int(np.nanargmax(ctx.h[w])), int(np.nanargmin(ctx.l[w]))
                 if sd == "C":
                     lo = float(np.nanmin(ctx.l[w]))
-                    if np.nanmax(ctx.h[w]) - lo >= 1.5 * a5 and lo <= np.nanmin(ctx.l[:i + 1]) and spike:
-                        flush_i = i - 4 + int(np.nanargmin(ctx.l[w]))
+                    if np.nanmax(ctx.h[w]) - lo >= 1.5 * a5 and k_hi < k_lo and lo <= np.nanmin(ctx.l[:i + 1]) and spike:
+                        flush_i = i - 4 + k_lo
                 else:
                     hi = float(np.nanmax(ctx.h[w]))
-                    if hi - np.nanmin(ctx.l[w]) >= 1.5 * a5 and hi >= np.nanmax(ctx.h[:i + 1]) and spike:
-                        flush_i = i - 4 + int(np.nanargmax(ctx.h[w]))
+                    if hi - np.nanmin(ctx.l[w]) >= 1.5 * a5 and k_lo < k_hi and hi >= np.nanmax(ctx.h[:i + 1]) and spike:
+                        flush_i = i - 4 + k_hi
                 continue
             if flush_i is not None:
+                if (ctx.l[i] < ctx.l[flush_i]) if sd == "C" else (ctx.h[i] > ctx.h[flush_i]):
+                    flush_i = i                                   # the flush extends: its extreme moves with it
+                    continue
                 if i - flush_i > 5:
                     flush_i = None
                     continue

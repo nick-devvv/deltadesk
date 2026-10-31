@@ -131,3 +131,8 @@ def test_puller_clips_to_the_dates_resumes_and_reports_gaps(tmp_path, monkeypatc
     assert o2["skipped"] == 5 and len(fake.calls) == n                       # resumable
     g = SPL.gap_report("SPY", a, b, tmp_path / "rep")
     assert g["sessions"] == 5 and g["no_bars"] == [] and Path(g["file"]).exists() and g["contracts_per_session"]["min"] >= 1
+    PA._write_gz(PA.ROOT / "options" / "SPY" / "2025-01-29" / "bars.csv.gz", PA._frame([]))     # a day Alpaca had nothing for
+    g = SPL.gap_report("SPY", a, b)
+    assert g["no_option_bars"] == ["2025-01-29"]
+    from sprint.data import read_option_day
+    assert read_option_day("SPY", date(2025, 1, 29), PA.ROOT) == {}
