@@ -136,19 +136,19 @@ def earn_post(now, fetch=None):
     return [p for p in out if p]
 
 
-def _x_read(t):
-    """The newest catalyst / X read on this ticker, as recorded data (never a trigger)."""
+def _x_read(t, now=None):
+    """The newest catalyst / X read on this ticker AS KNOWN NOW (the exact revision is recorded; never a trigger)."""
     try:
         import catalysts
-        f = catalysts.feed(t, None, 5)
+        c = catalysts.known_at(t, now or core.now_et())
     except Exception:
         return None
-    if not f:
+    if not c:
         return None
-    c = f[0]
     tr = ((c.get("sentiment") or {}).get("trader") or {})
-    return {"id": c.get("id"), "label": c.get("label"), "headline": (c.get("headline") or "")[:140], "trader_lean": tr.get("lean"),
-            "published_at": c.get("published_at"), "recycled": bool(c.get("recycled"))}
+    return {"id": c.get("id"), "rev": c.get("_rev"), "label": c.get("label"), "headline": (c.get("headline") or "")[:140],
+            "trader_lean": tr.get("lean"), "published_at": c.get("published_at"), "recycled": bool(c.get("recycled")),
+            "content_verified": bool(c.get("content_verified")), "eligible": catalysts.entry_eligible(c)}
 
 
 def board(now, fetch=None):
@@ -190,7 +190,7 @@ def board(now, fetch=None):
         g = entrygate.define(t, side, fam.lower(), float(r["level"]), float(r["invalidation"]), tgt, tname, sn, r["why"],
                              confirmed_at=now.isoformat(timespec="seconds"), scope="board")
         ev = entrygate.evaluate(g, sn)
-        xr = _x_read(t)
+        xr = _x_read(t, now)
         try:
             import strategy_router
             strategy_router.route({"ticker": t, "side": side, "family": fam, "setup_id": g["id"], "fresh": sn["fresh"], "bar_complete": True})

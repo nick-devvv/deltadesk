@@ -81,7 +81,12 @@ def test_labels_come_from_retrieved_urls_and_rumors_cannot_trigger_entries(env):
     r4 = C.ingest([{"tickers": ["AMD"], "headline": "AMD announces agreement to buy chip startup Foo",
                     "sources": [{"url": "https://www.businesswire.com/news/amd-foo"}]}], "xAI search")
     rec = C.feed("AMD")[0]
-    assert r4[0] == (cid, "verification update") and rec["label"] == "confirmed" and rec["verified_at"] and C.entry_eligible(rec)
+    assert r4[0] == (cid, "verification update") and rec["label"] == "confirmed" and rec["verified_at"]
+    assert not C.entry_eligible(rec) and "not verified" in rec["eligibility"]     # v3.5: a cited URL is not proof
+    page = "<html><body><h1>AMD announces agreement to acquire Foo</h1><p>Advanced Micro Devices (NASDAQ: AMD) to buy chip startup Foo.</p></body></html>"
+    v = C.verify(cid, fetch=lambda url: page)
+    rec = C.feed("AMD")[0]
+    assert v["status"] == "verified" and rec["content_verified"] and C.entry_eligible(rec)
     assert len(alerts_sent()) == n + 2
     assert C.ingest([{"tickers": ["AMD"], "headline": "AMD to buy chip startup Foo", "sources": [{"url": "https://www.reuters.com/x"}]}], "x")[0][1] == "duplicate"
 

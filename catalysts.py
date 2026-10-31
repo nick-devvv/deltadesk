@@ -24,6 +24,16 @@ A story published more than 24 h before the desk first saw it is flagged as resu
 
 All retrieved text is UNTRUSTED DATA: it is cleaned, length-limited, stored and displayed, and never executed, never
 used as an instruction, never allowed to change a rule or reach a credential.
+
+v3.5 (as-of integrity):
+  * Every change to a catalyst (new source, label, sentiment, category, tickers, verification) appends an IMMUTABLE
+    revision to catalyst_revisions (UPDATE/DELETE are refused by triggers). valid_from is the moment the desk knew it,
+    in UTC. A decision reads the revision that existed at its knowledge cutoff: as_of(), known_at(), view_as_of().
+  * A URL is not proof. Each source records HOW it was obtained: fetched_by_desk (EDGAR: the desk pulled the filing
+    feed itself), cited_by_model (xAI citations), supplied (Chart's routine). entry_eligible() additionally needs
+    content_verified: the desk itself fetched a primary/reporting source from an allowlisted domain and its text names
+    the company and matches the headline. X posts and AI summaries are discovery leads only; until verified a
+    catalyst stays observational.
 """
 import json
 import os
@@ -38,9 +48,17 @@ from datetime import datetime, timedelta, timezone
 import core
 import store
 
-VERSION = "2026-10-30.v3.2-catalysts"
+VERSION = "2026-10-31.v3.5-catalysts2"
 SCHEMA = """CREATE TABLE IF NOT EXISTS catalysts(id TEXT PRIMARY KEY, cluster TEXT, tickers TEXT, headline TEXT, category TEXT,
   label TEXT, first_detected TEXT, updated TEXT, data TEXT)"""
+REV_SCHEMA = ("""CREATE TABLE IF NOT EXISTS catalyst_revisions(cat_id TEXT NOT NULL, rev INTEGER NOT NULL, valid_from TEXT NOT NULL,
+  recorded_at TEXT NOT NULL, label TEXT, content_verified INTEGER, tickers TEXT, reason TEXT, reconstructed INTEGER DEFAULT 0,
+  sha TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(cat_id, rev))""",
+              "CREATE INDEX IF NOT EXISTS catrev_valid ON catalyst_revisions(valid_from)",
+              "CREATE TRIGGER IF NOT EXISTS catrev_no_update BEFORE UPDATE ON catalyst_revisions "
+              "BEGIN SELECT RAISE(ABORT, 'catalyst revisions are append-only'); END",
+              "CREATE TRIGGER IF NOT EXISTS catrev_no_delete BEFORE DELETE ON catalyst_revisions "
+              "BEGIN SELECT RAISE(ABORT, 'catalyst revisions are append-only'); END")
 PRIMARY = ("sec.gov", "businesswire.com", "prnewswire.com", "globenewswire.com", "accesswire.com", "newsfilecorp.com",
            "federalregister.gov", "fda.gov", "ftc.gov", "justice.gov", "fcc.gov", "ec.europa.eu", "federalreserve.gov",
            "bls.gov", "treasury.gov", "cms.gov", "nhtsa.gov", "faa.gov")
@@ -57,17 +75,23 @@ ITEMS_8K = {"2.02": ("earnings", "Results of Operations"), "1.01": ("contract", 
             "1.05": ("regulatory", "Material Cybersecurity Incident"), "2.03": ("financing", "Creation of a Direct Financial Obligation"),
             "3.01": ("regulatory", "Delisting Notice"), "3.02": ("financing", "Unregistered Sales of Equity"),
             "4.02": ("regulatory", "Non-Reliance on Prior Financials"), "5.02": ("management", "Director or Officer Change"),
-            "7.01": ("other", "Regulation FD Disclosure"), "8.01": ("other", "Other Events"), "9.01": (None, "Exhibits")}
+            "7.01": ("other", "Regulation FD Disclosure"), "8.01": ("other", "Other Events"), "9.01": (None, "Exhibits"),
+            # v3.5: the rest of the material items (list cross-checked with day-trader-skill's trader-news, MIT)
+            "1.02": ("contract", "Termination of a Material Agreement"), "2.04": ("financing", "Triggering Events (debt acceleration)"),
+            "2.05": ("other", "Exit or Disposal Costs (restructuring)"), "2.06": ("other", "Material Impairments"),
+            "4.01": ("management", "Change in Auditor"), "5.01": ("management", "Change in Control")}
 COMMON_WORD_TICKERS = {"A", "ALL", "ARE", "BE", "CAN", "CAR", "DO", "EAT", "F", "FUN", "GO", "IT", "KEY", "LOW", "NOW", "ON", "ONE",
                        "OPEN", "PLAY", "REAL", "RUN", "SEE", "SO", "T", "TRUE", "TWO", "U", "WELL", "X", "AI", "AN", "ANY"}
 DEFAULTS = {"edgar_enabled": True, "edgar_every_s": 60, "xai_enabled": False, "xai_model": "grok-4.7", "xai_daily_budget_usd": 2.0,
             "xai_max_calls_per_hour": 12, "xai_ticker_cache_min": 20, "price_in_per_m": 2.0, "price_out_per_m": 6.0,
             "price_x_post": 0.005, "price_x_profile": 0.010, "price_web_call": 0.005, "recycled_hours": 24, "cluster_hours": 72,
-            "ir_domains": {}, "alert_min_gap_min": 10}
+            "ir_domains": {}, "alert_min_gap_min": 10,
+            "verify_enabled": True, "verify_per_min": 6, "verify_max_attempts": 2, "verify_max_bytes": 1500000,
+            "verify_timeout_s": 8, "verify_min_overlap": 0.5, "verify_per_step": 3}
 
 SEC_TICKERS_FILE = core.HERE / "journal" / "sec_company_tickers.json"
 _state = {"thread": None, "stop": False, "status": "idle", "last_error": None, "edgar_at": None, "edgar_seen": set(), "ciks": None,
-          "xai_calls": [], "xai_cache": {}}
+          "xai_calls": [], "xai_cache": {}, "verify_calls": []}
 _lock = threading.Lock()
 
 
@@ -128,8 +152,24 @@ def label_for(sources, opinion=False):
 
 def entry_eligible(cat):
     """May this catalyst support a news-based entry? Only confirmed or attributed, never resurfacing old news, never
-    an unverified rumor or an opinion. (Every entry still has to pass the price-based entry gate on its own.)"""
-    return bool(cat) and cat.get("label") in ("confirmed", "attributed") and not cat.get("recycled")
+    an unverified rumor or an opinion, and (v3.5) only once the desk itself fetched a source and its content matched.
+    (Every entry still has to pass the price-based entry gate on its own.)"""
+    return (bool(cat) and cat.get("label") in ("confirmed", "attributed") and not cat.get("recycled")
+            and bool(cat.get("content_verified")))
+
+
+def eligibility(cat):
+    """Why a catalyst is or isn't entry-eligible, in words (for the journal and the UI)."""
+    if not cat:
+        return "no catalyst"
+    if cat.get("recycled"):
+        return "resurfacing old story"
+    if cat.get("label") not in ("confirmed", "attributed"):
+        return f"{cat.get('label')}: discovery lead only"
+    if not cat.get("content_verified"):
+        v = (cat.get("verification") or {}).get("status") or "pending"
+        return f"source content not verified yet ({v}): observational"
+    return "eligible"
 
 
 # ---------------------------------------------------------------- clustering
@@ -161,17 +201,122 @@ def _iso(t):
         return None
 
 
-def _all(day_from=None):
+def _utc(t):
+    """Any timestamp -> UTC ISO (comparable as a string across DST); naive values are taken as ET."""
+    if t is None:
+        return None
+    if not isinstance(t, datetime):
+        t = datetime.fromisoformat(str(t).replace("Z", "+00:00"))
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=core.ET)
+    return t.astimezone(timezone.utc).isoformat(timespec="seconds")
+
+
+def _schema():
     store.x(SCHEMA)
+    for sql in REV_SCHEMA:
+        store.x(sql)
+    if not store.kv_get("catrev_backfilled"):
+        _backfill()
+
+
+def _all(day_from=None):
+    _schema()
     q = "SELECT * FROM catalysts" + (" WHERE first_detected>=?" if day_from else "") + " ORDER BY first_detected DESC"
     return [dict(json.loads(r["data"]), id=r["id"], cluster=r["cluster"], label=r["label"]) for r in store.q(q, (day_from,) if day_from else ())]
 
 
-def _save(c):
-    store.x(SCHEMA)
-    store.x("INSERT OR REPLACE INTO catalysts(id,cluster,tickers,headline,category,label,first_detected,updated,data) VALUES(?,?,?,?,?,?,?,?,?)",
-            (c["id"], c["cluster"], ",".join(c["tickers"]), c["headline"], c["category"], c["label"], c["first_detected_at"],
-             store.ts(), json.dumps(c, default=str)))
+def _save(c, now=None, reason="update", reconstructed=False):
+    """Current view (catalysts) + an immutable revision (catalyst_revisions), in one transaction."""
+    _schema()
+    now = now or core.now_et()
+    import hashlib
+    with store.tx():
+        rev = store.q("SELECT COALESCE(MAX(rev), -1) + 1 AS n FROM catalyst_revisions WHERE cat_id=?", (c["id"],))[0]["n"]
+        c["rev"] = rev
+        data = json.dumps(c, default=str, sort_keys=True)
+        store.x("INSERT OR REPLACE INTO catalysts(id,cluster,tickers,headline,category,label,first_detected,updated,data) VALUES(?,?,?,?,?,?,?,?,?)",
+                (c["id"], c["cluster"], ",".join(c["tickers"]), c["headline"], c["category"], c["label"], c["first_detected_at"],
+                 store.ts(), data))
+        store.x("INSERT INTO catalyst_revisions(cat_id,rev,valid_from,recorded_at,label,content_verified,tickers,reason,reconstructed,sha,data) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                (c["id"], rev, _utc(now), _utc(datetime.now(timezone.utc)), c["label"], int(bool(c.get("content_verified"))),
+                 ",".join(c["tickers"]), reason[:80], int(reconstructed), hashlib.sha256(data.encode()).hexdigest(), data))
+    return rev
+
+
+def _backfill():
+    """One-time: catalysts stored before v3.5 get revisions rebuilt from their own history (sources by retrieved_at,
+    labels by the logged upgrades). Marked reconstructed=1; sentiment/category at earlier times is unknown, so a
+    reconstructed early revision carries NO sentiment rather than the later one."""
+    store.kv_set("catrev_backfilled", True)
+    have = {r["cat_id"] for r in store.q("SELECT DISTINCT cat_id FROM catalyst_revisions")}
+    for r in store.q("SELECT id, data FROM catalysts"):
+        if r["id"] in have:
+            continue
+        cur = json.loads(r["data"])
+        hist = cur.get("history") or []
+        cuts = [cur.get("first_detected_at")] + [h.get("t") for h in hist if h.get("t")]
+        cuts = sorted({x for x in cuts if x}, key=_utc)
+        for i, t in enumerate(cuts):
+            last = i == len(cuts) - 1
+            v = dict(cur) if last else {k: cur[k] for k in cur if k not in ("sentiment", "attention", "claims")}
+            v["sources"] = [s for s in cur.get("sources") or [] if not s.get("retrieved_at") or _utc(s["retrieved_at"]) <= _utc(t)] or (cur.get("sources") or [])[:1]
+            v["label"] = label_for(v["sources"], cur.get("opinion"))
+            v["history"] = [h for h in hist if h.get("t") and _utc(h["t"]) <= _utc(t)]
+            v["content_verified"] = bool(cur.get("content_verified")) and last
+            v["data_quality"] = "reconstructed from a pre-v3.5 record"
+            _save(v, datetime.fromisoformat(_utc(t)), "backfill", reconstructed=True)
+
+
+# ---------------------------------------------------------------- as-of reads (v3.5)
+def revisions_between(t0, t1):
+    """Raw revisions recorded with valid_from in [t0, t1] (UTC compare). Each: catalyst data + _rev/_valid_from."""
+    _schema()
+    rows = store.q("SELECT cat_id, rev, valid_from, reconstructed, data FROM catalyst_revisions WHERE valid_from>=? AND valid_from<=? "
+                   "ORDER BY valid_from, rev", (_utc(t0), _utc(t1)))
+    return [dict(json.loads(r["data"]), _rev=r["rev"], _valid_from=r["valid_from"], _reconstructed=bool(r["reconstructed"])) for r in rows]
+
+
+def view_as_of(revs, t):
+    """{cat_id: the newest revision with valid_from <= t}. Pure: works on a list from revisions_between."""
+    cut = _utc(t)
+    out = {}
+    for r in revs:
+        vf = r.get("_valid_from") or _utc(r.get("first_detected_at"))
+        if vf is None or vf > cut:
+            continue
+        cur = out.get(r["id"])
+        if cur is None or (r.get("_rev") or 0) >= (cur.get("_rev") or 0):
+            out[r["id"]] = r
+    return out
+
+
+def as_of(cat_id, t):
+    """The catalyst exactly as the desk knew it at time t (None if it wasn't known yet)."""
+    _schema()
+    r = store.q("SELECT rev, valid_from, reconstructed, data FROM catalyst_revisions WHERE cat_id=? AND valid_from<=? ORDER BY rev DESC LIMIT 1",
+                (cat_id, _utc(t)))
+    if not r:
+        return None
+    return dict(json.loads(r[0]["data"]), _rev=r[0]["rev"], _valid_from=r[0]["valid_from"], _reconstructed=bool(r[0]["reconstructed"]))
+
+
+def known_at(ticker, t, max_age_h=24):
+    """Newest catalyst on this ticker FIRST DETECTED within max_age_h before t, in the revision known at t."""
+    if not isinstance(t, datetime):
+        t = datetime.fromisoformat(str(t))
+    view = view_as_of(revisions_between(t - timedelta(hours=max_age_h + 48), t), t)
+    best = None
+    for c in view.values():
+        fd = c.get("first_detected_at")
+        if ticker not in (c.get("tickers") or []) or not fd or _utc(fd) > _utc(t):
+            continue
+        if (t - datetime.fromisoformat(fd)).total_seconds() > max_age_h * 3600:
+            continue
+        if best is None or _utc(fd) > _utc(best["first_detected_at"]):
+            best = c
+    return best
 
 
 def _find_cluster(tickers, headline, now):
@@ -186,10 +331,12 @@ def _find_cluster(tickers, headline, now):
     return best if score >= 0.45 else None
 
 
-def ingest(items, via, now=None):
+def ingest(items, via, now=None, retrieved_by_desk=False):
     """Add retrieved items. Each: {tickers, headline, summary?, category?, sources:[{url, published_at?, title?}],
-    event_time?, published_at?, opinion?, attention?, sentiment?, claims?}. Returns [(id, what_happened)]."""
+    event_time?, published_at?, opinion?, attention?, sentiment?, claims?}. Returns [(id, what_happened)].
+    retrieved_by_desk is True only for documents this process fetched itself (EDGAR); never settable from outside."""
     now = now or core.now_et()
+    retrieval = "fetched_by_desk" if retrieved_by_desk else ("cited_by_model" if "xai" in via.lower() else "supplied")
     out = []
     c = cfg()
     for it in (items or [])[:40]:
@@ -204,7 +351,9 @@ def ingest(items, via, now=None):
                 continue
             srcs.append({"url": url, "domain": domain(url), "kind": source_kind(url, sum((c["ir_domains"].get(t, []) for t in tks), [])),
                          "title": clean(s.get("title"), 200), "published_at": _iso(s.get("published_at")),
-                         "retrieved_at": now.isoformat(timespec="seconds")})
+                         "retrieved_at": now.isoformat(timespec="seconds"), "retrieval": retrieval,
+                         "content_match": True if retrieved_by_desk else None,
+                         "cited_claim": clean(it.get("headline"), 300)})
         if not srcs:
             continue                                   # no retrievable source: not evidence, not stored
         pub = _iso(it.get("published_at")) or min((s["published_at"] for s in srcs if s.get("published_at")), default=None)
@@ -219,6 +368,9 @@ def ingest(items, via, now=None):
                 out.append((existing["id"], "duplicate"))
                 continue
             existing["sources"] += new_src
+            if retrieved_by_desk and not existing.get("content_verified"):
+                existing.update(content_verified=True, verification={"status": "verified", "by": new_src[0]["url"],
+                                                                     "at": now.isoformat(timespec="seconds"), "method": "fetched by the desk (SEC feed)"})
             old = existing["label"]
             existing["label"] = label_for(existing["sources"], existing.get("opinion"))
             existing["reposts"] = existing.get("reposts", 0) + 1
@@ -229,7 +381,7 @@ def ingest(items, via, now=None):
                                             "url": new_src[0]["url"]})
                 what = "verification update"
                 _alert(existing, what, now)
-            _save(existing)
+            _save(existing, now, what)
             out.append((existing["id"], what))
             continue
         cid = f"N-{now.strftime('%Y%m%d%H%M%S')}-{abs(hash((head, tuple(tks)))) % 10**6:06d}"
@@ -244,11 +396,14 @@ def ingest(items, via, now=None):
                "claims": [clean(x, 300) for x in (it.get("claims") or [])[:8]],
                "attention": _attention(it.get("attention")), "sentiment": _sentiment(it.get("sentiment")),
                "price_at_detect": price, "history": [], "version": VERSION,
-               "ambiguous_ticker": any(t in COMMON_WORD_TICKERS for t in tks)}
+               "ambiguous_ticker": any(t in COMMON_WORD_TICKERS for t in tks),
+               "content_verified": bool(retrieved_by_desk),
+               "verification": ({"status": "verified", "by": srcs[0]["url"], "at": first, "method": "fetched by the desk (SEC feed)"}
+                                if retrieved_by_desk else {"status": "pending", "attempts": 0})}
         rec["latency"] = {"publication_to_detection_s": round((now - datetime.fromisoformat(pub)).total_seconds()) if pub else None}
         if not recycled:
             _alert(rec, "new", now)
-        _save(rec)
+        _save(rec, now, "new" if not recycled else "resurfacing")
         out.append((cid, "new" if not recycled else "resurfacing"))
     return out
 
@@ -300,6 +455,8 @@ def _alert(rec, what, now):
     title = f"{'NEWS UPDATE' if what != 'new' else 'NEWS'} {','.join(rec['tickers'][:3])}: {tag}"
     src = rec["sources"][0]
     body = f"{rec['headline'][:160]} | {src['domain']} | published {(rec.get('published_at') or 'time unknown')[:16]} | a headline, not a trade setup"
+    if not rec.get("content_verified"):
+        body += " | source content not checked yet"
     ok = alerts.alert("news", title, body, f"cat:{rec['cluster']}:{lab}", "high" if lab == "confirmed" else "normal")
     if ok:
         rec["alerted_at"] = now.isoformat(timespec="seconds")
@@ -402,7 +559,7 @@ def poll_edgar(fetch=None):
         fresh = [i for i in parse_edgar_atom(xml_text, ciks) if i["sources"][0]["url"] not in _state["edgar_seen"]]
         for i in fresh:
             _state["edgar_seen"].add(i["sources"][0]["url"])
-        got += ingest(fresh, "SEC EDGAR")
+        got += ingest(fresh, "SEC EDGAR", retrieved_by_desk=True)
         if any("2.02" in i.get("items_8k", []) for i in fresh):
             import earnings
             for i in fresh:
@@ -410,6 +567,169 @@ def poll_edgar(fetch=None):
                     earnings.mark_released(i["tickers"][0], i["published_at"], i["sources"][0]["url"])
     _state["edgar_at"] = core.now_et().isoformat(timespec="seconds")
     return got
+
+
+# ---------------------------------------------------------------- source content verification (v3.5, free)
+import html as _html  # noqa: E402
+import hashlib  # noqa: E402
+import urllib.error  # noqa: E402
+
+_NAME_SUFFIX = re.compile(r"\b(inc|incorporated|corp|corporation|co|company|ltd|limited|plc|holdings?|group|n\.?v|s\.?a|ag|se|class [a-c]|/[a-z]{2,3}/?)\.?$", re.I)
+
+
+_GENERIC_NAME_WORDS = {"advanced", "american", "united", "general", "first", "global", "international", "national", "digital",
+                       "applied", "micro", "energy", "capital", "financial", "health", "power", "systems", "technologies",
+                       "communications", "pacific", "southern", "western", "eastern", "northern", "royal", "standard"}
+
+
+def _strong_mention(t):
+    """An unambiguous ticker mention: (AMD), $AMD, NASDAQ: AMD. Pattern adapted from Jake Schincariol's
+    day-trader-skill (MIT, trader-news/news.py mention_patterns, commit 3d0f4ef). Safe even for F, ON, IT."""
+    e = re.escape(t)
+    return re.compile(rf"\({e}\)|\${e}\b|\b(?:NYSE|NASDAQ|Nasdaq|NYSE American|Cboe)\s*:\s*{e}\b")
+
+
+def _plain(text):
+    t = re.sub(r"(?is)<(script|style|noscript)[^>]*>.*?</\1>", " ", str(text or ""))
+    t = re.sub(r"(?s)<[^>]+>", " ", t)
+    return re.sub(r"\s+", " ", _html.unescape(t)).strip()
+
+
+def _short_name(name):
+    n = re.sub(r"[,.]", " ", str(name or "")).strip()
+    for _ in range(3):
+        n2 = _NAME_SUFFIX.sub("", n).strip()
+        if n2 == n:
+            break
+        n = n2
+    return n if len(n) >= 3 else None
+
+
+def content_check(text, tickers, headline, names=None, min_overlap=0.5):
+    """Does this fetched document actually name the company AND carry the headline's claim? Returns (ok, details).
+    Ticker words that are also English words (F, ON, IT ...) need the company name instead."""
+    plain = _plain(text)
+    low = plain.lower()
+    tk = [t for t in tickers if (t not in COMMON_WORD_TICKERS
+                                 and re.search(rf"(?<![A-Za-z0-9])\$?{re.escape(t)}(?![A-Za-z0-9])", plain))
+          or _strong_mention(t).search(plain)]
+    nm = []
+    for t in tickers:
+        n = (_short_name((names or {}).get(t)) or "").lower()
+        first = n.split()[0] if n else ""
+        if n and (n in low or (len(first) >= 4 and first not in _GENERIC_NAME_WORDS
+                               and re.search(rf"(?<![a-z0-9]){re.escape(first)}(?![a-z0-9])", low))):
+            nm.append(t)
+    ht = tokens(headline) - {t.lower() for t in tickers}
+    overlap = len(ht & tokens(low[:300000])) / max(1, len(ht))
+    ok = bool(tk or nm) and overlap >= min_overlap
+    return ok, {"ticker_found": tk, "name_found": nm, "headline_overlap": round(overlap, 2), "chars": len(plain)}
+
+
+class _NoOffsiteRedirect(urllib.request.HTTPRedirectHandler):
+    def __init__(self, allowed):
+        super().__init__()
+        self.allowed = allowed
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not str(newurl).startswith("https://") or not _matches(domain(newurl), self.allowed):
+            raise urllib.error.HTTPError(newurl, code, "redirect off the allowlist refused", headers, fp)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def _fetch_doc(url, allowed, c):
+    """GET one public article from an allowlisted domain: https only, no off-list redirects, text only, size-capped.
+    The text is untrusted data: it is only searched for the company and the headline words, never interpreted."""
+    opener = urllib.request.build_opener(_NoOffsiteRedirect(allowed))
+    ua = sec_headers()["User-Agent"] if _matches(domain(url), ("sec.gov",)) else "Mozilla/5.0 (compatible; DeltaDesk source check)"
+    req = urllib.request.Request(url, headers={"User-Agent": ua, "Accept": "text/html,application/xhtml+xml,text/plain,application/xml"})
+    with opener.open(req, timeout=c["verify_timeout_s"]) as r:
+        ctype = r.headers.get("Content-Type", "")
+        if not any(k in ctype for k in ("text/", "xml", "json")):
+            raise ValueError("not a text document")
+        return r.read(c["verify_max_bytes"]).decode("utf-8", "replace")
+
+
+def _verify_budget(c):
+    now = time.time()
+    _state["verify_calls"] = [t for t in _state["verify_calls"] if now - t < 60]
+    if len(_state["verify_calls"]) >= c["verify_per_min"]:
+        return False
+    _state["verify_calls"].append(now)
+    return True
+
+
+def verify(cat_id, fetch=None, now=None):
+    """Fetch this catalyst's primary/reporting sources (allowlisted domains only) until one names the company and
+    matches the headline. Appends a revision either way, so a later verification never leaks into an earlier read."""
+    now = now or core.now_et()
+    c = cfg()
+    _schema()
+    rows = store.q("SELECT data FROM catalysts WHERE id=?", (cat_id,))
+    if not rows:
+        return None
+    rec = json.loads(rows[0]["data"])
+    if rec.get("content_verified"):
+        return rec.get("verification")
+    tks = rec["tickers"]
+    allowed = PRIMARY + REPORTING + tuple(sum((c["ir_domains"].get(t, []) for t in tks), []))
+    names = store.kv_get("sec_names") or {}
+    at = now.isoformat(timespec="seconds")
+    changed = False
+    for s in rec["sources"]:
+        st = (s.get("check") or {}).get("status")
+        if s.get("kind") not in ("primary", "reporting") or st in ("match", "no_match", "not_allowlisted"):
+            continue
+        if s.get("attempts", 0) >= c["verify_max_attempts"]:
+            continue
+        if not s["url"].startswith("https://") or not _matches(domain(s["url"]), allowed):
+            s["check"] = {"status": "not_allowlisted", "at": at}
+            changed = True
+            continue
+        if not _verify_budget(c):
+            break
+        s["attempts"] = s.get("attempts", 0) + 1
+        changed = True
+        try:
+            text = fetch(s["url"]) if fetch else _fetch_doc(s["url"], allowed, c)
+        except Exception as e:
+            s["check"] = {"status": "fetch_failed", "error": type(e).__name__, "at": at}
+            continue
+        ok, info = content_check(text, tks, rec["headline"], names, c["verify_min_overlap"])
+        s["check"] = dict(info, status="match" if ok else "no_match", at=at, sha256=hashlib.sha256(text.encode()).hexdigest()[:16])
+        if ok:
+            rec["content_verified"] = True
+            rec["verification"] = {"status": "verified", "by": s["url"], "at": at,
+                                   "method": "fetched by the desk: company and headline found in the source"}
+            break
+    if not rec.get("content_verified"):
+        left = [s for s in rec["sources"] if s.get("kind") in ("primary", "reporting")
+                and (s.get("check") or {}).get("status") not in ("match", "no_match", "not_allowlisted")
+                and s.get("attempts", 0) < c["verify_max_attempts"]]
+        checked = [s for s in rec["sources"] if s.get("check")]
+        rec["verification"] = {"status": "pending" if left else "failed" if checked else "no checkable source",
+                               "attempts": sum(s.get("attempts", 0) for s in rec["sources"]), "at": at}
+    if changed or rec.get("content_verified"):
+        _save(rec, now, "content check")
+    return rec["verification"]
+
+
+def verify_pending(now=None, fetch=None):
+    """A few unverified-but-credible catalysts per pass (newest first). Rumors and opinions are never fetched."""
+    now = now or core.now_et()
+    c = cfg()
+    if not c["verify_enabled"]:
+        return []
+    out = []
+    for r in _all((now - timedelta(hours=24)).isoformat(timespec="seconds")):
+        if len(out) >= c["verify_per_step"]:
+            break
+        if r.get("content_verified") or r.get("recycled") or r["label"] not in ("confirmed", "attributed"):
+            continue
+        if (r.get("verification") or {}).get("status") not in (None, "pending"):
+            continue
+        out.append((r["id"], (verify(r["id"], fetch, now) or {}).get("status")))
+    return out
 
 
 # ---------------------------------------------------------------- xAI search (paid; off by default)
@@ -604,6 +924,7 @@ def feed(ticker=None, label=None, limit=80):
         r["price_now"] = px
         r["move_since_detect_pct"] = round((px / r["price_at_detect"] - 1) * 100, 2) if px and r.get("price_at_detect") else None
         r["entry_eligible"] = entry_eligible(r)
+        r["eligibility"] = eligibility(r)
         out.append(r)
     return out
 
@@ -637,6 +958,10 @@ def step(now=None):
             for t in tk:
                 _state["xai_cache"][t] = time.time()
             xai_search(tk, "shortlist / unusual activity / open position")
+    try:
+        verify_pending(now)
+    except Exception as e:
+        _state["last_error"] = f"verify: {type(e).__name__}"
     _state["status"] = "watching" + ("" if ok else f" (xAI: {why})")
 
 

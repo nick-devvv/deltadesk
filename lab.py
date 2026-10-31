@@ -385,13 +385,15 @@ def _bucket(v, edges, labels):
 
 
 def _xcats(now):
-    """Catalysts by ticker (DB read, cached 60 s). Only items FIRST DETECTED at or before a signal are used for it."""
+    """Catalyst REVISIONS by ticker (v3.5; DB read, cached 60 s). A signal reads the revision the desk had at its
+    bar end, so a source/label/sentiment that arrived later can never leak into an earlier signal (even when the lab
+    is catching up on old bars)."""
     if _state["cats"] is not None and time.time() - _state["cats_at"] < 60:
         return _state["cats"]
     out = {}
     try:
         import catalysts
-        for c in catalysts._all((now - timedelta(days=2)).isoformat(timespec="seconds")):
+        for c in catalysts.revisions_between(now - timedelta(days=3), now + timedelta(minutes=5)):
             for t in c.get("tickers") or []:
                 out.setdefault(t, []).append(c)
     except Exception:
@@ -401,14 +403,18 @@ def _xcats(now):
 
 
 def _x_read(t, bar_end, cats):
+    """The newest catalyst first detected within 24 h before the bar end, AS IT WAS KNOWN at the bar end."""
+    import catalysts
+    view = catalysts.view_as_of(cats.get(t, []), bar_end)
+    cut = catalysts._utc(bar_end)
     best = None
-    for c in cats.get(t, []):
+    for c in view.values():
         fd = c.get("first_detected_at")
-        if not fd or fd > bar_end.isoformat(timespec="seconds"):
-            continue                                        # not known yet at the signal
+        if not fd or catalysts._utc(fd) > cut or t not in (c.get("tickers") or [t]):
+            continue                                        # not known yet at the signal / attribution changed
         if (bar_end - datetime.fromisoformat(fd)).total_seconds() > 24 * 3600:
             continue
-        if best is None or fd > best["first_detected_at"]:
+        if best is None or catalysts._utc(fd) > catalysts._utc(best["first_detected_at"]):
             best = c
     return best
 
@@ -513,6 +519,8 @@ def conditions(t, side, nf, bar_end, cats, extra=None):
         at = x.get("attention") or {}
         c["x_attention"] = "rising" if at.get("accelerating") else "not rising" if at else "not measured"
         c["x_id"] = x.get("id")
+        c["x_rev"] = x.get("_rev")
+        c["x_verified"] = bool(x.get("content_verified"))
         c["x_age_min"] = round((bar_end - datetime.fromisoformat(x["first_detected_at"])).total_seconds() / 60)
     if extra:
         c.update(extra)
@@ -982,7 +990,7 @@ def paper_attempt(s, now, c=None):
             "breakeven_net": core.cents_up(best["ask"] + slip + 2 * fee / 100), "flat_by": None, "exit_profile": "lab",
             "variant": led, "policy_version": VERSION, "entry_px": px or close, "expiry": best["exp"], "grade": "R", "v": 34,
             "gate": {k: ev.get(k) for k in ("state", "latest_entry", "rr_now", "id", "version")},
-            "x_read": {k: s["conditions"].get(k) for k in ("x_lean", "x_label", "x_attention", "x_id")},
+            "x_read": {k: s["conditions"].get(k) for k in ("x_lean", "x_label", "x_attention", "x_id", "x_rev", "x_verified")},
             "row": {"tape_id": s["id"], "setup": s["setup"], "conditions": {k: v for k, v in s["conditions"].items() if k != "n"}}}
     pid, bwhy = paper.buy(led, idea, t, side, plan, int(c["qty"]), pd.Timestamp(s["bar_end"]).isoformat())
     if not pid:

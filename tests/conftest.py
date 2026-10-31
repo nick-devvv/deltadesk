@@ -28,6 +28,7 @@ def _hermetic(monkeypatch, tmp_path):
     monkeypatch.setattr(catalysts, "SEC_TICKERS_FILE", tmp_path / "sec_company_tickers.json")
     monkeypatch.setattr(catalysts, "_http", _no_network)
     monkeypatch.setattr(catalysts, "_xai_post", _no_network)
+    monkeypatch.setattr(catalysts, "_fetch_doc", _no_network)       # source content checks never leave the test
     import lab
     monkeypatch.setattr(lab, "ARCHIVE", tmp_path / "bars")          # never write test bars into the real archive
     yield

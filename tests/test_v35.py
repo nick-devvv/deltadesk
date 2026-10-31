@@ -192,3 +192,120 @@ def test_a_stale_copy_cannot_reopen_a_closed_trade(env):
     store.pos_save(stale)                                                       # e.g. a manager that loaded it earlier
     p = store.pos_get(pid)
     assert p["status"] == "CLOSED" and p["qty_open"] == 0 and p["mfe"] == 12.5
+
+
+# ================================================================ C4 news as-of integrity
+def _cat_env(env):
+    import catalysts as C
+    store.conn()
+    env.setattr(C, "_price", lambda t: 100.0)
+    env.setattr(core, "now_et", lambda: DAY.replace(hour=11))
+    C._state.update(edgar_seen=set(), ciks=None, xai_calls=[], xai_cache={}, verify_calls=[])
+    return C
+
+
+def test_a_later_verification_never_leaks_into_an_earlier_signal(env):
+    """The prompt's regression case: unverified at 10:00, signal at 10:05, verified source at 10:20."""
+    import lab
+    C = _cat_env(env)
+    t0, sig, t2 = DAY.replace(hour=10), DAY.replace(hour=10, minute=5), DAY.replace(hour=10, minute=20)
+    cid = C.ingest([{"tickers": ["AMD"], "headline": "AMD said to be in talks to buy chip startup Foo",
+                     "sources": [{"url": "https://x.com/someone/status/1"}],
+                     "sentiment": {"trader": {"lean": "bearish"}}}], "xAI search", t0)[0][0]
+    C.ingest([{"tickers": ["AMD"], "headline": "AMD announces agreement to buy chip startup Foo",
+               "sources": [{"url": "https://www.businesswire.com/news/amd-foo"}]}], "xAI search", t2)
+    C.verify(cid, fetch=lambda u: "Advanced Micro Devices (NASDAQ: AMD) announces agreement to buy chip startup Foo",
+             now=t2.replace(minute=21))
+    assert C.feed("AMD")[0]["label"] == "confirmed" and C.feed("AMD")[0]["content_verified"]      # today's view moved on
+    lab._state.update(cats=None, cats_at=0)
+    cats = lab._xcats(DAY.replace(hour=11))                                                       # catch-up AFTER 10:20
+    import pandas as pd
+    c = lab.conditions("AMD", "C", {"hm": "10:05", "close": 160.0, "atr14": 3.0}, pd.Timestamp(sig), cats)
+    assert c["x_id"] == cid and c["x_label"] == "unverified" and c["x_rev"] == 0 and c["x_verified"] is False
+    assert c["x_lean"] == "X disagrees"                                                          # the 10:00 sentiment
+    assert not C.entry_eligible(C.as_of(cid, sig)) and C.as_of(cid, sig)["label"] == "unverified"
+    assert C.as_of(cid, t2)["label"] == "confirmed" and not C.as_of(cid, t2)["content_verified"]
+    assert C.entry_eligible(C.as_of(cid, t2.replace(minute=22)))
+    assert C.as_of(cid, t0.replace(minute=0, second=0) - __import__("datetime").timedelta(seconds=1)) is None
+    late = C.known_at("AMD", sig)
+    assert late["id"] == cid and late["_rev"] == 0
+
+
+def test_catalyst_revisions_are_append_only(env):
+    import sqlite3
+    C = _cat_env(env)
+    C.ingest([{"tickers": ["NVDA"], "headline": "NVIDIA wins a large contract with a utility",
+               "sources": [{"url": "https://www.reuters.com/a"}]}], "xAI search", DAY.replace(hour=10))
+    with pytest.raises(sqlite3.DatabaseError):
+        store.x("UPDATE catalyst_revisions SET label='confirmed'")
+    with pytest.raises(sqlite3.DatabaseError):
+        store.x("DELETE FROM catalyst_revisions")
+    assert len(store.q("SELECT rev FROM catalyst_revisions")) == 1
+
+
+def test_content_check_needs_the_company_and_the_claim(env):
+    C = _cat_env(env)
+    ok, d = C.content_check("<p>Shares of a chip maker rose.</p>", ["AMD"], "AMD announces agreement to buy chip startup Foo")
+    assert not ok
+    ok, d = C.content_check("<script>AMD buy Foo</script><p>Weather today.</p>", ["AMD"], "AMD announces agreement to buy chip startup Foo")
+    assert not ok                                                                   # script text is not article text
+    ok, d = C.content_check("Ford recalls 100,000 trucks over a brake issue", ["F"], "Ford recalls 100,000 trucks over brake issue",
+                            {"F": "FORD MOTOR CO"})
+    assert ok and d["name_found"] == ["F"] and d["ticker_found"] == []            # 'F' alone never counts
+    ok, d = C.content_check("F recalls trucks over brake issue", ["F"], "Ford recalls 100,000 trucks over brake issue")
+    assert not ok
+    ok, d = C.content_check("Ford Motor (NYSE: F) recalls 100,000 trucks over a brake issue", ["F"], "Ford recalls 100,000 trucks over brake issue")
+    assert ok and d["ticker_found"] == ["F"]                                       # an exchange-qualified mention is unambiguous
+
+
+def test_only_allowlisted_https_sources_are_fetched_and_failures_stay_observational(env):
+    C = _cat_env(env)
+    got = []
+    cid = C.ingest([{"tickers": ["TSLA"], "headline": "Tesla wins large battery contract with a utility",
+                     "sources": [{"url": "https://www.reuters.com/a"}, {"url": "https://randomblog.example/p"},
+                                 {"url": "https://x.com/u/status/9"}]}], "xAI search", DAY.replace(hour=10))[0][0]
+
+    def fetch(u):
+        got.append(u)
+        raise OSError("paywall")
+    v = C.verify(cid, fetch=fetch, now=DAY.replace(hour=10, minute=1))
+    assert got == ["https://www.reuters.com/a"] and v["status"] == "pending"            # one retry left
+    v = C.verify(cid, fetch=fetch, now=DAY.replace(hour=10, minute=2))
+    assert v["status"] == "failed" and len(got) == 2
+    assert C.verify(cid, fetch=fetch, now=DAY.replace(hour=10, minute=3))["status"] == "failed" and len(got) == 2
+    rec = C.feed("TSLA")[0]
+    assert rec["label"] == "attributed" and not C.entry_eligible(rec) and "observational" in rec["eligibility"]
+    h = C._NoOffsiteRedirect(("reuters.com",))
+    with pytest.raises(Exception):
+        h.redirect_request(None, None, 302, "Found", {}, "https://evil.example/x")
+
+
+def test_edgar_items_are_desk_retrieved_and_eligible_at_once(env):
+    C = _cat_env(env)
+    r = C.ingest([{"tickers": ["NVDA"], "headline": "NVDA filed a 8-K: 2.02 Results of Operations",
+                   "sources": [{"url": "https://www.sec.gov/Archives/edgar/data/1/x-index.htm"}]}], "SEC EDGAR", DAY.replace(hour=16),
+                 retrieved_by_desk=True)
+    rec = C.as_of(r[0][0], DAY.replace(hour=16))
+    assert rec["content_verified"] and rec["sources"][0]["retrieval"] == "fetched_by_desk" and C.entry_eligible(rec)
+    r2 = C.ingest([{"tickers": ["AAPL"], "headline": "Apple files an 8-K about a new buyback program",
+                    "sources": [{"url": "https://www.sec.gov/Archives/edgar/data/2/y-index.htm"}]}], "Chart news routine", DAY.replace(hour=16))
+    rec2 = C.as_of(r2[0][0], DAY.replace(hour=16))
+    assert rec2["sources"][0]["retrieval"] == "supplied" and not C.entry_eligible(rec2)    # a pasted sec.gov link isn't proof
+
+
+def test_pre_v35_catalysts_are_backfilled_as_reconstructed_revisions(env):
+    C = _cat_env(env)
+    store.x(C.SCHEMA)
+    store.kv_set("catrev_backfilled", None)
+    legacy = {"id": "N-OLD", "cluster": "N-OLD", "tickers": ["AMD"], "headline": "AMD to buy Foo", "category": "acquisition",
+              "label": "attributed", "first_detected_at": "2026-10-28T10:00:00-04:00", "recycled": False,
+              "sentiment": {"trader": {"lean": "bullish"}},
+              "sources": [{"url": "https://x.com/a/status/1", "kind": "social", "retrieved_at": "2026-10-28T10:00:00-04:00"},
+                          {"url": "https://www.reuters.com/x", "kind": "reporting", "retrieved_at": "2026-10-28T10:20:00-04:00"}],
+              "history": [{"t": "2026-10-28T10:20:00-04:00", "what": "label unverified -> attributed"}]}
+    store.x("INSERT INTO catalysts(id,cluster,tickers,headline,category,label,first_detected,updated,data) VALUES(?,?,?,?,?,?,?,?,?)",
+            ("N-OLD", "N-OLD", "AMD", legacy["headline"], "acquisition", "attributed", legacy["first_detected_at"], "t", json.dumps(legacy)))
+    C._schema()
+    early = C.as_of("N-OLD", DAY.replace(hour=10, minute=5))
+    assert early["label"] == "unverified" and early["_reconstructed"] and "sentiment" not in early
+    assert C.as_of("N-OLD", DAY.replace(hour=10, minute=25))["label"] == "attributed"
