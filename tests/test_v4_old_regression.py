@@ -74,3 +74,16 @@ def test_old_is_not_retired_and_is_labeled_a_legacy_forward_test():
     import retire
     assert retire.active() and not retire.is_retired("old")
     assert retire.legacy_label("old") == "legacy forward test (not from a published source)"
+
+
+
+def test_old_shadow_fetches_chains_only_when_it_needs_them(monkeypatch):
+    import engine as E
+    calls = []
+    monkeypatch.setattr(E, "chain_rows", lambda t, side: (calls.append((t, side)), ([{"strike": 600}], None))[1])
+    lc = E._LazyChains("SPY")
+    assert calls == []                                          # nothing fetched until the scan reads a side
+    assert lc.get("C") == [{"strike": 600}] and lc.get("C") == [{"strike": 600}] and calls == [("SPY", "C")]
+    assert lc.get("P") and calls == [("SPY", "C"), ("SPY", "P")]
+    src = (ROOT / "engine.py").read_text()
+    assert 'policy_old.scan(t, s, _LazyChains(t))' in src

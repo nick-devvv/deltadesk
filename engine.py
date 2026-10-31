@@ -1015,6 +1015,21 @@ def archive_quote(symbol, q):
              q["quote_time"].isoformat() if q.get("quote_time") is not None else None, q.get("src")))
 
 
+class _LazyChains(dict):
+    """v4: the old shadow's chain rows, fetched on first use. Before v4 both sides were fetched on EVERY tick for SPY
+    and QQQ (about 48 Schwab calls a minute) although the scan only reads them on a newly finished 5-minute bar with a
+    candidate. Same rows, same decisions (tests/test_v4_old_regression.py), far fewer calls."""
+
+    def __init__(self, ticker):
+        super().__init__()
+        self._t = ticker
+
+    def get(self, side, default=None):
+        if side not in self:
+            self[side] = chain_rows(self._t, side)[0]
+        return super().get(side, default)
+
+
 # ======================= main tick =======================
 _state = {"last_tick": None, "errors": 0, "last_error": None}
 
@@ -1093,7 +1108,7 @@ def tick():
                 if sess["entries_allowed"] and not retire.is_retired("old"):    # v4: `old` stays active (legacy forward test)
                     if core.policy()["v3"]["old_policy_shadow"]["enabled"]:
                         try:
-                            policy_old.scan(t, s, {"C": chain_rows(t, "C")[0], "P": chain_rows(t, "P")[0]})
+                            policy_old.scan(t, s, _LazyChains(t))   # v4: chains fetched only when the scan needs them
                         except Exception as e:
                             _state["last_error"] = f"old shadow: {type(e).__name__}: {e}"
                 try:

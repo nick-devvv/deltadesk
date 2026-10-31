@@ -51,13 +51,13 @@ def calendar(now=None):
         evs = json.loads(core.EVENTS_FILE.read_text())
     except (OSError, ValueError):
         evs = None
+    import retire
+    fomc_days = set(retire.cfg().get("fomc_decision_days") or [])
     if evs and evs.get("date") == day:
         names = [str(e.get("name", "")) for e in evs.get("events") or []]
         return {"known": True, "source": "config/events.json", "events": evs.get("events") or [],
-                "fomc": any(FOMC_RE.search(n) for n in names), "cpi": any(CPI_RE.search(n) for n in names),
-                "jobs": any(JOBS_RE.search(n) for n in names)}
-    import retire
-    fomc_days = set(retire.cfg().get("fomc_decision_days") or [])
+                "fomc": any(FOMC_RE.search(n) for n in names) or day in fomc_days,       # a listed FOMC day counts even if unnamed
+                "cpi": any(CPI_RE.search(n) for n in names), "jobs": any(JOBS_RE.search(n) for n in names)}
     return {"known": False, "source": "config/v4.json FOMC list (no events.json for today)", "events": [],
             "fomc": True if day in fomc_days else (False if fomc_days and day[:4] == "2026" else None), "cpi": None, "jobs": None}
 

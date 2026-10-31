@@ -165,7 +165,13 @@ def overview(since="2026-11-02"):
         sip = sip_orb.status()
     except Exception as e:
         sip = {"error": type(e).__name__}
+    try:
+        import v4index
+        idx = v4index.status()
+    except Exception as e:
+        idx = {"error": type(e).__name__}
     return {"since": since, "books": books, "risk": v4risk.status(), "news_drift": nd, "chains": ch, "stocks_worker": sip,
+            "index_engine": idx,
             "retired": {"list": retire.retired_list(), "ledgers": retired_rows("2000-01-01")},
             "void": [{k: p[k] for k in ("id", "ledger", "date", "exit_reason")} for p in S.positions(status="VOID")],
             "note": ("Paper only: simulated fills on live Schwab quotes, never real money. Under 30 trades is not evidence. "

@@ -61,8 +61,9 @@ def _vix_default(now):
     vnow, med, notes = None, None, []
     try:
         q = marketdata.quote("$VIX")
-        if q and q.get("last") and q.get("quote_time") is not None:
-            age = (pd.Timestamp(now) - pd.Timestamp(q["quote_time"])).total_seconds()
+        qt = (q or {}).get("quote_time") or (q or {}).get("trade_time")        # an index has trades, not always quotes
+        if q and q.get("last") and qt is not None:
+            age = (pd.Timestamp(now) - pd.Timestamp(qt)).total_seconds()
             if age <= 120:
                 vnow = float(q["last"])
             else:

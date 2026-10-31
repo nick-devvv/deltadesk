@@ -196,3 +196,11 @@ def test_paper_page_pause_and_kill_cover_the_v4_ledgers(env):
     assert "v4: 1 closed" in msg and S.positions(status="OPEN") == [] and C.enabled() is False
     commands.handle("resume paper", "SPY")
     assert C.enabled() is True and R.admit("sip_orb5", "stocks", "NEW", "long") is None
+
+
+def test_a_listed_fomc_day_counts_even_when_the_events_file_misses_it(env):
+    mp, clock, fk = env
+    clock.t = FOMC.replace(hour=10, minute=30)
+    core.EVENTS_FILE.write_text(json.dumps({"date": "2026-10-28", "events": [{"time": "08:30", "name": "Jobless claims"}]}))
+    c = C.calendar()
+    assert c["known"] and c["fomc"] is True and "FOMC" in R.admit("ic_20d", "premium", "SPY", "neutral")
