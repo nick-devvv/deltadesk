@@ -10,6 +10,8 @@ journal/
 desk-state.json
 schwab_token*.json
 config/watchlist.json
+# research data pulled on Chart's computer (chain logs, Alpaca history): never committed
+data/
 # python / tooling
 __pycache__/
 *.pyc

@@ -143,6 +143,10 @@ class SchwabREST(Provider):
         import schwab
         return schwab.chain(ticker, side, first, through)
 
+    def chain_all(self, ticker, first, through=None, strike_count=None):
+        import schwab
+        return schwab.chain_all(ticker, first, through, strike_count)
+
 
 class Fallback(Provider):
     """Only while Schwab is not connected. Labeled FALLBACK everywhere; never executable."""

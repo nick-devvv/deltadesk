@@ -36,6 +36,7 @@ Main endpoints:
   GET  /api/diagnostics      the latest diagnostics report from backtest.py
   GET  /legacy               the old desk page (custom indicator chart)
   GET  /api/v4/news_drift?day=&since=  v4 news-drift event study (research only, never trades)
+  GET  /api/v4/...           v4 ledgers, risk and chain logger (see v4api.py for the list)
   GET  /api/lab[/report?by=&cond=&exits=|/signals|/contracts]  v3.4 strategy lab: signal tape, lab paper ledgers, what works
        where, and (3.4.2) which option contract converts the same signals
   Legacy: /api/read /api/bars /api/last /api/plan /api/chat
@@ -550,6 +551,11 @@ class H(BaseHTTPRequestHandler):
                                          "variants": core.policy().get("research_variants"),
                                          "note": "Each ledger is separate. Under 30 trades is not evidence. Option results of the variants are "
                                                  "simulated fills on live Schwab quotes; replays and backtests use MODELED option prices."}))
+            if u.path == "/api/v4" or u.path.startswith("/api/v4/"):     # v4 ledgers, risk, chain logger (v4api.py)
+                import v4api
+                r = v4api.get(u.path, q)
+                if r is not None:
+                    return self._json(clean(r))
             if u.path == "/api/v4/news_drift":      # v4: news-drift event study rows (research only, no trades)
                 import news_drift
                 day = q.get("day", [None])[0]
@@ -599,6 +605,11 @@ class H(BaseHTTPRequestHandler):
             return self._json({"error": "forbidden: cross-site request"}, 403)
         b = self._body()
         try:
+            if u.path.startswith("/api/v4/"):                             # v4 kill switch / enable (v4api.py)
+                import v4api
+                r = v4api.post(u.path, b)
+                if r is not None:
+                    return self._json(clean(r))
             if u.path == "/api/command":
                 text = str(b.get("text", ""))[:2000]
                 tick = str(b.get("ticker", "SPY")).upper()
@@ -863,6 +874,8 @@ if __name__ == "__main__":
         import sip_orb
         print("v4 stock ledgers (sip_orb5, sip_orb5_x, sip_orb15, earn_day + options shadows):",
               "started" if sip_orb.start() else "off", flush=True)
+        import chain_logger
+        print("v4 option-chain logger (data/chains, research budget):", "started" if chain_logger.start() else "off", flush=True)
     except Exception as e:
         print("Scanner not started:", e, flush=True)
     try:                                           # v3.5: journal/learning tables + the preregistered hypotheses

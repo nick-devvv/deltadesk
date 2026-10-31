@@ -446,6 +446,34 @@ def chain(ticker, side, expiry, through=None, strike_count=None):
     return rows, None if rows else "empty chain"
 
 
+def chain_all(ticker, expiry, through=None, strike_count=None):
+    """v4 chain logger: calls AND puts in ONE request, with the underlying price. Rows as chain() plus "type" ("C"/"P")
+    and "underlying". Market data only (/marketdata/v1/chains)."""
+    params = {"symbol": ticker.upper(), "contractType": "ALL", "fromDate": expiry, "toDate": through or expiry,
+              "strategy": "SINGLE", "includeUnderlyingQuote": "true"}
+    if strike_count:
+        params["strikeCount"] = int(strike_count)
+    j, err = _get("/marketdata/v1/chains", params)
+    if not j:
+        return None, err
+    und = _num(j.get("underlyingPrice")) or _num(((j.get("underlying") or {}).get("last")))
+    rows = []
+    for key, typ in (("callExpDateMap", "C"), ("putExpDateMap", "P")):
+        for exp_key, strikes in (j.get(key) or {}).items():
+            if not through and not exp_key.startswith(expiry):
+                continue
+            for k, lst in strikes.items():
+                for o in lst or []:
+                    iv = _num(o.get("volatility"))
+                    rows.append({"symbol": occ(o.get("symbol")), "type": typ, "strike": float(o.get("strikePrice") or k),
+                                 "exp": exp_key[:10], "bid": _num(o.get("bid")), "ask": _num(o.get("ask")), "last": _num(o.get("last")),
+                                 "volume": o.get("totalVolume"), "oi": o.get("openInterest"), "delta": _num(o.get("delta")),
+                                 "gamma": _num(o.get("gamma")), "iv": iv / 100 if iv and iv > 3 else iv,
+                                 "ts": datetime.fromtimestamp((o.get("quoteTimeInLong") or 0) / 1000, core.ET).isoformat() if o.get("quoteTimeInLong") else None,
+                                 "underlying": und})
+    return rows, None if rows else "empty chain"
+
+
 def option_quote(symbol):
     """Live bid/ask for one OCC option symbol. Schwab wants the padded 21-char form."""
     root = symbol[:-15]
