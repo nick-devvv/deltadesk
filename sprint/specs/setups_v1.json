@@ -1,0 +1,177 @@
+{
+  "spec_id": "setups_v1",
+  "description": "Every implemented non-ORB entry (pre-registered in sprint/entries.py) with the same six exits, on DEV, SPY+QQQ+IWM pooled per run, calls and puts as separate runs (failed-break is calls only): (1) plain: the entry window's premium ceiling + all out 15:25; (2) plan A, the time-of-day table; (3) plan B, sell just before the first level, $0.03 buffer, level stop, no R:R minimum, time (c); (4) the same with R:R >= 2 on the stock and the option; (5) giveback 40% trail on B's base (no target); (6) fixed premium stop/target 20/60 of the debit (Option Alpha's 1:3 shape, desk fills). The noise band also runs with the noise ledger's own exit (band/VWAP stop at the half-hour checks, reversal, 20% ceiling every minute, delta 0.55-0.75), and its twin runs with that exit minus the per-minute 20% ceiling (the twin differs from noise only inside that exit, so it isn't repeated with the six). Contract d40-55t45 for the six exits. 58 runs. First look at these setups: nothing tuned.",
+  "period": "DEV",
+  "symbols": [
+    "SPY",
+    "QQQ",
+    "IWM"
+  ],
+  "defaults": {
+    "side": "C",
+    "contract": "d40-55t45",
+    "allout": "15:25",
+    "time": "a",
+    "stop": "level",
+    "tp": "none",
+    "tp_buffer": "$0.03",
+    "rr_min": null,
+    "trail": "none",
+    "mechanics": "desk",
+    "filters": []
+  },
+  "blocks": [
+    {
+      "name": "six_exits_two_sides",
+      "why": "noise band, VWAP + 2m MACD retest, prior-day H/L retest + 9 EMA, flush reversal: 4 setups x 2 sides x 6 exits = 48 runs.",
+      "grid": {
+        "entry": [
+          "noise",
+          "vwap_macd",
+          "pd_retest",
+          "flush"
+        ],
+        "side": [
+          "C",
+          "P"
+        ],
+        "exit": [
+          {
+            "stop": "premium",
+            "tp": "none",
+            "time": "b",
+            "rr_min": null,
+            "trail": "none"
+          },
+          {
+            "stop": "premium",
+            "tp": "A",
+            "time": "a",
+            "rr_min": null,
+            "trail": "none"
+          },
+          {
+            "stop": "level",
+            "tp": "B",
+            "time": "c",
+            "rr_min": null,
+            "trail": "none"
+          },
+          {
+            "stop": "level",
+            "tp": "B",
+            "time": "c",
+            "rr_min": 2.0,
+            "trail": "none"
+          },
+          {
+            "stop": "level",
+            "tp": "none",
+            "time": "c",
+            "rr_min": null,
+            "trail": "gb40"
+          },
+          {
+            "stop": "fixed",
+            "tp": "none",
+            "time": "b",
+            "rr_min": null,
+            "trail": "none",
+            "fixed_stop": 0.2,
+            "fixed_target": 0.6
+          }
+        ]
+      }
+    },
+    {
+      "name": "six_exits_failed_break",
+      "why": "failed-break calls (calls only): 6 runs.",
+      "grid": {
+        "entry": [
+          "failed_break"
+        ],
+        "side": [
+          "C"
+        ],
+        "exit": [
+          {
+            "stop": "premium",
+            "tp": "none",
+            "time": "b",
+            "rr_min": null,
+            "trail": "none"
+          },
+          {
+            "stop": "premium",
+            "tp": "A",
+            "time": "a",
+            "rr_min": null,
+            "trail": "none"
+          },
+          {
+            "stop": "level",
+            "tp": "B",
+            "time": "c",
+            "rr_min": null,
+            "trail": "none"
+          },
+          {
+            "stop": "level",
+            "tp": "B",
+            "time": "c",
+            "rr_min": 2.0,
+            "trail": "none"
+          },
+          {
+            "stop": "level",
+            "tp": "none",
+            "time": "c",
+            "rr_min": null,
+            "trail": "gb40"
+          },
+          {
+            "stop": "fixed",
+            "tp": "none",
+            "time": "b",
+            "rr_min": null,
+            "trail": "none",
+            "fixed_stop": 0.2,
+            "fixed_target": 0.6
+          }
+        ]
+      }
+    },
+    {
+      "name": "noise_own_exit",
+      "why": "the noise ledger's rules with its own exit and its delta 0.55-0.75 contract, and the twin without the per-minute 20% ceiling: 2 entries x 2 sides = 4 runs.",
+      "grid": {
+        "entry": [
+          "noise",
+          "noise_nocap"
+        ],
+        "side": [
+          "C",
+          "P"
+        ],
+        "stop": [
+          "noise"
+        ],
+        "tp": [
+          "none"
+        ],
+        "time": [
+          "b"
+        ],
+        "contract": [
+          "d55-75t65"
+        ]
+      }
+    }
+  ],
+  "robustness": {
+    "top_k": 5,
+    "random_paths": 5,
+    "fake_seeds": 20,
+    "min_trades": 60
+  }
+}

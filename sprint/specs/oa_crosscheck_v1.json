@@ -1,0 +1,361 @@
+{
+  "spec_id": "oa_crosscheck_v1",
+  "description": "Cross-check of Option Alpha's Stage-1 candidate (SPY ORB60 long calls, fixed premium stop/target at 1:3: 20/60, 15/45, 10/30; PF 1.30-1.33 on Nov 2025-Jun 2026) and of OA's T1 (50/100, 0.50 delta) in the desk engine, on the part of DEV that Option Alpha never saw: 2024-08-01 to 2025-10-29 (period tag NOT_SEEN_BY_OA). OA rules: 0DTE, first breakout only per side (finished 1-minute close beyond the range), signal bars finishing by 12:00, next-bar entry, fixed stop and target as % of the debit on the option's price, nothing else (no breakeven, no if-flat, no time tightening), all out 15:25 (OA: 35 min before close). Calls and puts run separately, per symbol (SPY is the OA candidate; QQQ and IWM are context). Two exit mechanics: 'desk' = SPRINT_PLAN's fill rules (the base) and 'oa1m' = OA-LIKE (checked once a minute on the close, filled at the next minute's print). Contract: d40-55t45 (BS-EST delta 0.40-0.55 nearest 0.45; OA took the closest delta to 0.45 with no band, so band misses are skipped here and counted). 444 runs. Side rule pre-registered in two forms (no margin, and a 1% margin around the 20-day SMA), see the side_rule block. Two optimizer leads (VIX falling with proxy: VIXY, and the 0 to +/-0.75% open-gap side rule) in the optimizer_leads block; VIXY 1-minute stock bars come from tools/sprint_pull.py (stock bars only, no options). Not tuned: every pair and filter comes from the OA Stage-1 list.",
+  "period": "NOT_SEEN_BY_OA",
+  "symbols": [
+    "SPY",
+    "QQQ",
+    "IWM"
+  ],
+  "defaults": {
+    "side": "C",
+    "contract": "d40-55t45",
+    "allout": "15:25",
+    "time": "b",
+    "stop": "fixed",
+    "tp": "none",
+    "tp_buffer": "$0.03",
+    "rr_min": null,
+    "trail": "none",
+    "mechanics": "desk",
+    "filters": []
+  },
+  "blocks": [
+    {
+      "name": "oa_core",
+      "why": "ORB60 calls and puts per symbol, the five Stage-1 pairs (20/20, 20/40, 20/60, 15/45, 10/30) plus T1's 50/100, both mechanics. 72 runs.",
+      "grid": {
+        "symbols": [
+          [
+            "SPY"
+          ],
+          [
+            "QQQ"
+          ],
+          [
+            "IWM"
+          ]
+        ],
+        "entry": [
+          "orb60"
+        ],
+        "side": [
+          "C",
+          "P"
+        ],
+        "pair": [
+          {
+            "fixed_stop": 0.2,
+            "fixed_target": 0.2
+          },
+          {
+            "fixed_stop": 0.2,
+            "fixed_target": 0.4
+          },
+          {
+            "fixed_stop": 0.2,
+            "fixed_target": 0.6
+          },
+          {
+            "fixed_stop": 0.15,
+            "fixed_target": 0.45
+          },
+          {
+            "fixed_stop": 0.1,
+            "fixed_target": 0.3
+          },
+          {
+            "fixed_stop": 0.5,
+            "fixed_target": 1.0
+          }
+        ],
+        "mechanics": [
+          "desk",
+          "oa1m"
+        ]
+      }
+    },
+    {
+      "name": "oa_t1_delta50",
+      "why": "T1 itself: 50/100 with the 0.50-delta contract variant (d45-60t50: BS-EST 0.45-0.60 nearest 0.50), both mechanics. 12 runs.",
+      "grid": {
+        "symbols": [
+          [
+            "SPY"
+          ],
+          [
+            "QQQ"
+          ],
+          [
+            "IWM"
+          ]
+        ],
+        "entry": [
+          "orb60"
+        ],
+        "side": [
+          "C",
+          "P"
+        ],
+        "pair": [
+          {
+            "fixed_stop": 0.5,
+            "fixed_target": 1.0
+          }
+        ],
+        "mechanics": [
+          "desk",
+          "oa1m"
+        ],
+        "contract": [
+          "d45-60t50"
+        ]
+      }
+    },
+    {
+      "name": "orb_context",
+      "why": "ORB30 and ORB15 as context (OA Stage 1 found nothing there), the five pairs, desk mechanics. 60 runs.",
+      "grid": {
+        "symbols": [
+          [
+            "SPY"
+          ],
+          [
+            "QQQ"
+          ],
+          [
+            "IWM"
+          ]
+        ],
+        "entry": [
+          "orb30",
+          "orb15"
+        ],
+        "side": [
+          "C",
+          "P"
+        ],
+        "pair": [
+          {
+            "fixed_stop": 0.2,
+            "fixed_target": 0.2
+          },
+          {
+            "fixed_stop": 0.2,
+            "fixed_target": 0.4
+          },
+          {
+            "fixed_stop": 0.2,
+            "fixed_target": 0.6
+          },
+          {
+            "fixed_stop": 0.15,
+            "fixed_target": 0.45
+          },
+          {
+            "fixed_stop": 0.1,
+            "fixed_target": 0.3
+          }
+        ],
+        "mechanics": [
+          "desk"
+        ]
+      }
+    },
+    {
+      "name": "side_rule",
+      "why": "OA's side rule, pre-registered in two forms: (a) sma20_side: calls only when the prior session's close is above its 20-day SMA (the 20 closes ending at that close), puts only when below; (b) sma20_side_1pct: calls only when that close is at least 1% above the SMA, puts only when at least 1% below, no trade in between. Each symbol's own closes (SPY = OA's rule). Five pairs, both mechanics; the unfiltered twin is in oa_core (random day-skip test). 120 runs.",
+      "grid": {
+        "symbols": [
+          [
+            "SPY"
+          ],
+          [
+            "QQQ"
+          ],
+          [
+            "IWM"
+          ]
+        ],
+        "entry": [
+          "orb60"
+        ],
+        "side": [
+          "C",
+          "P"
+        ],
+        "pair": [
+          {
+            "fixed_stop": 0.2,
+            "fixed_target": 0.2
+          },
+          {
+            "fixed_stop": 0.2,
+            "fixed_target": 0.4
+          },
+          {
+            "fixed_stop": 0.2,
+            "fixed_target": 0.6
+          },
+          {
+            "fixed_stop": 0.15,
+            "fixed_target": 0.45
+          },
+          {
+            "fixed_stop": 0.1,
+            "fixed_target": 0.3
+          }
+        ],
+        "mechanics": [
+          "desk",
+          "oa1m"
+        ],
+        "filters": [
+          [
+            "sma20_side"
+          ],
+          [
+            "sma20_side_1pct"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "event_skip",
+      "why": "Skip FOMC statement days and CPI release days (sprint/events.py: FOMC from federalreserve.gov, CPI from BLS's 2024 and 2025 release calendars, both read 2026-10-31). Five pairs, both mechanics; twin in oa_core. 60 runs.",
+      "grid": {
+        "symbols": [
+          [
+            "SPY"
+          ],
+          [
+            "QQQ"
+          ],
+          [
+            "IWM"
+          ]
+        ],
+        "entry": [
+          "orb60"
+        ],
+        "side": [
+          "C",
+          "P"
+        ],
+        "pair": [
+          {
+            "fixed_stop": 0.2,
+            "fixed_target": 0.2
+          },
+          {
+            "fixed_stop": 0.2,
+            "fixed_target": 0.4
+          },
+          {
+            "fixed_stop": 0.2,
+            "fixed_target": 0.6
+          },
+          {
+            "fixed_stop": 0.15,
+            "fixed_target": 0.45
+          },
+          {
+            "fixed_stop": 0.1,
+            "fixed_target": 0.3
+          }
+        ],
+        "mechanics": [
+          "desk",
+          "oa1m"
+        ],
+        "filters": [
+          [
+            "skip_fomc_cpi"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "optimizer_leads",
+      "why": "Two leads from Option Alpha's Strategy Optimizer on run 023 (it only filters existing trades, so they are in-sample leads), pre-registered here and tested on data OA never saw: (a) vixy_falling: 'VIX falling' (OA: VIX change -3 to -0.01) with PROXY: VIXY, because Alpaca has no VIX index: at the decision, VIXY's last finished 1-minute close is below VIXY's prior regular-session close; applied as stated to calls and puts alike (no put mirror was given); (b) gap_side_075: calls only when today's open vs the prior close is above 0% and at most +0.75%, puts only when below 0% and at least -0.75% (each symbol's own open). ORB60, five pairs, both mechanics; the unfiltered twins are in oa_core. 120 runs.",
+      "grid": {
+        "symbols": [
+          [
+            "SPY"
+          ],
+          [
+            "QQQ"
+          ],
+          [
+            "IWM"
+          ]
+        ],
+        "entry": [
+          "orb60"
+        ],
+        "side": [
+          "C",
+          "P"
+        ],
+        "pair": [
+          {
+            "fixed_stop": 0.2,
+            "fixed_target": 0.2
+          },
+          {
+            "fixed_stop": 0.2,
+            "fixed_target": 0.4
+          },
+          {
+            "fixed_stop": 0.2,
+            "fixed_target": 0.6
+          },
+          {
+            "fixed_stop": 0.15,
+            "fixed_target": 0.45
+          },
+          {
+            "fixed_stop": 0.1,
+            "fixed_target": 0.3
+          }
+        ],
+        "mechanics": [
+          "desk",
+          "oa1m"
+        ],
+        "filters": [
+          [
+            "vixy_falling"
+          ],
+          [
+            "gap_side_075"
+          ]
+        ]
+      }
+    }
+  ],
+  "robustness": {
+    "top_k": 5,
+    "random_paths": 5,
+    "fake_seeds": 0,
+    "min_trades": 60
+  },
+  "oa_reference": {
+    "SPY|orb60|C|20/20|-": "PF 0.86 (OA-S1-021)",
+    "SPY|orb60|C|20/40|-": "PF 1.04 (OA-S1-022)",
+    "SPY|orb60|C|20/60|-": "PF 1.33 (OA-S1-023)",
+    "SPY|orb60|C|15/45|-": "PF 1.33 (OA-S1-024)",
+    "SPY|orb60|C|10/30|-": "PF 1.30 (OA-S1-025)",
+    "SPY|orb60|C|50/100|-": "PF 1.44 (T1, 0.50 delta, OA 1y window)",
+    "SPY|orb60|P|20/20|-": "PF 0.91 (OA-S1-026)",
+    "SPY|orb60|P|20/40|-": "PF 0.87 (OA-S1-027)",
+    "SPY|orb60|P|20/60|-": "PF 0.88 (OA-S1-028)",
+    "SPY|orb60|P|15/45|-": "PF 0.88 (OA-S1-029)",
+    "SPY|orb60|P|10/30|-": "PF 1.00 (OA-S1-030)",
+    "SPY|orb60|P|50/100|-": "PF 0.73 (T2, 0.50 delta, OA 1y window)",
+    "SPY|orb60|C|20/60|sma20_side": "PF 1.31 (OA-S1-072)",
+    "SPY|orb60|C|15/45|sma20_side": "PF 1.40 (OA-S1-078)",
+    "SPY|orb60|C|20/60|skip_fomc_cpi": "PF 1.32 (OA-S1-073)",
+    "SPY|orb60|C|15/45|skip_fomc_cpi": "PF 1.35 (OA-S1-079)"
+  }
+}
