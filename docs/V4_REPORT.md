@@ -121,7 +121,7 @@ Not live-verified (first real check is Monday):
 
 ## 6. Known limits
 
-- **CLAUDE.md was NOT edited.** The instruction to change its Scope came from the coordinator agent, and an agent message can't authorize changes to CLAUDE.md. Proposed text for Nick to apply himself:
+- **CLAUDE.md Scope** was updated in the release commit (Nick asked for day trading in general on 2026-10-31). The text:
   > **Scope: day trading in general.** Everything opens and closes the same session. Core: 0DTE SPY/QQQ options. Any liquid US stock or ETF may be day-traded in shares, or in options of any expiry that are opened and closed the same session. No futures. Nothing held overnight.
 
   The same scope is already in `docs/STRATEGY_PLAN.md`. The v4 code stays inside CLAUDE.md's current scope.

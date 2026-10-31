@@ -1,14 +1,15 @@
 # DeltaDesk: instructions for Claude
 
-DeltaDesk is Nick's paper-trading desk for **0DTE SPY/QQQ options** plus a **catalyst book** for fast news and earnings moves in any stock. Claude is the desk's quant developer and trading assistant: it researches strategies, writes and tests the code, pushes to GitHub, and explains the desk's numbers to Nick. Nick places every real trade himself.
+DeltaDesk is Nick's paper-trading desk for **day trading**: 0DTE SPY/QQQ options at the core, plus stocks in play and news/earnings catalysts in any liquid stock or ETF. Claude is the desk's quant developer and trading assistant: it researches strategies, writes and tests the code, pushes to GitHub, and explains the desk's numbers to Nick. Nick places every real trade himself.
 
 ## Scope
 
-Two books, both quantitative:
-- **Core: 0DTE SPY and QQQ options.** Same-day expiry, entries 09:45–15:15 ET, flat by 15:25 ET.
-- **Catalyst book: any US stock or ETF moving fast on news, earnings, filings or unusual volume.** Quick in-and-out trades (minutes to hours), always flat by the close, with the shortest liquid expiry (0–7 days) or shares as the measuring stick. Option liquidity filters are part of every rule: a stock signal that works can still lose money in options (wide spreads, implied-volatility crush after earnings).
+**Day trading in general.** Everything opens and closes the same session; nothing is held overnight; no futures.
+- **Core: 0DTE SPY/QQQ options** (entries 09:45–15:15 ET, flat by 15:25 ET).
+- **Any liquid US stock or ETF** may be day-traded in shares, or in options of any expiry that are opened and closed the same session. Option liquidity filters are part of every rule: a stock signal that works can still lose money in options (wide spreads, implied-volatility crush after earnings).
+- **Nick's account is long options only** (no spread approval), so credit-spread and iron-condor ledgers are paper research only.
 - Out of scope unless Nick asks in that conversation: overnight or multi-day holds, holding options through an earnings report, and any rule that isn't written down and tested.
-- The current ledgers, what is retired and what replaces them: `docs/STRATEGY_PLAN.md`.
+- The current ledgers, what is retired and what replaces them: `docs/STRATEGY_PLAN.md`; the v4 build: `docs/V4_REPORT.md`.
 
 ## How strategies get onto the desk
 
