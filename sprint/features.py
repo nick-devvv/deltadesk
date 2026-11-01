@@ -243,3 +243,132 @@ def recompute(rows, root=None):
                 ctxs[d] = data.DayContext(series, d, {}, None, aux=aux)
             r.update(entry_features(ctxs[d], int(r["signal_idx"]), r["side"]))
     return rows
+
+
+# ---------------------------------------------------------------- round 10, information-only regime features (Addendum 15.5)
+# SPRINT_PLAN Addendum 15.5 (pre-registered 2026-11-01 before any round-10 code or run): stamped on every round 10 grid trade
+# as INFORMATION ONLY (no pass/fail, no trials; a later rule built on them counts its own trials). They are NOT added to
+# FEATURES, so no learner reads them by default. Each is known at the end of the decision bar j:
+#   f_atr9_50    daily ATR(9) / ATR(50): Wilder ATRs of the daily regular-hours bars of the sessions BEFORE the day (true
+#                range with the prior close), each over the last max(60, 3n) prior sessions, seeded with the mean of the first
+#                n true ranges (n = 14 over 60 sessions is exactly data.Series.daily_atr); empty with fewer than 51 prior
+#                sessions.
+#   f_adx_d14    daily ADX(14) (indicators.adx_di, Wilder) over the last 100 prior sessions' daily bars; empty with fewer
+#                than 29.
+#   f_hurst100   a 100-bar rescaled-range (R/S) Hurst exponent on 1-minute closes: the last 100 regular-hours 1-minute
+#                closes at or before bar j (missing minutes skipped; the prior sessions' last closes fill in before 11:09),
+#                their 99 log returns, R/S averaged over non-overlapping windows of 8, 16, 32 and 64 returns (R = max - min
+#                of the cumulative mean-adjusted sum, S = the window's population sd; flat windows skipped), H = the OLS
+#                slope of log(mean R/S) on log(window). Empty with fewer than 100 closes.
+#   f_opp_share  the share of opposite-color 1-minute bars since 09:30 (commenter MRPguy's "trend day"): bars 0..j with an
+#                open and a close; "opposite" = red (close < open) for a call, green (close > open) for a put; a doji is
+#                never opposite. Side-signed by construction (low = the bars agree with the trade).
+REGIME10 = ["f_atr9_50", "f_adx_d14", "f_hurst100", "f_opp_share"]
+HURST_BARS = 100
+HURST_WINDOWS = (8, 16, 32, 64)
+ADX_LOOK = 100
+
+
+def daily_atr_n(series, day, n):
+    """Wilder ATR(n) of the daily bars before `day` over the last max(60, 3n) prior sessions (cached), or None."""
+    cache = series.__dict__.setdefault("_datr_n_cache", {})
+    key = (day, n)
+    if key in cache:
+        return cache[key]
+    out = None
+    if day in series.rth:
+        prior = series.prior_days(day, max(60, 3 * n))
+        if len(prior) >= n + 1:
+            from .data import _wilder
+            d = series.daily.loc[prior]
+            pc = d["close"].shift()
+            tr = np.maximum(d["high"] - d["low"], np.maximum((d["high"] - pc).abs(), (d["low"] - pc).abs())).to_numpy(float)[1:]
+            w = _wilder(tr, n)
+            out = float(w[-1]) if len(w) and not math.isnan(w[-1]) else None
+    cache[key] = out
+    return out
+
+
+def daily_adx(series, day, n=14, look=ADX_LOOK):
+    """Daily ADX(n) (indicators.adx_di) over the last `look` sessions before `day` (cached), or None."""
+    cache = series.__dict__.setdefault("_dadx_cache", {})
+    key = (day, n, look)
+    if key in cache:
+        return cache[key]
+    out = None
+    if day in series.rth:
+        prior = series.prior_days(day, look)
+        if len(prior) >= 2 * n + 1:
+            import pandas as pd
+            import indicators as I
+            d = series.daily.loc[prior]
+            f = pd.DataFrame({"High": d["high"].to_numpy(float), "Low": d["low"].to_numpy(float), "Close": d["close"].to_numpy(float)})
+            adx, _p, _m = I.adx_di(f, n)
+            v = float(adx.iloc[-1]) if len(adx) else math.nan
+            out = None if math.isnan(v) else v
+    cache[key] = out
+    return out
+
+
+def hurst_rs(closes, windows=HURST_WINDOWS):
+    """Rescaled-range Hurst exponent of a close series (see REGIME10), or None."""
+    c = np.asarray(closes, float)
+    if len(c) < 3 or np.isnan(c).any() or (c <= 0).any():
+        return None
+    x = np.diff(np.log(c))
+    pts = []
+    for n in windows:
+        rs = []
+        for q in range(len(x) // n):
+            s = x[q * n:(q + 1) * n]
+            sd = float(s.std())
+            if sd <= 0:
+                continue
+            y = np.cumsum(s - s.mean())
+            rs.append((float(y.max()) - float(y.min())) / sd)
+        if rs and float(np.mean(rs)) > 0:
+            pts.append((math.log(n), math.log(float(np.mean(rs)))))
+    if len(pts) < 2:
+        return None
+    X = np.array([p[0] for p in pts])
+    Y = np.array([p[1] for p in pts])
+    Xc = X - X.mean()
+    return float((Xc * (Y - Y.mean())).sum() / (Xc * Xc).sum())
+
+
+def last_closes(ctx, j, n=HURST_BARS):
+    """The last n regular-hours 1-minute closes at or before bar j (prior sessions fill in), or None."""
+    today = np.asarray(ctx.c[:j + 1], float)
+    parts = [today[~np.isnan(today)]]
+    have = len(parts[0])
+    if have < n:
+        for d in reversed(ctx.series.prior_days(ctx.day, 3)):
+            g = ctx.series.rth[d][:, 3]
+            g = g[~np.isnan(g)]
+            take = g[-(n - have):]
+            parts.insert(0, take)
+            have += len(take)
+            if have >= n:
+                break
+    if have < n:
+        return None
+    return np.concatenate(parts)[-n:]
+
+
+def regime_features(ctx, j, side):
+    """The four information-only regime features of round 10 at the end of decision bar j (REGIME10)."""
+    s, d = ctx.series, ctx.day
+    out = dict.fromkeys(REGIME10)
+    a9, a50 = daily_atr_n(s, d, 9), daily_atr_n(s, d, 50)
+    if a9 is not None and a50:
+        out["f_atr9_50"] = _num(a9 / a50)
+    out["f_adx_d14"] = _num(daily_adx(s, d))
+    lc = last_closes(ctx, j)
+    if lc is not None:
+        out["f_hurst100"] = _num(hurst_rs(lc))
+    o, c = np.asarray(ctx.o[:j + 1], float), np.asarray(ctx.c[:j + 1], float)
+    ok = ~(np.isnan(o) | np.isnan(c))
+    if ok.any():
+        opp = (c[ok] < o[ok]) if side == "C" else (c[ok] > o[ok])
+        out["f_opp_share"] = _num(float(opp.sum()) / int(ok.sum()))
+    return out
