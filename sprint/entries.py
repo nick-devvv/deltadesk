@@ -56,6 +56,10 @@ IMPLEMENTED
                   the bar that finishes at 10:30 (index 59) / 11:00 (index 89), on the side(s) the run asks for, every
                   session. invalid = none (these runs use a fixed premium exit). The edge, if any, comes from the
                   contract (far OTM) and the day filters, not from the timing.
+  time_1000 / time_1200 / time_1300 / time_1400   (SPRINT_PLAN Amendment 9, the strategy factory, pre-registered
+                  2026-11-01 before any run): the same rule on the bar that finishes at 10:00 (index 29), 12:00 (149),
+                  13:00 (209) and 14:00 (269). No signal when that bar is missing or within 2 bars of the close (so no
+                  13:00 or 14:00 signal on a 1:00 PM early-close day).
   flush           Reversal after a flush, both sides. Calls: within the last 5 finished 1-minute bars the low fell at
                   least 1.5 x ATR(14, 5m) below the highest high of those 5 bars, that high came BEFORE the low (a drop),
                   the flush low is the session's low so far, and at least one of the 5 bars had volume >= 2x the mean of
@@ -398,6 +402,7 @@ SETUPS = {
 for _n in FB_VARIANTS:
     SETUPS[_n] = (lambda n: lambda ctx, side="both": failed_break(ctx, side, n))(_n)
 TIME_ENTRIES = {"time_1030": 59, "time_1100": 89}
+TIME_ENTRIES.update({"time_1000": 29, "time_1200": 149, "time_1300": 209, "time_1400": 269})   # Amendment 9
 for _n, _i in TIME_ENTRIES.items():
     SETUPS[_n] = (lambda n, i: lambda ctx, side="both": time_entry(ctx, side, i, n))(_n, _i)
 ENTRY_WINDOWS = {"orb15": (15, ORB_CUTOFF), "orb30": (30, ORB_CUTOFF), "orb60": (60, ORB_CUTOFF), "noise": (29, 329),

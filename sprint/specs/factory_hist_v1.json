@@ -1,0 +1,527 @@
+{
+ "spec_id": "factory_hist_v1",
+ "description": "SPRINT_PLAN Amendment 9 (pre-registered 2026-11-01, before any factory run): the 10-year strategy factory. Every strategy with code, one run each, SPY+QQQ+IWM pooled, desk fills, 2% half-spread ($0.005 floor), $0.65/contract/side, 1 contract, one position at a time per run and symbol: noise (its own exit), orb15/30/60, vwap_macd, pd_retest, flush (both sides, plain exit), failed_break calls, failed_high puts (plain exit), far-OTM calls (d03-12t07) and puts (d06-15t10) at 10:00, 10:30, 11:00, 12:00, 13:00 and 14:00 (-95% stop, +9900% target, all out 15:25). 21 runs. No pass-2 robustness (tools/sprint_factory.py does its own checks). HIST = 2016-01-04..2024-01-31 (history from 2015-11-01 for indicators only); option prices MODELED (BS, calibrated IV) with run 4's data/sprint/calib_modeled.json.",
+ "period": "HIST",
+ "symbols": [
+  "SPY",
+  "QQQ",
+  "IWM"
+ ],
+ "tapes": "modeled",
+ "defaults": {},
+ "blocks": [
+  {
+   "name": "noise",
+   "why": "the reference strategy (noise ledger, Zarattini, Aziz & Barbon 2024): its own exit (band/VWAP at the half-hour checks, reversal, 20% premium ceiling every minute), its own delta 0.55-0.75 contract, both sides",
+   "grid": {
+    "_": [
+     {
+      "tp_buffer": "$0.03",
+      "rr_min": null,
+      "trail": "none",
+      "mechanics": "desk",
+      "filters": [],
+      "risk": "none",
+      "allout": "15:25",
+      "time": "b",
+      "tp": "none",
+      "entry": "noise",
+      "side": "both",
+      "stop": "noise",
+      "contract": "d55-75t65"
+     }
+    ]
+   }
+  },
+  {
+   "name": "orb15",
+   "why": "ORB 15-minute breakout, both sides, plain exit (premium ceiling of the entry window, no target, time b, all out 15:25)",
+   "grid": {
+    "_": [
+     {
+      "tp_buffer": "$0.03",
+      "rr_min": null,
+      "trail": "none",
+      "mechanics": "desk",
+      "filters": [],
+      "risk": "none",
+      "allout": "15:25",
+      "time": "b",
+      "tp": "none",
+      "stop": "premium",
+      "contract": "d40-55t45",
+      "entry": "orb15",
+      "side": "both"
+     }
+    ]
+   }
+  },
+  {
+   "name": "orb30",
+   "why": "ORB 30-minute breakout, both sides, plain exit (premium ceiling of the entry window, no target, time b, all out 15:25)",
+   "grid": {
+    "_": [
+     {
+      "tp_buffer": "$0.03",
+      "rr_min": null,
+      "trail": "none",
+      "mechanics": "desk",
+      "filters": [],
+      "risk": "none",
+      "allout": "15:25",
+      "time": "b",
+      "tp": "none",
+      "stop": "premium",
+      "contract": "d40-55t45",
+      "entry": "orb30",
+      "side": "both"
+     }
+    ]
+   }
+  },
+  {
+   "name": "orb60",
+   "why": "ORB 60-minute breakout, both sides, plain exit (premium ceiling of the entry window, no target, time b, all out 15:25)",
+   "grid": {
+    "_": [
+     {
+      "tp_buffer": "$0.03",
+      "rr_min": null,
+      "trail": "none",
+      "mechanics": "desk",
+      "filters": [],
+      "risk": "none",
+      "allout": "15:25",
+      "time": "b",
+      "tp": "none",
+      "stop": "premium",
+      "contract": "d40-55t45",
+      "entry": "orb60",
+      "side": "both"
+     }
+    ]
+   }
+  },
+  {
+   "name": "vwap_macd",
+   "why": "VWAP + 2-minute MACD retest, both sides, plain exit",
+   "grid": {
+    "_": [
+     {
+      "tp_buffer": "$0.03",
+      "rr_min": null,
+      "trail": "none",
+      "mechanics": "desk",
+      "filters": [],
+      "risk": "none",
+      "allout": "15:25",
+      "time": "b",
+      "tp": "none",
+      "stop": "premium",
+      "contract": "d40-55t45",
+      "entry": "vwap_macd",
+      "side": "both"
+     }
+    ]
+   }
+  },
+  {
+   "name": "pd_retest",
+   "why": "prior-day high/low retest + 9 EMA, both sides, plain exit",
+   "grid": {
+    "_": [
+     {
+      "tp_buffer": "$0.03",
+      "rr_min": null,
+      "trail": "none",
+      "mechanics": "desk",
+      "filters": [],
+      "risk": "none",
+      "allout": "15:25",
+      "time": "b",
+      "tp": "none",
+      "stop": "premium",
+      "contract": "d40-55t45",
+      "entry": "pd_retest",
+      "side": "both"
+     }
+    ]
+   }
+  },
+  {
+   "name": "flush",
+   "why": "reversal after a flush, both sides, plain exit",
+   "grid": {
+    "_": [
+     {
+      "tp_buffer": "$0.03",
+      "rr_min": null,
+      "trail": "none",
+      "mechanics": "desk",
+      "filters": [],
+      "risk": "none",
+      "allout": "15:25",
+      "time": "b",
+      "tp": "none",
+      "stop": "premium",
+      "contract": "d40-55t45",
+      "entry": "flush",
+      "side": "both"
+     }
+    ]
+   }
+  },
+  {
+   "name": "failed_break",
+   "why": "failed-break calls (= setups_v2-001 / hist_v1-001), plain exit",
+   "grid": {
+    "_": [
+     {
+      "tp_buffer": "$0.03",
+      "rr_min": null,
+      "trail": "none",
+      "mechanics": "desk",
+      "filters": [],
+      "risk": "none",
+      "allout": "15:25",
+      "time": "b",
+      "tp": "none",
+      "stop": "premium",
+      "contract": "d40-55t45",
+      "entry": "failed_break",
+      "side": "C"
+     }
+    ]
+   }
+  },
+  {
+   "name": "failed_high",
+   "why": "failed-break mirror, puts, plain exit",
+   "grid": {
+    "_": [
+     {
+      "tp_buffer": "$0.03",
+      "rr_min": null,
+      "trail": "none",
+      "mechanics": "desk",
+      "filters": [],
+      "risk": "none",
+      "allout": "15:25",
+      "time": "b",
+      "tp": "none",
+      "stop": "premium",
+      "contract": "d40-55t45",
+      "entry": "failed_high",
+      "side": "P"
+     }
+    ]
+   }
+  },
+  {
+   "name": "otm_c_1000",
+   "why": "far-OTM 0DTE calls bought on the bar finishing 10:00, |delta| 0.03-0.12 nearest 0.07, -95% stop, +9900% target, all out 15:25",
+   "grid": {
+    "_": [
+     {
+      "tp_buffer": "$0.03",
+      "rr_min": null,
+      "trail": "none",
+      "mechanics": "desk",
+      "filters": [],
+      "risk": "none",
+      "allout": "15:25",
+      "time": "b",
+      "tp": "none",
+      "stop": "fixed",
+      "fixed_stop": 0.95,
+      "fixed_target": 99.0,
+      "entry": "time_1000",
+      "side": "C",
+      "contract": "d03-12t07"
+     }
+    ]
+   }
+  },
+  {
+   "name": "otm_c_1030",
+   "why": "far-OTM 0DTE calls bought on the bar finishing 10:30, |delta| 0.03-0.12 nearest 0.07, -95% stop, +9900% target, all out 15:25",
+   "grid": {
+    "_": [
+     {
+      "tp_buffer": "$0.03",
+      "rr_min": null,
+      "trail": "none",
+      "mechanics": "desk",
+      "filters": [],
+      "risk": "none",
+      "allout": "15:25",
+      "time": "b",
+      "tp": "none",
+      "stop": "fixed",
+      "fixed_stop": 0.95,
+      "fixed_target": 99.0,
+      "entry": "time_1030",
+      "side": "C",
+      "contract": "d03-12t07"
+     }
+    ]
+   }
+  },
+  {
+   "name": "otm_c_1100",
+   "why": "far-OTM 0DTE calls bought on the bar finishing 11:00, |delta| 0.03-0.12 nearest 0.07, -95% stop, +9900% target, all out 15:25",
+   "grid": {
+    "_": [
+     {
+      "tp_buffer": "$0.03",
+      "rr_min": null,
+      "trail": "none",
+      "mechanics": "desk",
+      "filters": [],
+      "risk": "none",
+      "allout": "15:25",
+      "time": "b",
+      "tp": "none",
+      "stop": "fixed",
+      "fixed_stop": 0.95,
+      "fixed_target": 99.0,
+      "entry": "time_1100",
+      "side": "C",
+      "contract": "d03-12t07"
+     }
+    ]
+   }
+  },
+  {
+   "name": "otm_c_1200",
+   "why": "far-OTM 0DTE calls bought on the bar finishing 12:00, |delta| 0.03-0.12 nearest 0.07, -95% stop, +9900% target, all out 15:25",
+   "grid": {
+    "_": [
+     {
+      "tp_buffer": "$0.03",
+      "rr_min": null,
+      "trail": "none",
+      "mechanics": "desk",
+      "filters": [],
+      "risk": "none",
+      "allout": "15:25",
+      "time": "b",
+      "tp": "none",
+      "stop": "fixed",
+      "fixed_stop": 0.95,
+      "fixed_target": 99.0,
+      "entry": "time_1200",
+      "side": "C",
+      "contract": "d03-12t07"
+     }
+    ]
+   }
+  },
+  {
+   "name": "otm_c_1300",
+   "why": "far-OTM 0DTE calls bought on the bar finishing 13:00, |delta| 0.03-0.12 nearest 0.07, -95% stop, +9900% target, all out 15:25",
+   "grid": {
+    "_": [
+     {
+      "tp_buffer": "$0.03",
+      "rr_min": null,
+      "trail": "none",
+      "mechanics": "desk",
+      "filters": [],
+      "risk": "none",
+      "allout": "15:25",
+      "time": "b",
+      "tp": "none",
+      "stop": "fixed",
+      "fixed_stop": 0.95,
+      "fixed_target": 99.0,
+      "entry": "time_1300",
+      "side": "C",
+      "contract": "d03-12t07"
+     }
+    ]
+   }
+  },
+  {
+   "name": "otm_c_1400",
+   "why": "far-OTM 0DTE calls bought on the bar finishing 14:00, |delta| 0.03-0.12 nearest 0.07, -95% stop, +9900% target, all out 15:25",
+   "grid": {
+    "_": [
+     {
+      "tp_buffer": "$0.03",
+      "rr_min": null,
+      "trail": "none",
+      "mechanics": "desk",
+      "filters": [],
+      "risk": "none",
+      "allout": "15:25",
+      "time": "b",
+      "tp": "none",
+      "stop": "fixed",
+      "fixed_stop": 0.95,
+      "fixed_target": 99.0,
+      "entry": "time_1400",
+      "side": "C",
+      "contract": "d03-12t07"
+     }
+    ]
+   }
+  },
+  {
+   "name": "otm_p_1000",
+   "why": "far-OTM 0DTE puts bought on the bar finishing 10:00, |delta| 0.06-0.15 nearest 0.10, -95% stop, +9900% target, all out 15:25",
+   "grid": {
+    "_": [
+     {
+      "tp_buffer": "$0.03",
+      "rr_min": null,
+      "trail": "none",
+      "mechanics": "desk",
+      "filters": [],
+      "risk": "none",
+      "allout": "15:25",
+      "time": "b",
+      "tp": "none",
+      "stop": "fixed",
+      "fixed_stop": 0.95,
+      "fixed_target": 99.0,
+      "entry": "time_1000",
+      "side": "P",
+      "contract": "d06-15t10"
+     }
+    ]
+   }
+  },
+  {
+   "name": "otm_p_1030",
+   "why": "far-OTM 0DTE puts bought on the bar finishing 10:30, |delta| 0.06-0.15 nearest 0.10, -95% stop, +9900% target, all out 15:25",
+   "grid": {
+    "_": [
+     {
+      "tp_buffer": "$0.03",
+      "rr_min": null,
+      "trail": "none",
+      "mechanics": "desk",
+      "filters": [],
+      "risk": "none",
+      "allout": "15:25",
+      "time": "b",
+      "tp": "none",
+      "stop": "fixed",
+      "fixed_stop": 0.95,
+      "fixed_target": 99.0,
+      "entry": "time_1030",
+      "side": "P",
+      "contract": "d06-15t10"
+     }
+    ]
+   }
+  },
+  {
+   "name": "otm_p_1100",
+   "why": "far-OTM 0DTE puts bought on the bar finishing 11:00, |delta| 0.06-0.15 nearest 0.10, -95% stop, +9900% target, all out 15:25",
+   "grid": {
+    "_": [
+     {
+      "tp_buffer": "$0.03",
+      "rr_min": null,
+      "trail": "none",
+      "mechanics": "desk",
+      "filters": [],
+      "risk": "none",
+      "allout": "15:25",
+      "time": "b",
+      "tp": "none",
+      "stop": "fixed",
+      "fixed_stop": 0.95,
+      "fixed_target": 99.0,
+      "entry": "time_1100",
+      "side": "P",
+      "contract": "d06-15t10"
+     }
+    ]
+   }
+  },
+  {
+   "name": "otm_p_1200",
+   "why": "far-OTM 0DTE puts bought on the bar finishing 12:00, |delta| 0.06-0.15 nearest 0.10, -95% stop, +9900% target, all out 15:25",
+   "grid": {
+    "_": [
+     {
+      "tp_buffer": "$0.03",
+      "rr_min": null,
+      "trail": "none",
+      "mechanics": "desk",
+      "filters": [],
+      "risk": "none",
+      "allout": "15:25",
+      "time": "b",
+      "tp": "none",
+      "stop": "fixed",
+      "fixed_stop": 0.95,
+      "fixed_target": 99.0,
+      "entry": "time_1200",
+      "side": "P",
+      "contract": "d06-15t10"
+     }
+    ]
+   }
+  },
+  {
+   "name": "otm_p_1300",
+   "why": "far-OTM 0DTE puts bought on the bar finishing 13:00, |delta| 0.06-0.15 nearest 0.10, -95% stop, +9900% target, all out 15:25",
+   "grid": {
+    "_": [
+     {
+      "tp_buffer": "$0.03",
+      "rr_min": null,
+      "trail": "none",
+      "mechanics": "desk",
+      "filters": [],
+      "risk": "none",
+      "allout": "15:25",
+      "time": "b",
+      "tp": "none",
+      "stop": "fixed",
+      "fixed_stop": 0.95,
+      "fixed_target": 99.0,
+      "entry": "time_1300",
+      "side": "P",
+      "contract": "d06-15t10"
+     }
+    ]
+   }
+  },
+  {
+   "name": "otm_p_1400",
+   "why": "far-OTM 0DTE puts bought on the bar finishing 14:00, |delta| 0.06-0.15 nearest 0.10, -95% stop, +9900% target, all out 15:25",
+   "grid": {
+    "_": [
+     {
+      "tp_buffer": "$0.03",
+      "rr_min": null,
+      "trail": "none",
+      "mechanics": "desk",
+      "filters": [],
+      "risk": "none",
+      "allout": "15:25",
+      "time": "b",
+      "tp": "none",
+      "stop": "fixed",
+      "fixed_stop": 0.95,
+      "fixed_target": 99.0,
+      "entry": "time_1400",
+      "side": "P",
+      "contract": "d06-15t10"
+     }
+    ]
+   }
+  }
+ ],
+ "robustness": {
+  "top_k": 0,
+  "random_paths": 0,
+  "fake_seeds": 0,
+  "min_trades": 60
+ }
+}
