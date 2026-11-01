@@ -2,6 +2,62 @@
 
 This runs the sprint's backtests on Chart's computer, the only machine that can reach Alpaca's data API. Everything runs in its own folder, `~/sprint`, from branch `sprint/exits`. Nothing touches `~/desk`, its journal or the live desk, and nothing can place an order: the puller only reads `data.alpaca.markets` (market data), and the engine only reads files it pulled.
 
+## Run 7: the 10-year strategy factory (about 35-70 minutes, no new data)
+
+Nick asked for every strategy we have code for, run across the full ~10 years, with its own numbers, the same "learn when it works / skip the losing conditions" process, and the survivors together as one book. Everything was fixed before any run in SPRINT_PLAN "Amendment 9" (commit `da61e34`). This run uses branch **`sprint/factory`** (the message checks it out; a later message for `sprint/exits` checks that branch out again).
+- **21 runs**, SPY + QQQ + IWM pooled: the noise ledger (its own exit), ORB 15/30/60, VWAP + MACD retest, prior-day retest, flush, failed-break calls, failed-high puts (the plain exit), and far out-of-the-money calls and puts bought at 10:00, 10:30, 11:00, 12:00, 13:00 and 14:00.
+- Each runs twice: on **2016-01-04 to 2024-01-31** (`factory_hist_v1`, real stock bars, option prices **MODELED** with run 4's calibration) and on **2024-08-01 to 2026-06-30** (`factory_dev_v1`, **REAL** option prices). L1 and L2 are never pulled or run.
+- The DEV run points `--chains-dir` at a folder that doesn't exist, so it uses the pre-registered 2% spread, never logged 2026 chains.
+- Then `tools/sprint_factory.py` reads the two trade files and, for each strategy: its numbers per period and per year; the best "skip these days" rule found on 2016-2019 only, checked on 2020-2024 (modeled) and on 2024-2026 (real); the walk-forward learner; the verdict. Then the book of the survivors and, for contrast, all 21 runs unfiltered. Output: `data/sprint/factory_<date>.md` and `.json`.
+- No pull: every file needed is on Chart's computer from runs 1-4 (stock bars 2015-11 to 2024-01 and 2024-08 to 2026-06, 0DTE option bars 2024-08 to 2026-06, VIXY daily, `data/sprint/calib_modeled.json`).
+
+### What to expect
+
+| Step | Time (estimate) | Disk |
+| --- | --- | --- |
+| Update + sprint tests (194) | 3-5 min | |
+| Check the files | seconds | |
+| `factory_hist_v1`: 21 runs on 2,033 sessions x 3 symbols, MODELED options, no robustness pass | 22-45 min | about 10-20 MB (trade file) |
+| `factory_dev_v1`: 21 runs on 479 sessions x 3 symbols, real options | 6-15 min | about 2-5 MB (trade file) |
+| The factory (rules, learner, both books) | 1-3 min | about 1-3 MB |
+| Zip | under 1 min | about 15-30 MB |
+| **Total** | **35-70 minutes** | **about 30-60 MB (results + zip)** |
+
+Estimates come from timing these exact specs and the factory on synthetic data of the real shape on a 2-core machine: 2,075 HIST sessions (42 of them warm-up) and 479 DEV sessions, SPY/QQQ/IWM plus VIXY, every minute 04:00-20:00, 0DTE option bars within ±3% of the open on DEV, run 4's calibration file. `factory_hist_v1` took 22 min (103,504 trades, a 9 MB trade file, peak memory 1.2 GB), `factory_dev_v1` 5.6 min (0.4 GB), the factory 1.4 min (0.6 GB). The ranges allow for Chart's computer being up to twice as slow and for real files being bigger (more strikes at higher prices, thicker option files). The HIST run needs about 1.2-1.5 GB of memory, so nothing else heavy should run at the same time.
+
+### Message for Chart, run 7 (one paste)
+
+```
+Sprint run 7: the 10-year strategy factory (research only, about 35-70 minutes, no new data). Show me every output.
+Rules: you never place trades, never click buy/sell/order buttons, never enter passwords or keys, never print a key.
+Never touch ~/desk: don't cd into it, don't edit, copy, restart or run anything there. Never pass --locked or --frozen to any command.
+If a step fails, show the error and stop. Don't change any code; re-running the same command once is fine.
+1. Update the sprint code to the factory branch:
+   cd ~/sprint && git fetch -q origin sprint/factory && git checkout -q -B sprint/factory origin/sprint/factory && git reset -q --hard origin/sprint/factory && git log -1 --oneline
+2. Tests:
+   cd ~/sprint && .venv/bin/python -m pytest -q tests/test_sprint_*.py 2>&1 | tail -3
+3. Check the files are there (no pull needed) and the free disk space:
+   cd ~/sprint && ls -la data/sprint/calib_modeled.json && ls data/alpaca/stocks/SPY | head -1 && ls data/alpaca/stocks/SPY | tail -1 && ls data/alpaca/options/SPY | wc -l && ls -la data/alpaca/daily/VIXY.csv.gz && df -h ~ | tail -1
+4. Run the 21 strategies on 2016-2024 (MODELED options), then on 2024-2026 (REAL options):
+   cd ~/sprint && mkdir -p data/sprint/logs && .venv/bin/python tools/sprint_run.py sprint/specs/factory_hist_v1.json > data/sprint/logs/run7_hist.log 2>&1 && grep -E "^sprint |tapes:|pass 1 done|^report:|^trades:" data/sprint/logs/run7_hist.log || { echo "FAILED: factory_hist_v1"; tail -30 data/sprint/logs/run7_hist.log; }
+   cd ~/sprint && .venv/bin/python tools/sprint_run.py sprint/specs/factory_dev_v1.json --chains-dir data/sprint/no_chains > data/sprint/logs/run7_dev.log 2>&1 && grep -E "^sprint |pass 1 done|^report:|^trades:" data/sprint/logs/run7_dev.log || { echo "FAILED: factory_dev_v1"; tail -30 data/sprint/logs/run7_dev.log; }
+5. The factory: each strategy's numbers, its rule and learner, the verdict, and the book:
+   cd ~/sprint && .venv/bin/python tools/sprint_factory.py > data/sprint/logs/run7_factory.log 2>&1; tail -40 data/sprint/logs/run7_factory.log
+6. Zip everything and show the factory's summary table:
+   cd ~/sprint && .venv/bin/python -m zipfile -c ~/sprint_results7.zip $(ls -t data/sprint/factory_*.md | head -1) $(ls -t data/sprint/factory_*.json | head -1) $(ls -t data/sprint/trades_factory_hist_v1_*.csv.gz | head -1) $(ls -t data/sprint/trades_factory_dev_v1_*.csv.gz | head -1) $(ls -t data/sprint/report_*_factory_hist_v1.md | head -1) $(ls -t data/sprint/report_*_factory_dev_v1.md | head -1) data/sprint/logs/run7_*.log data/sprint/runs_*.csv && ls -la ~/sprint_results7.zip
+   sed -n '/^## Summary/,/^## 1\. /p' "$(ls -t data/sprint/factory_*.md | head -1)"
+   (send Nick the file ~/sprint_results7.zip)
+```
+
+What Nick sends back: step 1's commit line, step 2's last line, step 3's lines, step 4's lines, step 5's output (the summary table and the book lines), step 6's table, and `~/sprint_results7.zip`.
+
+Checks on the way in:
+- Step 2: 194 sprint tests pass.
+- Step 3: `calib_modeled.json` is there (run 4 made it; its sha256 starts `4d50070991c1` if unchanged), stock months run from `2015-11` to `2026-06`, about 470-479 option days for SPY, and `VIXY.csv.gz` is there. If the calibration file is missing, step 4's first run refuses: stop there.
+- Step 4: run ids `factory_hist_v1-001..021` (period HIST, notes say MODELED; the `tapes:` line lists six multipliers: `d03-12t07|C`, `d06-15t10|P`, `d40-55t45|C/P`, `d55-75t65|C/P`) and `factory_dev_v1-001..021` (period DEV, MODELED-SPREAD 2%, not MEASURED). The run log gains 42 rows.
+- Step 5: a table of 21 strategies (HIST and DEV trades and PF, the rule, holdout 1 and 2, the learner, the verdict), then the survivors' book and the unfiltered book, each over 2018-2024 (MODELED), 2024-2026 (REAL) and the labeled mixed line. Any `WARNING:` line (for example a run that didn't use the 2% spread) is a problem to look at.
+- Known before any result (Amendment 9): failed_break, otm_p_1030 and otm_c_1100 were studied before, so their verdicts are not new evidence; only those three strategies' MODELED tapes were checked against real prices (run 4), the rest are labeled NOT VALIDATED and holdout 2 on real prices decides; far-OTM put rules are flattered by the flat-IV model.
+
 ## Run 5: the "skip the quiet days" rules on real option prices (about 5 minutes, no new data)
 
 SPRINT_PLAN Amendment 6, holdout 2. The four rules that passed 2020-2023 (F, G, H, I), plus a learner trained only on 2016-2024 history, are scored on the run-3 trade files: DEV 2024-08 to 2026-06, real Alpaca option prices. Results: SPRINT_RESULTS_5.md.

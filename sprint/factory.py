@@ -754,7 +754,7 @@ def _strategy_md(L, i, name, s, meta):
 
 def summary_lines(res):
     out = [f"{'#':>2} {'strategy':<13} {'HIST n':>6} {'HIST PF':>7} {'DEV n':>6} {'DEV PF':>6}  {'rule':<34} {'H1':<4} {'H2':<4} "
-           f"{'learner':<14} verdict"]
+           f"{'learner':<19} verdict"]
     for i, name in enumerate(res["order"], 1):
         s = res["strategies"][name]
         hp, dp = s["all_days"]["periods"]["HIST"], s["all_days"]["periods"]["DEV"]
@@ -763,7 +763,7 @@ def summary_lines(res):
         h2 = "-" if rb.get("rule") is None or not rb["holdout1"]["pass"] else ("PASS" if rb["holdout2"]["pass"] else "fail")
         lm = ",".join(m for m in MODELS if (s["learner"]["models"].get(m) or {}).get("survives")) or "none"
         out.append(f"{i:>2} {name:<13} {hp['trades']:>6} {_f(hp.get('pf'), 2):>7} {dp['trades']:>6} {_f(dp.get('pf'), 2):>6}  "
-                   f"{_rule_txt(rb.get('rule'))[:34]:<34} {h1:<4} {h2:<4} {lm:<14} {_variant_txt(s)}")
+                   f"{_rule_txt(rb.get('rule'))[:34]:<34} {h1:<4} {h2:<4} {lm:<19} {_variant_txt(s)}")
     for key, bv in (("survivors' book", res["book"]), ("everything unfiltered", res["unfiltered"])):
         if bv is None:
             out.append(f"{key}: no survivors")
