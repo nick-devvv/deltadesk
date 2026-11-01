@@ -1,5 +1,5 @@
-"""sprint_paper.py: the three PAPER forward-test ledgers (fb_or = setups_v2-012, otm_put = otm_v1-011, otm_bounce =
-otm_v1-042). Parity with the sprint engine (same bars -> same signals, same option prices -> same contract), no
+"""sprint_paper.py: the PAPER forward-test ledgers (fb_or = setups_v2-012, otm_put = otm_v1-011, otm_bounce =
+otm_v1-042, otm_h = otm_v1-040 + f_rvol >= 1.06). Parity with the sprint engine (same bars -> same signals, same option prices -> same contract), no
 look-ahead and finished bars only, restart safety, exits at sim.py's trigger prices, every otm filter on and off
 (unknown VIXY -> no trade), the kill switch and quote-freshness rules, the isolated risk book, the wiring into
 v4index / v4report / v4api, and that nothing can reach a real order path. Synthetic data only, no network."""
@@ -165,7 +165,8 @@ def test_rules_are_the_backtest_runs_read_from_the_pinned_specs():
     want = {"fb_or": ("setups_v2-012", "failed_break_or", "C", (), "d40-55t45", "premium"),
             "otm_put": ("otm_v1-011", "time_1030", "P", ("vixy_pctl_le40", "vixy_not_rising", "day_up", "wed_fri", "skip_opex"),
                         "d06-15t10", "fixed"),
-            "otm_bounce": ("otm_v1-042", "time_1100", "C", ("vixy_pctl_ge60", "day_down", "skip_opex"), "d03-12t07", "fixed")}
+            "otm_bounce": ("otm_v1-042", "time_1100", "C", ("vixy_pctl_ge60", "day_down", "skip_opex"), "d03-12t07", "fixed"),
+            "otm_h": ("otm_v1-040", "time_1100", "C", (), "d03-12t07", "fixed")}
     for name, (rid, entry, side, fs, rule, stop) in want.items():
         r = SP.rules(name)
         assert (r["run_id"], r["entry"], r["side"], r["filters"], r["contract"], r["exit"]["stop"]) == (rid, entry, side, fs, rule, stop)
@@ -672,7 +673,8 @@ def test_kill_switch_and_config_switch_block_entries_only(env, monkeypatch):
 def test_sprint_book_is_isolated_from_the_existing_ledgers_caps(env):
     for i, led in enumerate(SP.LEDGERS):
         _open(led, sym=f"SPY261104C0060{i}000")
-    for i in range(3):
+    cap = v4risk.LIMITS["book_max_open"]["sprint"]
+    for i in range(cap - len(SP.LEDGERS)):
         S.open_position({"id": f"fb_or:q{i}", "ledger": "fb_or", "book": "sprint", "kind": "option", "date": "2026-11-04",
                          "ticker": f"Q{i}", "direction": "long", "side": "C", "qty": 1, "entry_px": 1.0, "entry_t": "x",
                          "legs": [{"symbol": f"Q{i}", "action": "buy", "qty": 1}], "plan": {"mtm": -250.0}})
@@ -686,7 +688,7 @@ def test_sprint_book_is_isolated_from_the_existing_ledgers_caps(env):
                          "entry_px": 1.0, "entry_t": "x", "legs": [{"symbol": f"I{i}", "action": "buy", "qty": 1}], "plan": {}})
     assert "index book cap" in v4risk.admit("noise_v2", "index", "SPY", "long")
     st = v4risk.status()
-    assert st["limits"]["isolated_books"] == ["sprint"] and st["open"]["by_book"]["sprint"] == 6
+    assert st["limits"]["isolated_books"] == ["sprint"] and st["open"]["by_book"]["sprint"] == cap
 
 
 def test_report_api_and_view_label_the_forward_tests(env):
@@ -699,7 +701,7 @@ def test_report_api_and_view_label_the_forward_tests(env):
     books = {b["book"]: b for b in d["books"]}
     assert list(books) == ["index", "premium", "stocks", "catalyst", "sprint"]
     rows = {r["ledger"]: r for r in books["sprint"]["ledgers"]}
-    assert set(rows) == {"fb_or", "otm_put", "otm_bounce"}
+    assert set(rows) == {"fb_or", "otm_put", "otm_bounce", "otm_h"}
     fb = rows["fb_or"]
     assert fb["evidence"] == "PAPER (simulated fills)" and "forward test of an in-sample backtest" in fb["status"]
     assert fb["source_run"] == "setups_v2-012" and fb["backtest"]["trades"] == 429 and fb["backtest"]["expectancy"] == 18.57
@@ -805,3 +807,94 @@ def test_production_vixy_source_caches_daily_closes_guards_splits_and_warms_up(e
     store.kv_set("sprint_paper:vixy_daily:2026-11-04", split)
     v = SP.vixy(clock())
     assert v["daily"] is None and any("split" in n for n in v["notes"])
+
+
+# ================================================================ otm_h: rule H (otm_v1-040 taken only when f_rvol >= 1.06)
+def _h_world(env, day=WED, vol=1.5, prior_days=12, after=None):
+    """Calls at 11:00 with f_rvol controlled by today's volume: every regular-hours bar today trades vol x the prior
+    sessions' volume (rvol = vol, rounded to 2 decimals). `after` multiplies today's volume from 11:00 on (bars the
+    11:00 decision must never see)."""
+    clock, book = env
+    px = 600.5
+    m1 = m1_market(day, {0: px}, prior_days=prior_days)
+    t0 = pd.Timestamp(datetime.combine(day, datetime.min.time())).tz_localize(ET)
+    rth = (m1.index >= t0 + pd.Timedelta(hours=9, minutes=30)) & (m1.index < t0 + pd.Timedelta(hours=16))
+    m1.loc[rth, "Volume"] = m1.loc[rth, "Volume"] * vol
+    if after is not None:
+        late = rth & (m1.index >= t0 + pd.Timedelta(hours=11))
+        m1.loc[late, "Volume"] = m1.loc[late, "Volume"] * after
+    return m1, bs_chain(book, day, px, 300, 0.30)
+
+
+@pytest.mark.parametrize("case,kw,want", [
+    ("busy day", {"vol": 1.5}, None),
+    ("exactly at the cut", {"vol": 1.06}, None),
+    ("just under the cut", {"vol": 1.05}, "f_rvol 1.05 fails rule f_rvol >= 1.06"),
+    ("quiet day", {"vol": 0.8}, "fails rule f_rvol >= 1.06"),
+    ("too little history", {"vol": 1.5, "prior_days": 6}, "f_rvol unknown"),
+])
+def test_otm_h_takes_only_busy_days(env, case, kw, want):
+    clock, book = env
+    m1, chain = _h_world(env, **kw)
+    _tick_at(clock, m1, chain, WED, "11:00")
+    no_errors()
+    d = decisions("otm_h")
+    assert len(d) == 1, case
+    if want is None:
+        assert d[0]["decision"] == "ORDER", (case, d[0]["reasons"])
+        p = S.positions(ledger="otm_h")[0]
+        k = p["plan"]["contract"]
+        assert p["side"] == "C" and 0.03 <= abs(k["delta_bs_est"]) <= 0.12 and k["rule"] == "d03-12t07"
+        assert p["plan"]["exit"]["kind"] == "fixed" and p["plan"]["exit"]["fixed_stop"] == 0.95
+        fr = p["plan"]["filters"]["feature_rule"]
+        assert fr["rules"] == ["f_rvol >= 1.06"] and fr["fail"] is None
+        assert fr["values"]["f_rvol"] == p["plan"]["features"]["f_rvol"] == pytest.approx(kw["vol"])
+        assert p["plan"]["source_run"] == "otm_v1-040" and "out-of-sample" in p["plan"]["status"]
+    else:
+        assert d[0]["decision"] == "FILTERED" and want in d[0]["reasons"][0], (case, d[0]["reasons"])
+        assert not S.positions(ledger="otm_h")
+        assert d[0]["data"]["feature_rule"]["fail"] == d[0]["reasons"][0]
+
+
+def test_otm_h_rvol_never_sees_bars_after_the_signal(env, monkeypatch, tmp_path):
+    """Same bars through 11:00, very different volume afterwards, all of it handed to the ledger: the decision and the
+    stamped f_rvol are identical (only finished bars up to the signal bar count). Each world gets a fresh desk."""
+    clock, book = env
+    got = []
+    for k, after in enumerate((None, 0.01, 50.0)):
+        monkeypatch.setattr(store, "DB", tmp_path / f"desk{k}.db")
+        monkeypatch.setattr(store, "_conn", None)
+        SP._cache.clear()
+        m1, chain = _h_world(env, vol=1.03, after=after)
+        now = at(clock, WED, "11:00")
+        SP.tick("SPY", {"m1": m1}, chain, now)                           # full day, future bars included
+        d = decisions("otm_h")
+        assert len(d) == 1
+        got.append((d[0]["decision"], d[0]["data"]["features"]["f_rvol"]))
+    assert got == [("FILTERED", 1.03)] * 3
+
+
+def test_otm_h_other_ledgers_unchanged_and_report_labels(env):
+    assert SP.FEATURE_RULES == {"otm_h": (("f_rvol", ">=", 1.06),)}
+    for name in ("fb_or", "otm_put", "otm_bounce"):
+        assert SP.feature_rule(name, {"f_rvol": 0.1}) is None and SP.status_of(name) == SP.STATUS
+    meta = SP.report_meta("otm_h")
+    assert meta["source_run"] == "otm_v1-040" and meta["feature_rules"] == ["f_rvol >= 1.06"]
+    assert meta["backtest"]["trades"] == 485 and meta["backtest"]["profit_factor"] == 2.352
+    assert meta["backtest"]["label"].startswith("BACKTEST out-of-sample")
+    assert SP.report_meta("fb_or")["backtest"]["label"] == "BACKTEST in-sample (DEV), MODELED spread"
+    assert v4index.LEDGERS["otm_h"] == "sprint" and "otm_h" in v4index.SPRINT and "otm_h" in v4api.SPRINT
+    assert "otm_h" in v4report.SPRINT_LEDGERS and "rule H" in v4report.LABELS["otm_h"]
+    cfg = json.loads((ROOT / "config/v4.json").read_text())
+    assert cfg["sprint_paper"]["otm_h"] is True
+
+
+def test_otm_h_restart_after_the_decision_never_enters_twice(env):
+    clock, book = env
+    m1, chain = _h_world(env, vol=1.5)
+    _tick_at(clock, m1, chain, WED, "11:00")
+    assert len(S.positions(ledger="otm_h")) == 1
+    SP._cache.clear()                                                     # a restart: caches gone, the database stays
+    for hm, sec in (("11:00", 40), ("11:01", 10), ("11:02", 30)):
+        _tick_at(clock, m1, chain, WED, hm, sec=sec)
+    assert len(S.positions(ledger="otm_h")) == 1 and len(decisions("otm_h")) == 1

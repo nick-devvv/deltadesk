@@ -27,9 +27,9 @@ BOOKS = [
     ("stocks", "Stocks in play: shares, with an options shadow on the same entries", ["sip_orb5", "sip_orb5_x", "sip_orb15"]),
     ("catalyst", "Catalysts: earnings-day breakouts and the news-drift event study", ["earn_day"]),
     ("sprint", "Sprint forward tests: PAPER (simulated fills) twins of in-sample backtests, SPY / QQQ 0DTE options, not promoted",
-     ["fb_or", "otm_put", "otm_bounce"]),
+     ["fb_or", "otm_put", "otm_bounce", "otm_h"]),
 ]
-SPRINT_LEDGERS = ("fb_or", "otm_put", "otm_bounce")
+SPRINT_LEDGERS = ("fb_or", "otm_put", "otm_bounce", "otm_h")
 LEGACY_TABLE = ("noise", "old")             # ledgers kept in the v3 positions table, read-only here
 LABELS = {"old": "Old rules (Oct 28): legacy forward test (not from a published source)",
           "noise": "Noise band (reference, unchanged)", "noise_v2": "Noise band v2 (paper exits, -50% stop)",
@@ -38,7 +38,8 @@ LABELS = {"old": "Old rules (Oct 28): legacy forward test (not from a published 
           "earn_day": "Earnings day, RV 5x / ATR $2",
           "fb_or": "Failed-break calls, opening-range lows (forward test of setups_v2-012)",
           "otm_put": "Far-OTM 10:30 puts, calm up days (forward test of otm_v1-011)",
-          "otm_bounce": "Far-OTM 11:00 calls, stressed down days (forward test of otm_v1-042, WATCH-ONLY)"}
+          "otm_bounce": "Far-OTM 11:00 calls, stressed down days (forward test of otm_v1-042, WATCH-ONLY)",
+          "otm_h": "Far-OTM 11:00 calls, busy days: rule H (forward test of otm_v1-040 + f_rvol >= 1.06)"}
 SHARE_LEDGERS = ("sip_orb5", "sip_orb5_x", "sip_orb15", "earn_day")
 
 

@@ -109,6 +109,7 @@ Added 2026-11-02. Nick said yes (2026-10-31) to paper-only forward tests of the 
 | `fb_or` | setups_v2-012 | 429 / +18.57 / 1.78 / 1.27 / -$1,452 | Aug-Dec 2024 lost (-$609, PF 0.71). Positive without the best 5 (+$688). |
 | `otm_put` | otm_v1-011 | 375 / +10.20 / 1.655 / 1.52 / -$1,690 | Jan-Jun 2026 lost (-$1,514, PF 0.29); negative without the best 5; 2 of 11 two-month blocks up. |
 | `otm_bounce` (**WATCH-ONLY**) | otm_v1-042 | 44 / +130.48 / 10.34 / 9.44 / -$534 | Under 60 trades, all from one high-volatility episode (April 2025 dominates). |
+| `otm_h` (rule H, added 2026-11-02) | otm_v1-040 + f_rvol >= 1.06 | 485 / +13.22 / 2.35 / 2.10 / -$1,278, **out-of-sample**: rule frozen on 2016-2019, scored on DEV REAL prices | Negative without the best 5 (-$1,083); +$58 without 2025-04-09; 8 of 23 months green; locked-period exam not run. |
 
 ### Rules (identical to the backtest runs)
 
@@ -133,8 +134,15 @@ The code reads each ledger's rules from its sprint spec (`sprint/specs/setups_v2
 3. **`otm_bounce`** (otm_v1-042), WATCH-ONLY: far out-of-the-money calls at 11:00 on stressed down days.
    - Signal: the bar finishing 11:00, if VIXY percentile >= 60%, the underlying is below its prior close, and it isn't the third Friday.
    - Contract: |delta| 0.03-0.12, nearest 0.07. Exit as `otm_put`.
+4. **`otm_h`** (rule H, FIN-H: otm_v1-040 plus one entry-feature rule), added 2026-11-02 at Nick's yes (2026-11-01): far out-of-the-money calls at 11:00 on busy days.
+   - Signal: the bar finishing 11:00, every session, taken only when `f_rvol` >= 1.06 at that bar.
+     - `f_rvol` = regular-hours volume so far today / the mean volume of the same minutes over up to 14 prior sessions (at least 10), rounded to 2 decimals (`sprint/daytype.py`).
+     - The cut was found on 2016-2019 only (SPRINT_PLAN Amendment 6) and frozen as FIN-H (Amendment 7).
+   - It passed 2020-2023 (MODELED) and Aug 2024-Jun 2026 on real option prices; run 7 confirmed it over 10 years (`docs/research/SPRINT_RESULTS_5.md`, `_7.md`).
+   - Contract: |delta| 0.03-0.12, nearest 0.07. Exit as `otm_put`: -95% stop, all out 15:25.
+   - Shape: most trades lose the small debit, and a few big up days pay for everything. On real prices, 2025-04-09 alone made more than the whole period.
 
-An unknown input (no VIXY bars, no VIXY daily closes, no prior close) means no trade, and the reason is recorded.
+An unknown input (no VIXY bars, no VIXY daily closes, no prior close, or an unknown `f_rvol` for `otm_h`) means no trade, and the reason is recorded.
 
 ### How live stays identical to the backtest
 
@@ -158,7 +166,9 @@ An unknown input (no VIXY bars, no VIXY daily closes, no prior close) means no t
 - Features that need long history (daily ATR over 60 sessions) see the engine's ~30 days. They are recorded only; no entry or exit rule uses them.
 - The v4 risk layer can block an entry the backtest would take (kill switch, sprint-book caps, a $600 sprint-book daily paper loss limit). Every block is recorded.
 - On 1 PM early-close days, the desk's 12:30 last entry is stricter than the backtest's 12:50.
-- Not a deviation from the backtest, but from the desk-wide 20% premium line (section 1): `otm_put` and `otm_bounce` use their backtest's -95% stop instead, the way `noise_v2` uses -50%. The most either can lose is its debit (cheap far out-of-the-money options) plus fees. `fb_or`'s ceilings are 20% or tighter.
+- `otm_h`: `f_rvol` uses Schwab volume for today and the prior sessions (the backtest used Alpaca volume for both). With fewer than 10 prior sessions in the engine's snapshot, the signal is FILTERED and recorded.
+- The sprint book's caps went from 6 to 8 open positions (and 8 same-direction) for the fourth ledger (`v4risk.py` risk3).
+- Not a deviation from the backtest, but from the desk-wide 20% premium line (section 1): `otm_put`, `otm_bounce` and `otm_h` use their backtest's -95% stop instead, the way `noise_v2` uses -50%. The most either can lose is its debit (cheap far out-of-the-money options) plus fees. `fb_or`'s ceilings are 20% or tighter.
 
 ### What the forward test measures (fixed before any forward trade)
 

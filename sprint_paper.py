@@ -1,6 +1,7 @@
-"""sprint_paper.py - v4 PAPER forward tests of the sprint's three near-miss backtests (docs/STRATEGY_PLAN.md section 7).
-Nick said yes (2026-10-31) to paper-only twins of these runs. Nothing here can place a real order: every fill is
-simulated at a live Schwab quote and recorded in the v4 paper tables (v4store), like every other v4 ledger.
+"""sprint_paper.py - v4 PAPER forward tests of sprint backtests (docs/STRATEGY_PLAN.md section 7).
+Nick said yes (2026-10-31) to paper-only twins of the three near-miss runs, and (2026-11-01) to rule H (FIN-H) as a
+fourth. Nothing here can place a real order: every fill is simulated at a live Schwab quote and recorded in the v4 paper
+tables (v4store), like every other v4 ledger.
 
 Ledgers (book "sprint"; SPY and QQQ, the symbols the engine ticks for the index book; 1 contract per trade):
   fb_or       = setups_v2-012  failed_break_or calls (OR15L / OR30L), BS-EST |delta| 0.40-0.55 nearest 0.45, premium
@@ -10,8 +11,15 @@ Ledgers (book "sprint"; SPY and QQQ, the symbols the engine ticks for the index 
                                vixy_not_rising + day_up + wed_fri + skip_opex, fixed -95% stop (target +9900%), all out 15:25
   otm_bounce  = otm_v1-042     calls at the bar finishing 11:00, |delta| 0.03-0.12 nearest 0.07, filters vixy_pctl_ge60 +
                                day_down + skip_opex, same exit. WATCH-ONLY: its backtest is 44 trades from one episode.
-Every number in those backtests is IN-SAMPLE (DEV, Aug 2024-Jun 2026). These ledgers are forward tests, NOT promoted:
-promotion still needs CLAUDE.md step 5 (out-of-sample pass + 40 forward paper trades).
+  otm_h       = otm_v1-040     rule H (SPRINT_PLAN Amendments 6-7, FIN-H): calls at the bar finishing 11:00, |delta|
+               + f_rvol >= 1.06 0.03-0.12 nearest 0.07, no engine filter, TAKEN ONLY when the entry feature f_rvol
+                               (sprint.features / sprint.daytype: regular-hours volume so far / the mean of the same minutes
+                               over up to 14 prior sessions, at least 10, rounded to 2 decimals) is >= 1.06 at the signal
+                               bar; fixed -95% stop (target +9900%), all out 15:25. Unknown f_rvol -> no trade.
+The fb_or / otm_put / otm_bounce backtests are IN-SAMPLE (DEV, Aug 2024-Jun 2026). Rule H was frozen on 2016-2019 and
+passed both holdouts (2020-2023 MODELED; DEV REAL, out-of-sample for the rule); its locked-period exam has not run.
+These ledgers are forward tests, NOT promoted: promotion still needs CLAUDE.md step 5 (out-of-sample pass + 40 forward
+paper trades).
 
 How live and backtest are kept identical (the rules are READ from the pinned spec, the signals COMPUTED by sprint code):
   * rules: sprint/specs/<spec>.json, sha256 pinned below, expanded with sprint.engine.expand; the run id must match.
@@ -19,7 +27,8 @@ How live and backtest are kept identical (the rules are READ from the pinned spe
   * signals: the engine's finished 1-minute bars (snap["m1"], ET, premarket included, several sessions) become a
     sprint.data.Series / DayContext, and sprint.entries.signals() runs on it. Only bars whose minute has ended count.
   * filters: sprint.engine._filters_ok on that context, with VIXY added the way the engine adds it (aux "VIXY" =
-    VIXY's 1-minute Series, aux "VIXY_D" = its daily closes).
+    VIXY's 1-minute Series, aux "VIXY_D" = its daily closes). Then FEATURE_RULES (otm_h only): the entry features
+    sprint.features.entry_features stamps at the signal bar, compared with the frozen cut.
   * contract: sprint.contracts.pick on the live chain, each contract's price = the chain MID (the backtest used the last
     trade at or before the signal bar, at most 5 minutes old; a chain row whose quote is older than that is skipped).
     BS-EST delta from sprint.bs with the underlying's close at the signal bar and the minutes to 16:00 from its end.
@@ -49,6 +58,8 @@ Deviations from the backtest (also listed in status() and docs/STRATEGY_PLAN.md 
   * The v4 risk layer (kill switch, sprint-book caps, sprint-book daily paper loss limit) can block an entry the
     backtest would take; every block is recorded.
   * On 1 PM early-close days the desk's 12:30 last entry is stricter than the backtest's 12:50.
+  * otm_h's f_rvol uses Schwab volume for today and for the prior sessions (the backtest used Alpaca volume for both);
+    it needs at least 10 prior sessions of bars in the engine's snapshot, otherwise the signal is FILTERED (recorded).
 """
 import copy
 import functools
@@ -76,7 +87,7 @@ from sprint import fills as SFI
 from sprint import sim as SM
 from sprint import spread as SSP
 
-VERSION = "2026-11-02.v4-sprint_paper1"
+VERSION = "2026-11-02.v4-sprint_paper2"   # paper2: + otm_h (rule H); fb_or / otm_put / otm_bounce unchanged
 BOOK = "sprint"
 SYMBOLS = ("SPY", "QQQ")
 EXEC_MODEL = "bidask065"
@@ -100,8 +111,14 @@ PINS = {
                 "Far-OTM 10:30 puts, calm up days"),
     "otm_bounce": ("otm_v1", "otm_v1-042", "ece0232e5457df44fbb15ada8d92e6aa3c2919e2cf61406d1fe1600ad3a31f7e",
                    "Far-OTM 11:00 calls, stressed down days (WATCH-ONLY)"),
+    "otm_h": ("otm_v1", "otm_v1-040", "ece0232e5457df44fbb15ada8d92e6aa3c2919e2cf61406d1fe1600ad3a31f7e",
+              "Far-OTM 11:00 calls, busy days (rule H)"),
 }
 LEDGERS = tuple(PINS)
+# ledger -> ((feature, op, cut), ...): entry features (sprint.features) that must hold at the signal bar, all of them.
+# otm_h = rule H, frozen in SPRINT_PLAN Amendment 6 (found on 2016-2019) and Amendment 7 (FIN-H): f_rvol >= 1.06.
+FEATURE_RULES = {"otm_h": (("f_rvol", ">=", 1.06),)}
+STATUS_BY = {"otm_h": "forward test of an out-of-sample-tested backtest (not promoted; locked-period exam not run)"}
 WATCH_ONLY = {"otm_bounce": "44 backtest trades from one high-volatility episode (April 2025 dominates): watch only"}
 BACKTEST = {   # docs/research/sprint_runs.csv, SPRINT_RESULTS_2.md / _3.md. BACKTEST, in-sample (DEV), MODELED 2% half-spread
     "fb_or": {"trades": 429, "win_rate": 10.5, "expectancy": 18.57, "profit_factor": 1.785, "pf_2x": 1.268, "max_dd": -1452.16,
@@ -112,6 +129,12 @@ BACKTEST = {   # docs/research/sprint_runs.csv, SPRINT_RESULTS_2.md / _3.md. BAC
     "otm_bounce": {"trades": 44, "win_rate": 6.8, "expectancy": 130.48, "profit_factor": 10.341, "pf_2x": 9.443, "max_dd": -533.92,
                    "symbols": "SPY+QQQ+IWM", "failed": "under 60 trades, all in 2 two-month blocks (one high-volatility episode); "
                                                         "deflated Sharpe 0.000 (3,187 trials)"},
+    # SPRINT_RESULTS_5.md holdout 2 / SPRINT_RESULTS_7.md (factory_dev_v1-012, rule kept): DEV REAL option prices
+    "otm_h": {"trades": 485, "win_rate": 11.8, "expectancy": 13.22, "profit_factor": 2.352, "pf_2x": 2.102, "max_dd": -1278.32,
+              "symbols": "SPY+QQQ+IWM", "label": "BACKTEST out-of-sample (rule frozen on 2016-2019; DEV REAL option prices), "
+                                                 "2% half-spread",
+              "failed": "negative without the best 5 trades (-$1,082.68); +$57.82 without 2025-04-09 (run 7 follow-up); "
+                        "most months lose (8/23 green); deflated Sharpe 0.0 (3,742 trials); locked-period exam not run"},
 }
 DEVIATIONS = [
     "SPY + QQQ only: the backtests pooled SPY + QQQ + IWM, the engine ticks SPY and QQQ (config/policy.json is frozen)",
@@ -120,7 +143,12 @@ DEVIATIONS = [
     "Long-history features (daily ATR over 60 sessions) see ~30 days; they are stamped only, never used by these rules",
     "the v4 risk layer (kill switch, sprint-book caps, daily paper loss limit) can block an entry; blocks are recorded",
     "1 PM early-close days: the desk's 12:30 last entry is stricter than the backtest's 12:50",
+    "otm_h: f_rvol from Schwab volume (today and prior sessions); fewer than 10 prior sessions in the snapshot -> FILTERED",
 ]
+
+
+def status_of(name):
+    return STATUS_BY.get(name, STATUS)
 vixy_source = None        # tests: lambda now -> {"m1": DataFrame | None, "daily": pd.Series | None, "notes": [...]}
 _state = {"last_error": None, "errors": 0}
 _cache = {}               # ticker -> (key, ctx)
@@ -535,14 +563,14 @@ def evaluate(name, r, ticker, ctx, sig, chain_rows_fn, now):
     fill, fee = S.option_buy(q, EXEC_MODEL)
     ex, ex_txt, risk = exit_plan(r, sig, fill, k["symbol"])
     strike = float(k["strike"])
-    plan = {"source_run": r["run_id"], "spec": r["spec"], "spec_sha256": r["spec_sha256"], "label": LABEL, "status": STATUS,
+    plan = {"source_run": r["run_id"], "spec": r["spec"], "spec_sha256": r["spec_sha256"], "label": LABEL, "status": status_of(name),
             "watch_only": WATCH_ONLY.get(name), "sprint_version": SPRINT_VERSION, "rules": {k2: v for k2, v in r.items() if k2 != "name"},
             "signal": base["signal"], "contract": k, "exit": ex, "exit_rule": ex_txt,
             "premium_stop": round(ex["stop_bid"] if ex["kind"] == "ceiling" else ex["stop_mid"], 4),
             "premium_stop_rule": ("ceiling on the bid" if ex["kind"] == "ceiling" else f"-{ex['fixed_stop']:.0%} of the debit on the mid"),
             "fill_quote": {k2: (str(q.get(k2)) if k2 == "quote_time" else q.get(k2)) for k2 in ("bid", "ask", "mid", "delta", "iv", "quote_time", "age_s")},
             "features": st.get("features"), "filters": {"list": list(r["filters"]), "result": "pass", "inputs": st.get("filter_inputs"),
-                                                        "vixy_notes": st.get("vixy_notes")},
+                                                        "vixy_notes": st.get("vixy_notes"), "feature_rule": st.get("feature_rule")},
             "entry_underlying": float(ctx.c[sig.idx]), "bid": q["bid"], "ask": q["ask"]}
     rec = {"id": pid, "ledger": name, "book": BOOK, "kind": "option", "date": day.isoformat(), "ticker": ticker,
            "direction": "long" if sig.side == "C" else "short", "side": sig.side, "qty": QTY, "entry_px": fill, "entry_t": store.ts(),
@@ -572,8 +600,30 @@ def _evaluate_filters(name, r, ticker, ctx, sig, sig_end, now):
     c2.aux = aux
     n_today = len([p for p in S.positions(ledger=name, day=ctx.day.isoformat()) if p["ticker"] == ticker])
     fail = SE._filters_ok({"filters": fs}, c2, sig, n_today)
-    return {"filter_fail": fail, "filter_inputs": _filter_inputs(c2, sig), "features": SF.entry_features(c2, sig.idx, sig.side),
+    feats = SF.entry_features(c2, sig.idx, sig.side)
+    frule = feature_rule(name, feats)
+    if not fail and frule and frule["fail"]:
+        fail = frule["fail"]
+    return {"filter_fail": fail, "filter_inputs": _filter_inputs(c2, sig), "features": feats, "feature_rule": frule,
             "vixy_notes": vx.get("notes")}, False
+
+
+def feature_rule(name, feats):
+    """FEATURE_RULES[name] on the stamped entry features: {"rules": [...], "values": {...}, "fail": None | why}."""
+    rs = FEATURE_RULES.get(name)
+    if not rs:
+        return None
+    vals, fail = {}, None
+    for feat, op, cut in rs:
+        v = (feats or {}).get(feat)
+        vals[feat] = v
+        if fail:
+            continue
+        if v is None:
+            fail = f"{feat} unknown (needs 10+ prior sessions of bars): rule {feat} {op} {cut} cannot be checked"
+        elif not {">=": v >= cut, "<=": v <= cut}[op]:
+            fail = f"{feat} {v:g} fails rule {feat} {op} {cut:g}"
+    return {"rules": [f"{f} {o} {c:g}" for f, o, c in rs], "values": vals, "fail": fail}
 
 
 # ---------------------------------------------------------------- management (every engine tick, risk priority)
@@ -612,8 +662,11 @@ def manage(p, now=None):
 # ---------------------------------------------------------------- views
 def report_meta(name):
     spec_id, run_id, _sha, label = PINS[name]
-    return {"evidence": LABEL, "status": STATUS, "source_run": run_id, "label": label, "watch_only": WATCH_ONLY.get(name),
-            "enabled": enabled(name), "refusal": refusal(name), "backtest": dict(BACKTEST[name], label="BACKTEST in-sample (DEV), MODELED spread"),
+    bt = dict(BACKTEST[name])
+    bt.setdefault("label", "BACKTEST in-sample (DEV), MODELED spread")
+    return {"evidence": LABEL, "status": status_of(name), "source_run": run_id, "label": label, "watch_only": WATCH_ONLY.get(name),
+            "enabled": enabled(name), "refusal": refusal(name), "backtest": bt, "feature_rules": [f"{f} {o} {c:g}" for f, o, c in
+                                                                                                  FEATURE_RULES.get(name, ())],
             "symbols": list(SYMBOLS)}
 
 

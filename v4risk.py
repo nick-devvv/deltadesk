@@ -23,12 +23,12 @@ import store
 import v4common as C
 import v4store as S
 
-VERSION = "2026-11-02.v4-risk2"
+VERSION = "2026-11-02.v4-risk3"   # risk3: sprint book caps 6 -> 8 for its fourth ledger (otm_h)
 LIMITS = {
     "desk_max_open": 50,
-    "book_max_open": {"index": 4, "premium": 6, "stocks": 40, "catalyst": 8, "sprint": 6},
+    "book_max_open": {"index": 4, "premium": 6, "stocks": 40, "catalyst": 8, "sprint": 8},
     "symbol_max_open": 4,
-    "book_max_same_direction": {"index": 4, "premium": 4, "stocks": 25, "catalyst": 6, "sprint": 6},
+    "book_max_same_direction": {"index": 4, "premium": 4, "stocks": 25, "catalyst": 6, "sprint": 8},
     "book_daily_loss_usd": {"index": 600.0, "premium": 800.0, "stocks": 2000.0, "catalyst": 800.0, "sprint": 600.0},
     "selling_ledgers": ("orb_credit", "ic_20d"),
     "isolated_books": ("sprint",),

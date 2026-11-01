@@ -11,11 +11,11 @@ GET  /api/v4/tracking?start=&account=   the fresh-start view: each strategy as i
                               config/v4.json "tracking": Nov 2 2026, $10,000), P/L and % return since then, books, desk
 GET  /api/v4/positions?status=&ledger=&day=   v4 paper positions with a one-line description and the last mark
 GET  /api/v4/decisions?day=&ledger=&kind=     every v4 decision (checks, entries, skips, risk blocks, rankings)
-GET  /api/v4/sprint           the sprint forward-test ledgers (fb_or, otm_put, otm_bounce): PAPER (simulated fills), their
+GET  /api/v4/sprint           the sprint forward-test ledgers (fb_or, otm_put, otm_bounce, otm_h): PAPER (simulated fills), their
                               source backtest runs and numbers (in-sample), the rules read from the pinned specs, switches,
                               deviations from the backtest
 """
-SPRINT = ("fb_or", "otm_put", "otm_bounce")
+SPRINT = ("fb_or", "otm_put", "otm_bounce", "otm_h")
 
 
 def _one(q, k, default=None):

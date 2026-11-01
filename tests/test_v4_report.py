@@ -141,7 +141,7 @@ def test_v4_api_over_http(env, monkeypatch):
         assert [b["book"] for b in d["books"]] == ["index", "premium", "stocks", "catalyst", "sprint"] and "retired" in d
         with _local_open(base + "/api/v4/sprint") as r:                         # the sprint forward tests (sprint_paper.py)
             sp = json.loads(r.read())
-        assert sp["label"] == "PAPER (simulated fills)" and set(sp["ledgers"]) == {"fb_or", "otm_put", "otm_bounce"}
+        assert sp["label"] == "PAPER (simulated fills)" and set(sp["ledgers"]) == {"fb_or", "otm_put", "otm_bounce", "otm_h"}
         with _local_open(base + "/api/v4/positions?status=OPEN") as r:
             ps = json.loads(r.read())
         assert len(ps) == 1 and ps[0]["desc"] == "-500C / +502C" and ps[0]["mtm"] == 12.0 and "max loss" in ps[0]["next"]
@@ -191,7 +191,7 @@ def test_fresh_start_tracker_scores_each_strategy_as_its_own_account(env, monkey
     assert r["noise"]["trades"] == 0 and r["noise"]["return_pct"] == 0.0             # legacy table, nothing since Nov 2
     n = len(t["ledgers"])
     assert t["desk"]["net"] == pytest.approx(380.0) and t["desk"]["capital"] == pytest.approx(5000.0 * n)
-    assert t["books"]["sprint"]["net"] == pytest.approx(300.0) and t["books"]["sprint"]["accounts"] == 3
+    assert t["books"]["sprint"]["net"] == pytest.approx(300.0) and t["books"]["sprint"]["accounts"] == len(RP.SPRINT_LEDGERS)
     assert RP.tracking("2026-10-01", 1000)["ledgers"][[x["ledger"] for x in t["ledgers"]].index("noise_v2")]["net"] == pytest.approx(1079.0)
     assert "tracking" in RP.overview("2026-11-02")
     monkeypatch.setattr(retire, "cfg", lambda: {"tracking": {"start": "not a date", "account_usd": -5}})

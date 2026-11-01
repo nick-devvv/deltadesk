@@ -1,5 +1,5 @@
 """v4index.py - runs the v4 index book (noise_v2, noise_trend), the premium book (orb_credit, ic_20d) and the sprint
-book (fb_or, otm_put, otm_bounce: paper forward tests of sprint backtests, sprint_paper.py) from the engine tick.
+book (fb_or, otm_put, otm_bounce, otm_h: paper forward tests of sprint backtests, sprint_paper.py) from the engine tick.
 Management (manage) runs FIRST each tick inside the engine's risk-priority block; entries (tick, tick_extra) run after.
 Each ledger is independent; one failing never stops the others (errors are kept in _state). The sprint ledgers run
 after every existing ledger in the tick, in their own isolated risk book (v4risk.LIMITS["isolated_books"])."""
@@ -8,8 +8,8 @@ import store
 import v4store as S
 
 LEDGERS = {"noise_v2": "index", "noise_trend": "index", "orb_credit": "premium", "ic_20d": "premium",
-           "fb_or": "sprint", "otm_put": "sprint", "otm_bounce": "sprint"}
-SPRINT = ("fb_or", "otm_put", "otm_bounce")
+           "fb_or": "sprint", "otm_put": "sprint", "otm_bounce": "sprint", "otm_h": "sprint"}
+SPRINT = ("fb_or", "otm_put", "otm_bounce", "otm_h")
 _state = {"last_error": None, "errors": 0}
 
 
