@@ -1058,6 +1058,25 @@ That gives 5 x 5 x 2 x 3 x 3 x 2 = 900 cells per entry, and 6,300 in all.
 
 The build comes after round 9's Part E lands; no new data is needed.
 
+### Addendum 15.1, 2026-11-01: the noise band's own settings (part of round 10; written before any round-10 code or run)
+
+Nick asked to optimize the vol-sized noise band in shares (NB-VOL). Exam L2 already read Feb-Jul 2024 for NB-VOL, so a tuned version can never use L2. It is judged on its holdouts and on forward paper trades only.
+
+**The grid** (A1's rules otherwise unchanged, vol-sized as A1's secondary):
+- band multiplier VM: 1.0, 1.25 or 1.5;
+- noise lookback: 10, 14 or 20 sessions;
+- check interval: 15, 30 or 60 minutes;
+- trailing stop: max(band, VWAP) (the paper's), VWAP only, or band only;
+- universe: SPY + QQQ + IWM, or plus DIA, XLK, XLF and SMH (U-ETF subset, 1-minute bars pulled in round 9's universe if present, else the three).
+
+That gives 3 x 3 x 3 x 3 x 2 = 162 cells.
+
+**The choice:** on 2016-2019 only, the highest Sharpe of daily P/L among cells with at least 1,000 trades. Holdout 1 = 2020-01..2024-01, holdout 2 = DEV (2024-08..2026-06), each with Part A's 7-item bar.
+
+The full grid is reported, including the share of cells with a positive holdout Sharpe.
+
+**Trials:** 162.
+
 ## Limits
 
 - Backtests only.
