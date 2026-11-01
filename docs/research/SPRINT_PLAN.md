@@ -985,6 +985,42 @@ Nick (2026-11-01) shared one day of trade alerts from four "QQQ Trader" bots and
 
 **Trials:** 2 signals x 2 contracts x 6 cells = 24, plus 2 underlying checks, plus 2 sized variants = 28. Round 9 becomes 203 (the deflated Sharpe uses the run logs' count + 203).
 
+## Amendment 14, 2026-11-01: Part E, a predicted-efficiency gate (part of round 9; written before any Part E code or run)
+
+Nick (2026-11-01) shared a post about a logistic regression that predicts the next day's efficiency ratio and skips predicted low-efficiency days. The post is unverified: no strategy, costs or random-skip comparison is shown.
+
+**Target.** The day's efficiency ratio ER = |close(15:59) - open(09:30)| / the sum of |1-minute close-to-close moves| over regular hours. The label is 1 when the day's ER is in the top tercile of the training window's days, per symbol.
+
+**Inputs, all known before 09:30.** Fifteen features:
+- the prior session's ER and the mean ER of the prior 5 sessions;
+- |gap| at 09:30 is NOT allowed (it is not known before the open), so the prior session's close vs its open is used instead;
+- the prior session's range / ATR(14), and ATR(14) / ATR(60);
+- 1-, 5- and 20-session returns;
+- VIXY's prior close percentile (252 sessions), its 1-day change, and its z vs 20 sessions;
+- the prior session's VWAP distance at the close;
+- the prior session's last-hour return;
+- weekday;
+- FOMC/CPI day (sprint/events);
+- the count of the prior 5 sessions with ER in the top tercile.
+
+**Model.** Logistic regression (sprint/learn's preprocessing, L2 lambda 1, class-balanced), per symbol pooled over SPY, QQQ and IWM.
+- Walk-forward: refit monthly on all earlier sessions, with at least 24 months of training. Out-of-sample from 2018-01.
+- Gate: skip the day when the predicted P(top-tercile ER) is in the bottom tercile of that refit's training predictions.
+
+**Applied, unchanged, to:**
+- FIN-H (run 7's factory trades, 11:00 calls with f_rvol >= 1.06);
+- NB-VOL (round 8's noise_sh_vol share trades);
+- Part S's chosen cells (test half only).
+
+**Pass, per strategy:** on 2018-01..2024-01 (MODELED options / real shares) and on DEV (REAL), all of:
+- the gated expectancy above the ungated;
+- the gated total above the 95th percentile of 200 random whole-day skips of the same count (seeds 31-230);
+- gated PF 2x > 1.0.
+
+Information: months green, max drawdown, total without the best day, and the $3,000 account view.
+
+**Trials:** 3. Round 9 becomes 206.
+
 ## Limits
 
 - Backtests only.
