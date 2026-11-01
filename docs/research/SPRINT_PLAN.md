@@ -781,6 +781,155 @@ That makes 168, and **round 8 totals 192**: Amendment 10's 13, plus 10.1's 11, p
 - Single-stock catalyst days: news/earnings movers, so the wins come on company days, not market days. This needs an earnings/8-K calendar and a single-stock option pull (Feb 2024+), so it gets its own pre-registration before any pull.
 - Weekly-expiry (5-10 day) contracts for the FIN-H family and the steady rules, which need a new option pull (Addendum 10.1).
 
+## Amendment 11, 2026-11-01: the final locked-period exam, four finalists (written after run 8, before any L1/L2 pull or run)
+
+Nick (2026-11-01) asked for the final clean test. This extends Amendment 7's exam (its rules, guard and verdicts stand) with two finalists from round 8. Branch `sprint/exam`, cut from `sprint/round9`.
+
+**Finalists (frozen; artifacts committed with their sha256 before any L1/L2 pull):**
+- **FIN-H** and **FIN-L**, exactly as Amendment 7.
+  - FIN-L's logit is fit once on all HIST 11:00-call trades. Use hist_v1-005's file if present on Chart's computer, else factory_hist_v1-012 (run 7, the same run configuration), and record which.
+- **FIN-HS (new): FIN-H with round 8's B2 confidence sizing.**
+  - The B2 logit (Amendment 3 settings, the 18 + 7 round-8 features) is fit once per locked period, on every FIN-H trade dated before that period:
+    - L2: HIST trades through 2024-01-31 (MODELED);
+    - L1: HIST plus DEV trades through 2026-06-30.
+  - The tercile cuts come from that fit's training predictions. Bottom tercile -> skip, middle -> 1 contract, top -> 2.
+  - The two fitted models and their cuts are committed as JSON with sha256.
+- **NB-VOL (new): the vol-sized noise band in shares** (Amendment 10 A1 secondary): SPY + QQQ + IWM, long and short, with A1's rules, costs, sizing and exit time.
+- **References:**
+  - for FIN-H, FIN-L and FIN-HS: otm_v1-040 unfiltered on the same period (Amendment 7);
+  - for NB-VOL: random direction on the same entries and exits (200 draws, seeds 31-230).
+
+**Data.** One pull, through the existing `--locked <name> --frozen <spec sha256>` guard, for each period plus its warm-up:
+- SPY, QQQ, IWM and VIXY stock 1-minute bars;
+- VIXY daily closes;
+- 0DTE option bars for SPY, QQQ and IWM.
+L2's warm-up comes from HIST's last months and L1's from DEV's. Nothing in L1/L2 is used for anything but this exam.
+
+**Pass, per finalist and period** (L2 = 2024-02-01..07-31, L1 = 2026-07-01..10-30):
+- **FIN-H, FIN-L:** Amendment 7's bar: at least 30 trades on L2 and 20 on L1, PF >= 1.25, PF 2x > 1.0, expectancy above the reference's.
+- **FIN-HS:** the same trade counts (counted as FIN-H's signals), sized PF >= 1.25, sized PF 2x > 1.0, and P/L per contract above FIN-H's on the same period.
+- **NB-VOL:** at least 100 trades on L2 and 60 on L1, expectancy > 0 at 2x costs, and beats random direction with p < 0.10.
+- **Verdicts as Amendment 7:**
+  - holds = passes both periods;
+  - mixed = passes one;
+  - fails = passes neither.
+- Reported whatever the verdict: by month, by symbol, and without the best 5 trades and without the best day. A 5% option half-spread rerun is information only.
+
+**One shot.** Each period runs once. A crash may be re-run with the same frozen spec and the same code commit. Any code change after the first L1/L2 read makes the exam void for that finalist, and it is reported as such.
+
+## Amendment 12, 2026-11-01: round 9, steadier money: multi-day rules, all-stock catalysts, an honest tweak search, weekly expiries (written before any round-9 code, pull or run)
+
+Nick (2026-11-01): "can we not tweak any of the other strategies... I want to make consistent money so I can grow my account. Try everything, look online for day trading or general options trading strategies, it doesn't have to be for the day... continue the news scanner... scan all the stocks not just SPY and QQQ... same with the strategies".
+
+**Scope change, recorded:** Nick asked in this conversation for strategies that need not close the same day. So multi-day holds are in scope for this round (CLAUDE.md: out of scope "unless Nick asks in that conversation"). Holding options through an earnings report stays out. Branch `sprint/round9`. Research only.
+
+**Known before any result:**
+- Steady option income mostly belongs to option sellers. Examples: cash-secured put writing (the Cboe PUT index: 1986-2015 Sharpe 0.67 vs the S&P 500's 0.47, gross, per CXO) and covered calls.
+- Nick's account is long options only. Whether it allows covered calls or cash-secured puts is unknown (asked). So those stay paper research only and are not in this round's rules.
+- **Locked periods for multi-day trades:** a trade whose holding window touches L1 or L2 is dropped entirely.
+
+### Universes
+
+- **U-ETF** (survivorship-free; all traded before 2016): SPY, QQQ, IWM, DIA, XLK, XLF, XLE, XLV, XLY, XLP, XLI, XLU, XLB, SMH, XBI, TLT, GLD, EEM, EFA, HYG.
+- **U-STK** ("all the stocks"): every US common stock Alpaca lists today as active and tradable, with listed options.
+  - On each day it is filtered point-in-time from daily bars: prior close > $5 and 20-session average dollar volume > $50 million.
+  - It is SURVIVORSHIP-BIASED (today's survivors only), and labeled so everywhere.
+
+### Part F: multi-day rules in shares (daily bars 2016-01..2026-06, never L1/L2)
+
+**F1 `rsi2`** (Connors & Alvarez 2008, *Short Term Trading Strategies That Work*; widely replicated, e.g. a Nasdaq-100 2006-2025 test with a 64% win rate and PF 1.45).
+- Long only. Signal at the close: close > SMA(200), close < SMA(5) and RSI(2) < 10.
+- Buy at the next open. Exit at the next open after a close > SMA(5). No stop.
+- One position per symbol. Run on U-ETF and on U-STK; U-STK's daily cap is the 10 lowest RSI(2) signals.
+
+**F2 `tom`** (turn of the month: Lakonishok & Smidt 1988; McConnell & Xu 2008).
+- Buy at the close of the last trading day of the month; sell at the close of the third trading day of the next month.
+- SPY, QQQ, IWM, DIA.
+
+**Costs and sizing:**
+- $10,000 notional a trade.
+- Costs per side: $0.01 a share for U-ETF, 0.05% of price for U-STK. 2x costs = double.
+
+**Pass (shares):**
+1. at least 200 trades;
+2. expectancy > 0 at 2x costs;
+3. profitable in at least 6 of the 8 years 2016-2023 and in 2024-08..2026-06;
+4. bootstrap 95% CI of the daily mean P/L above 0 (sessions, 2,000 draws, seed 29);
+5. positive without the best 5 days;
+6. beats random entry with p < 0.05: the same number of entries per symbol on random days with the same holding lengths, 200 draws, seeds 31-230;
+7. at least 55% of months green.
+
+U-STK results are labeled survivorship-biased, and a U-STK pass needs U-ETF's rule to pass too.
+
+**F-opt (DEV REAL; option bars pulled for the contracts needed):**
+- The same F1 / F2 trades on U-ETF carried by a call: 30-60 calendar days to expiry, BS-EST delta 0.60-0.80 nearest 0.70. Bought at the entry open, sold at the exit open.
+- Costs: half-spread 2% of premium per side ($0.005 floor) + $0.65 per contract per side.
+- Pass: at least 40 trades, PF >= 1.25, PF 2x > 1.0, expectancy > 0.
+
+### Part G: news and catalysts on all stocks (U-STK)
+
+**Event source:** SEC EDGAR 8-K filings with their EDGAR acceptance timestamps.
+- Use the daily form indexes plus each filing's index headers.
+- At most 10 requests a second, with the desk's existing `SEC_USER_AGENT` (catalysts.py); never a personal value written into code.
+
+**G1 `news_go`:** premarket 8-K continuation (Jiang, Li & Wang 2021, JFE: news-driven moves continue).
+- Event: an 8-K accepted between 16:00 of the prior session and 09:15 on day t, for a U-STK name on t.
+- Signal at the bar finishing 09:45, when all three hold:
+  - |gap| = |open / prior close - 1| >= 2%;
+  - the 09:30-09:45 move is in the gap's direction;
+  - RV15 = the 09:30-09:45 volume / (0.10 x the 20-session average daily volume) is >= 3.
+- Trade in the gap's direction at the next 1-minute open.
+- Stop: the opposite end of the 09:30-09:45 range, judged on finished 1-minute closes and exiting at the next open. Out at the 15:55 close.
+- Shares, 0.05% of price per side; long-only reported too.
+- Pass: Part F's 7 items (at least 200 trades), plus beating random direction on the same events with p < 0.05.
+
+**G2 `pre_earn_straddle`** (Gao, Xing & Zhang 2018, JFQA, "Anticipating Uncertainty: Straddles around Earnings Announcements": on 1996-2010 data, ATM straddles from 3 days before the announcement earned about 3% on average).
+- Earnings date: an 8-K with Item 2.02.
+  - If it was accepted before 09:30, day t is that day and the trade exits at the close of t-1.
+  - Otherwise it exits at the close of t.
+  - That way the position is always out before the report.
+- Entry: buy the ATM call and the ATM put (strike nearest the close) of the first expiry 10-60 calendar days out, at the close of trading day t-3.
+- Real option prices, DEV window 2024-08..2026-06 only (Alpaca option bars begin Feb 2024; Feb-Jul 2024 is L2).
+- Costs: half-spread 5% of premium per leg per side ($0.01 floor) + $0.65 per contract per side.
+- **Look-ahead caveat, labeled:** the 8-K date is the realized date; companies usually announce it weeks ahead, but not always.
+- **Benchmark:** the same stocks' straddles on random non-earnings dates with the same 2- or 3-day hold, 200 draws.
+- **Pass:**
+  - at least 100 events;
+  - mean return per straddle > 0 after costs;
+  - PF >= 1.25;
+  - positive in at least 3 of the 4 half-years (Aug-Dec 2024, H1 2025, H2 2025, H1 2026);
+  - mean above the random-date benchmark's 95th percentile.
+
+### Part H: the honest tweak search ("can we tweak the other strategies")
+
+- Run 7's per-strategy factory procedure (Amendment 9 (b)-(d)) on round 8's share trades. That means:
+  - 12 tercile candidate rules on 6 features, found on 2016-2019;
+  - holdout 1 2020-01..2024-01 and holdout 2 DEV, with the factory's bars;
+  - the walk-forward learner, with the factory's survival rule.
+- Strategies, 11: noise_sh, noise_sh_vol, noise_sh_lo, last30, gapfade_vix, gapfade_vix_lo, and D1-D6 shares (long and short).
+- Trade-level features are the sprint entry features at each share entry (stamped from cached bars).
+- This is "tweaking" with the tweak chosen only on old years, which is the only kind the desk can trust.
+
+### Part I: weekly expiries for FIN-H
+
+- New contract rule `w5-10d03-12t07`: the nearest expiry 5-10 calendar days out, BS-EST |delta| 0.03-0.12 nearest 0.07. FIN-H's entry and exit (i).
+- DEV REAL only, option bars pulled for that expiry.
+- Pass: Addendum 10.1's DEV bar and its "steadier than FIN-H" readout.
+
+### The book, trials and outputs
+
+- **Book:** FIN-H (1 contract) plus every round-9 survivor, as Amendment 10's book.
+  - It reports months and weeks green, the longest losing-month run and the correlation matrix.
+  - A sleeve counts as "adds steadiness" only if its daily correlation with FIN-H is below 0.3.
+- **Trials:**
+  - F: 2 rules x 2 universes + 2 option twins = 6;
+  - G: G1 (2 sides) + G2 = 3;
+  - H: 11 strategies x (12 rules + 3 learner models) = 165;
+  - I: 1.
+  - Round 9 = 175. The deflated Sharpe uses the run logs' count + 175.
+- **Outputs:** `data/sprint/round9_<date>.md` and `.json`, plus per-part trade files.
+- No rule, cut or threshold changes after results.
+
 ## Limits
 
 - Backtests only.
