@@ -1,0 +1,61 @@
+sprint 2026-10-31.sprint2: spec factory_dev_v1 (21 runs, sha256 9765725b4f81), period DEV 2024-08-01..2026-06-30, symbols IWM,QQQ,SPY, MODELED-SPREAD: half-spread = 2% of premium (SPY/QQQ/IWM), 10% single stocks, floor $0.005
+  IWM 2024-08-01 (1/479 sessions, 2s)
+  IWM 2024-10-11 (51/479 sessions, 9s)
+  IWM 2024-12-23 (101/479 sessions, 16s)
+  IWM 2025-03-10 (151/479 sessions, 23s)
+  IWM 2025-05-20 (201/479 sessions, 30s)
+  IWM 2025-08-01 (251/479 sessions, 37s)
+  IWM 2025-10-13 (301/479 sessions, 44s)
+  IWM 2025-12-23 (351/479 sessions, 51s)
+  IWM 2026-03-09 (401/479 sessions, 58s)
+  IWM 2026-05-19 (451/479 sessions, 65s)
+  IWM 2026-06-30 (479/479 sessions, 70s)
+  QQQ 2024-08-01 (1/479 sessions, 72s)
+  QQQ 2024-10-11 (51/479 sessions, 80s)
+  QQQ 2024-12-23 (101/479 sessions, 88s)
+  QQQ 2025-03-10 (151/479 sessions, 95s)
+  QQQ 2025-05-20 (201/479 sessions, 103s)
+  QQQ 2025-08-01 (251/479 sessions, 112s)
+  QQQ 2025-10-13 (301/479 sessions, 120s)
+  QQQ 2025-12-23 (351/479 sessions, 129s)
+  QQQ 2026-03-09 (401/479 sessions, 137s)
+  QQQ 2026-05-19 (451/479 sessions, 145s)
+  QQQ 2026-06-30 (479/479 sessions, 151s)
+  SPY 2024-08-01 (1/479 sessions, 153s)
+  SPY 2024-10-11 (51/479 sessions, 161s)
+  SPY 2024-12-23 (101/479 sessions, 169s)
+  SPY 2025-03-10 (151/479 sessions, 177s)
+  SPY 2025-05-20 (201/479 sessions, 185s)
+  SPY 2025-08-01 (251/479 sessions, 193s)
+  SPY 2025-10-13 (301/479 sessions, 202s)
+  SPY 2025-12-23 (351/479 sessions, 210s)
+  SPY 2026-03-09 (401/479 sessions, 219s)
+  SPY 2026-05-19 (451/479 sessions, 228s)
+  SPY 2026-06-30 (479/479 sessions, 233s)
+pass 1 done in 234s
+run                config                                               n  win%    exp$    PF  PF2x   maxDD$
+factory_dev_v1-008 failed_break prem tpnone tb 15:25                  676     9   10.95  1.47  1.03    -2123
+factory_dev_v1-014 SPY+QQQ+IWM time_1300 C fixed 95/9900 desk d03-1  1367    10    0.67  1.10  0.94    -3113
+factory_dev_v1-013 SPY+QQQ+IWM time_1200 C fixed 95/9900 desk d03-1  1387     9    0.25  1.03  0.90    -3477
+factory_dev_v1-012 SPY+QQQ+IWM time_1100 C fixed 95/9900 desk d03-1  1418     9    0.08  1.01  0.89    -4271
+factory_dev_v1-017 SPY+QQQ+IWM time_1030 P fixed 95/9900 desk d06-1  1408    10   -2.17  0.87  0.80    -6273
+factory_dev_v1-005 vwap_macd prem tpnone tb 15:25                     594     7   -2.24  0.89  0.61    -4247
+factory_dev_v1-011 SPY+QQQ+IWM time_1030 C fixed 95/9900 desk d03-1  1423     8   -2.26  0.76  0.67    -5649
+factory_dev_v1-004 orb60 prem tpnone tb 15:25                        1035     6   -2.60  0.88  0.62    -8527
+factory_dev_v1-015 SPY+QQQ+IWM time_1400 C fixed 95/9900 desk d03-1  1349    10   -3.17  0.44  0.36    -4273
+factory_dev_v1-018 SPY+QQQ+IWM time_1100 P fixed 95/9900 desk d06-1  1413    10   -3.27  0.79  0.73    -7134
+factory_dev_v1-016 SPY+QQQ+IWM time_1000 P fixed 95/9900 desk d06-1  1417    10   -3.56  0.82  0.75    -8502
+factory_dev_v1-010 SPY+QQQ+IWM time_1000 C fixed 95/9900 desk d03-1  1410     9   -3.67  0.65  0.57    -5716
+factory_dev_v1-019 SPY+QQQ+IWM time_1200 P fixed 95/9900 desk d06-1  1383    10   -3.89  0.72  0.66    -6807
+factory_dev_v1-021 SPY+QQQ+IWM time_1400 P fixed 95/9900 desk d06-1  1331    10   -4.21  0.56  0.49    -6511
+factory_dev_v1-003 orb30 prem tpnone tb 15:25                        1452     7   -4.56  0.81  0.58    -7816
+factory_dev_v1-020 SPY+QQQ+IWM time_1300 P fixed 95/9900 desk d06-1  1358    10   -4.98  0.58  0.52    -7165
+factory_dev_v1-002 orb15 prem tpnone tb 15:25                        1741     7   -5.06  0.80  0.57    -9059
+factory_dev_v1-007 flush prem tpnone tb 15:25                         876     6   -6.99  0.65  0.43    -6514
+factory_dev_v1-001 noise nois tpnone tb 15:25 d55-75t65              2064    15   -7.26  0.78  0.53   -16823
+factory_dev_v1-009 failed_high prem tpnone tb 15:25                   872     4   -9.63  0.59  0.42   -10125
+factory_dev_v1-006 pd_retest prem tpnone tb 15:25                     106     5  -13.91  0.33  0.22    -1665
+
+run log: /home/box/sprint/data/sprint/runs_grok-bot-vm-510907181.csv
+report:  /home/box/sprint/data/sprint/report_2026-10-31_factory_dev_v1.md
+trades:  /home/box/sprint/data/sprint/trades_factory_dev_v1_2026-10-31.csv.gz
