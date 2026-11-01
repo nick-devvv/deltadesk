@@ -2,6 +2,117 @@
 
 This runs the sprint's backtests on Chart's computer, the only machine that can reach Alpaca's data API. Everything runs in its own folder, `~/sprint`, from branch `sprint/exits`. Nothing touches `~/desk`, its journal or the live desk, and nothing can place an order: the puller only reads `data.alpaca.markets` (market data), and the engine only reads files it pulled.
 
+## Run 9a: round 9 data pull (long: about 7-11 hours, resumable)
+
+Nick asked for steadier money: multi-day rules (in scope for this round only, at his request), all-stock news catalysts, pre-earnings straddles, an honest tweak search, weekly expiries for FIN-H, and a test of the "QQQ Trader" 1-minute scalper alerts. Everything was fixed before any round-9 code or pull in SPRINT_PLAN "Amendment 12" and "Amendment 13" (commits `68a3b1e`, `e8c89d1`). This run uses branch **`sprint/round9`** (the message checks it out).
+- **What it pulls** (`tools/sprint_pull9.py`, read-only, every stage resumable from its `.done` markers):
+  - the list of US stocks Alpaca shows today as active and tradable with listed options (U-STK, **SURVIVORSHIP-BIASED**): one read-only request to Alpaca's asset list (`GET /v2/assets` on the paper host); no other trading-host path is ever called, no orders, no account;
+  - daily bars 2015-11 to 2026-06, raw and split-adjusted, for the 20 ETFs and every U-STK stock;
+  - SEC EDGAR: the daily 8-K form indexes, then each U-STK 8-K's filing header (acceptance time and item numbers), at most 10 requests a second with the desk's `SEC_USER_AGENT` (taken from the environment, or only its line in `~/.config/deltadesk/deltadesk.env`; never printed);
+  - 1-minute bars of the stocks on their 8-K event days; option bars for the pre-earnings straddles, the 30-60 day calls (F-opt) and FIN-H's weekly expiry (2024-08 to 2026-06 only).
+- L1 (2026-07-01 to 10-30) and L2 (2024-02-01 to 07-31) are never requested: every date and every multi-day window is checked first and refused.
+- No new data for Part S (the scalper) or Part H: they use the stock and 0DTE option bars already on Chart's computer and round 8's share trade file.
+
+### What to expect
+
+| Stage | Requests (about) | Time (estimate) | Disk |
+| --- | --- | --- | --- |
+| Update + sprint tests (340) | | 5-10 min | |
+| assets + daily bars (raw and split-adjusted) | 2,000-2,600 Alpaca | 15-40 min | 0.3-0.5 GB |
+| F-opt calls (DEV) | 2,500-5,500 Alpaca | 15-35 min | 20-60 MB |
+| weekly expiry (FIN-H days only, DEV) | 1,000-2,000 Alpaca | 6-15 min | 0.1-0.2 GB |
+| EDGAR daily indexes | 2,650 SEC | 5-10 min | 50-80 MB |
+| EDGAR filing headers | 100,000-200,000 SEC | 3.5-6.5 hours | 20-40 MB |
+| 8-K event-day 1-minute bars | 3,000-5,500 Alpaca | 20-45 min | 0.5-1.0 GB |
+| straddle option bars (DEV) | 10,000-20,000 Alpaca | 1-2.5 hours | 0.3-0.6 GB |
+| **Total** | | **about 7-11 hours** | **about 1.5-2.5 GB** |
+
+These are estimates from request counts, not timings: Claude's workspace can't reach Alpaca or SEC. Alpaca requests are capped at 180 a minute (the free plan allows 200), SEC requests at about 9 a second (six workers share that one limit, only to hide network delay). The filing headers dominate: about 1,000 liquid stocks x about 15 8-Ks a year x 10.5 years. The pull and the round-9 tool were run end to end on synthetic data served by fake Alpaca and SEC servers (the tool test). It can stop at any time (a reboot, a dropped connection, SEC's back-off giving up): run the same start command again and finished work is skipped.
+
+### Message for Chart, run 9a (one paste)
+
+```
+Sprint run 9a: round 9 data pull (research only; long: about 7-11 hours; safe to stop and resume). Show me every output.
+Rules: you never place trades, never click buy/sell/order buttons, never enter passwords or keys, never print a key.
+Never touch ~/desk: don't cd into it, don't edit, copy, restart or run anything there. Never pass --locked or --frozen to any command.
+If a step fails, show the error and stop. Don't change any code; re-running the same command is fine (the pull resumes where it stopped).
+1. Update the sprint code to the round-9 branch:
+   cd ~/sprint && git fetch -q origin sprint/round9 && git checkout -q -B sprint/round9 origin/sprint/round9 && git reset -q --hard origin/sprint/round9 && git log -1 --oneline
+2. Tests:
+   cd ~/sprint && .venv/bin/pip install -q -r requirements.txt && .venv/bin/python -m pytest -q tests/test_sprint_*.py 2>&1 | tail -3
+3. Key and disk checks (these print only yes/no, never a value):
+   [ -n "$ALPACA_KEY" ] && [ -n "$ALPACA_SECRET" ] && echo "alpaca keys present" || echo "ALPACA KEYS MISSING: stop and tell Nick"
+   if [ -n "$SEC_USER_AGENT" ]; then echo "SEC_USER_AGENT set"; elif grep -q '^SEC_USER_AGENT=' ~/.config/deltadesk/deltadesk.env 2>/dev/null; then echo "SEC_USER_AGENT is in the desk env file (the pull reads only that line)"; else echo "SEC_USER_AGENT MISSING: stop and tell Nick"; fi
+   df -h ~ | tail -1
+   (stop and tell Nick if a key is missing or less than 5 GB is free)
+4. Start the pull in the background (it keeps going if this chat ends):
+   cd ~/sprint && mkdir -p data/sprint/logs && nohup .venv/bin/python tools/sprint_pull9.py >> data/sprint/logs/run9_pull.log 2>&1 &
+   sleep 90; tail -6 ~/sprint/data/sprint/logs/run9_pull.log
+5. Progress, any time (no network, a few seconds):
+   cd ~/sprint && tail -3 data/sprint/logs/run9_pull.log; .venv/bin/python tools/sprint_pull9.py --status; pgrep -f sprint_pull9 >/dev/null && echo "pull still running" || echo "pull not running"
+   If it says "pull not running" and the log's last line is not "sprint_pull9 done ...", run step 4 again: it skips finished work and continues.
+6. When the log ends with "sprint_pull9 done", show the stage results and the disk used:
+   cd ~/sprint && grep -vE "^\[[A-Za-z0-9 ]+\] [0-9]+/[0-9]+ " data/sprint/logs/run9_pull.log | tail -45; du -sh data/alpaca/daily9 data/alpaca/options_fopt data/alpaca/options_w5 data/alpaca/g1_bars data/alpaca/options_g2 data/edgar
+   (send Nick that output)
+```
+
+What Nick sends back: step 1's commit line, step 2's last line, step 3's lines, step 4's first log lines, and step 6's output.
+
+Checks on the way in:
+- Step 2: 340 sprint tests pass.
+- Step 6: `[assets]` gives U-STK's size (about 3,000-4,500 stocks, SURVIVORSHIP-BIASED) and the excluded count; `[daily]` about twice as many symbols done; `[fopt]` a few hundred DEV trades with few `no_pick`; `[weekly]` about 450-500 FIN-H days over SPY, QQQ and IWM; `[edgar index]` about 2,650 days; `[edgar headers]` 100,000-200,000 filings with few `missing`; `[g1]` the event count; `[g2]` the Item 2.02 events and 5 pool dates each. Any `REFUSED` line, `SEC kept refusing` or a Python error is a problem to look at.
+
+## Run 9b: round 9, every part and the book (about 1-2.5 hours, after run 9a)
+
+Runs `tools/sprint_round9.py` on the files run 9a pulled plus what runs 1-8 left on Chart's computer. It writes `data/sprint/round9_<date>.md` and `.json` and one trade file per part:
+- **Part F** (multi-day, shares): `rsi2` (Connors & Alvarez) on the 20 ETFs and on U-STK, and the turn of the month on SPY/QQQ/IWM/DIA and U-STK, 2016-2026; the same ETF trades carried by 30-60 day calls on 2024-2026 (REAL option prices).
+- **Part G** (news, U-STK): premarket 8-K continuation in shares (both sides and long-only) and the pre-earnings straddle (REAL option prices, with its look-ahead caveat and a random-date benchmark).
+- **Part H**: run 7's "learn when it works" procedure on round 8's 12 share strategies (rules found on 2016-2019 only).
+- **Part I**: FIN-H on the weekly expiry (REAL), beside FIN-H's own 0DTE on the same days.
+- **Part S**: the 1-minute scalper on SPY and QQQ 0DTE (REAL), six target/stop cells, the cell chosen on 2024-08 to 2025-06 and tested on 2025-07 to 2026-06, Nick's 5/3 sizing, and the same triggers on stock bars 2016-2026. Spreads: logged chains in `~/sprint/data/chains` where they exist (only if Nick copied them there earlier; Chart must not copy anything from `~/desk`), else max($0.02, 0.5% of the premium), labeled.
+- Then the book (FIN-H plus every survivor), the trial count (203 + the run logs), the deflated Sharpe and the $3,000 account view.
+
+### What to expect
+
+| Step | Time (estimate) | Disk |
+| --- | --- | --- |
+| Update + sprint tests (340) | 5-10 min | |
+| Check the files | seconds | |
+| `tools/sprint_round9.py` | 60-150 min | about 100-200 MB (report + trade files) |
+| Zip | 1-2 min | about 30-80 MB |
+| **Total** | **about 1-2.5 hours** | |
+
+From synthetic timings on a 2-core machine: Part S took about 2 seconds per symbol-day (958 symbol-days: about 30-40 minutes, about a million option trades); Parts F, G, H and I together about 20-60 minutes at the real sizes (thousands of daily-bar symbols, tens of thousands of 8-K event days, round 8's share trades re-stamped with entry features). The tool needs about 3 GB of memory, so nothing else heavy should run at the same time. The Part S option trade file stays on Chart's computer (about a million rows); its size is shown.
+
+### Message for Chart, run 9b (one paste)
+
+```
+Sprint run 9b: round 9, every part and the book (research only, about 1-2.5 hours, no new data; run only after run 9a's log ends with "sprint_pull9 done"). Show me every output.
+Rules: you never place trades, never click buy/sell/order buttons, never enter passwords or keys, never print a key.
+Never touch ~/desk: don't cd into it, don't edit, copy, restart or run anything there. Never pass --locked or --frozen to any command.
+If a step fails, show the error and stop. Don't change any code; re-running the same command once is fine.
+1. Update the sprint code to the round-9 branch:
+   cd ~/sprint && git fetch -q origin sprint/round9 && git checkout -q -B sprint/round9 origin/sprint/round9 && git reset -q --hard origin/sprint/round9 && git log -1 --oneline
+2. Tests:
+   cd ~/sprint && .venv/bin/python -m pytest -q tests/test_sprint_*.py 2>&1 | tail -3
+3. Check the files are there (no pull) and the free disk space:
+   cd ~/sprint && tail -1 data/sprint/logs/run9_pull.log && .venv/bin/python tools/sprint_pull9.py --status && ls -t data/sprint/trades_round8_shares_*.csv.gz | head -1 && ls -t data/sprint/trades_factory_hist_v1_*.csv.gz | head -1 && ls -t data/sprint/trades_factory_dev_v1_*.csv.gz | head -1 && ls data/alpaca/options/SPY | wc -l && ls data/alpaca/stocks/SPY | head -1 && ls data/alpaca/stocks/SPY | tail -1 && ls -la data/alpaca/daily/VIXY.csv.gz && echo "logged chains for Part S: $(ls data/chains 2>/dev/null | wc -l) files in ~/sprint/data/chains" && df -h ~ | tail -1
+4. Round 9 (about 1-2.5 hours):
+   cd ~/sprint && .venv/bin/python tools/sprint_round9.py > data/sprint/logs/run9_round9.log 2>&1; tail -50 data/sprint/logs/run9_round9.log
+5. Zip the results and show the summary (the Part S option trade file, about a million rows, stays here; its size is shown):
+   cd ~/sprint && D=$(ls -t data/sprint/round9_*.md | head -1 | sed 's/.*round9_\(.*\)\.md/\1/') && .venv/bin/python -m zipfile -c ~/sprint_results9.zip data/sprint/round9_$D.md data/sprint/round9_$D.json data/sprint/trades_round9_F_$D.csv.gz data/sprint/trades_round9_Fopt_$D.csv.gz data/sprint/trades_round9_G1_$D.csv.gz data/sprint/trades_round9_G2_$D.csv.gz data/sprint/trades_round9_G2pool_$D.csv.gz data/sprint/trades_round9_H_$D.csv.gz data/sprint/trades_round9_I_$D.csv.gz data/alpaca/universe/ustk.json data/sprint/logs/run9_*.log && ls -la ~/sprint_results9.zip && ls -la data/sprint/trades_round9_S_$D.csv.gz
+   sed -n '/^## Summary/,/^## Part F/p' data/sprint/round9_$D.md
+   (send Nick the file ~/sprint_results9.zip; the Part S trade file stays on this computer)
+```
+
+What Nick sends back: step 1's commit line, step 2's last line, step 3's lines, step 4's output (the summary lines and any WARNING lines), step 5's lines and summary, and `~/sprint_results9.zip`.
+
+Checks on the way in:
+- Step 2: 340 sprint tests pass.
+- Step 3: the pull log's last line says `sprint_pull9 done`; round 8's share trade file and run 7's two factory trade files are listed (without run 7's files the book's FIN-H is Part I's same-pass FIN-H on 2024-2026 only, with a WARNING); about 470-479 option days under `options/SPY`; stock months `2015-11` to `2026-06`. The chains count says whether Part S used measured spreads (0 = the max($0.02, 0.5%) fallback everywhere, labeled).
+- Step 4: one summary line per Part F rule and universe, F-opt twin, G1 variant, G2, Part H strategy, Part I, Part S signal and contract, and the book. Every line is a BACKTEST; option lines say REAL; U-STK lines say SURVIVORSHIP-BIASED. Any `WARNING:` line (a part not run because an input is missing, an unfinished pull stage, run 7's files not found) is a problem to look at.
+- Known before any result (Amendments 12 and 13): steady option income mostly belongs to option sellers, which Nick's account can't do; U-STK lists today's survivors only; G2 uses the realized 8-K date (look-ahead caveat); Part S's wins are +3-8%, so the spread decides it, and the logged chains are recent (an assumption for 2024-2025); SMA(200) restarts after L2, so DEV rsi2 trades start about May 2025.
+
 ## Run 8: round 8, steady share rules, a sharper big-day filter, indicators and levels (about 45-90 minutes, no new data)
 
 Nick asked for steadier rules that win on different days than the big-day calls, a sharper big-day filter for those calls, contracts beyond 0DTE that can be sold early, and the classic indicators, alone and with levels, with a stop and target tuned honestly. Everything was fixed before any round-8 code or run in SPRINT_PLAN "Amendment 10" and Addenda 10.1, 10.2 and 10.3 (commits `0fc8fd1`, `d75e28b`, `e2d1369`, `e2cc2d6`); the code is `e49af2b`..`fb1adcc`. This run uses branch **`sprint/round8`** (the message checks it out).

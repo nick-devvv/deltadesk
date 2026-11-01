@@ -32,6 +32,13 @@ Registry version 2026-10-31. Machine-readable twin: `strategy_registry.json` (25
 - Baltussen, Da, Lammers & Martens 2021, JFE 142(1): 60+ futures, 1974-2020.
 - [falsifylab, "gap fade works, gold doesn't"](https://falsifylab.substack.com/p/gap-fade-works-gold-doesnt).
 
+**Round 9 (SPRINT_PLAN Amendments 12 and 13, 2026-11-01)** tests, with the rules frozen in the plan before any code or pull (multi-day holds are in scope for this round only, at Nick's request):
+- `rsi2`: Connors & Alvarez 2008, *Short Term Trading Strategies That Work* (close > SMA(200), close < SMA(5), RSI(2) < 10; out on a close above SMA(5)); widely replicated, e.g. a Nasdaq-100 2006-2025 test with a 64% win rate and PF 1.45 (claims, not evidence here).
+- `tom` (turn of the month): Lakonishok & Smidt 1988, *Review of Financial Studies* 1(4); McConnell & Xu 2008, *Financial Analysts Journal* 64(2).
+- `news_go`: #9 above (Jiang, Li & Wang 2021, JFE), on EDGAR 8-K acceptance times.
+- `pre_earn_straddle`: Gao, Xing & Zhang 2018, *JFQA* 53(6), "Anticipating Uncertainty: Straddles around Earnings Announcements" (about 3% average on 1996-2010 ATM straddles from 3 days before the announcement).
+- Part S (the 1-minute scalper): no published source. It is a designed, pre-registered test of one day of posted "QQQ Trader" alerts Nick shared (CLAUDE.md step 1: "design a pre-registered test for it"); the underlying-first check and a random-direction benchmark are part of it.
+
 The other entries (day-trader-skill, QuantRocket first-last, QC stocks-in-play replication, Busse and Green, Kaminski and Lo, PyBroker, vectorbt, NautilusTrader, LEAN) are B and support the tests above. The six C entries are rejected.
 
 ## Search method
