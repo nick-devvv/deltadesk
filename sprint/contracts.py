@@ -21,6 +21,9 @@ Round 9 (SPRINT_PLAN Amendment 12): "w5-10d03-12t07" (Part I, weekly expiry) and
 calls at delta 0.60-0.80 nearest 0.70, picked by pick_daily); see the notes under RULES. Amendment 13 (Part S, the 1-minute
 scalper, 0DTE): "d45-55t50" (|delta| 0.45-0.55 nearest 0.50, the alert bots' near-the-money shape) and "d20-30t25" (0.20-0.30
 nearest 0.25, a cheaper contract that fits a $3,000 account), picked from the day's 0DTE contracts like d40-55t45.
+Round 10 (SPRINT_PLAN Addendum 15.5, R1 and R2): "d55-70t60" (|delta| 0.55-0.70 nearest 0.60, "one strike in the money"),
+picked from the day's 0DTE contracts like d40-55t45 (the existing +/-3% strike band of the DEV pull holds it on ordinary
+days; sprint/r10grid.needed_option_contracts lists what a big-move day could add).
 Far out-of-the-money rules (otm_v1, pre-registered 2026-10-31): "d03-12t07" (|delta| 0.03-0.12, target 0.07) and
 "d06-15t10" (0.06-0.15, target 0.10): the deltas of Option Alpha's top-listed SPX/XSP lottery puts and calls (0.06-0.10).
 SPY/QQQ/IWM have $1 strikes, about 0.5 (SPY/QQQ) to 1 (IWM) standard deviations of the rest-of-day move apart at
@@ -39,7 +42,8 @@ RULES = {"d40-55t45": (0.40, 0.55, 0.45), "d50-65t575": (0.50, 0.65, 0.575), "d5
          "n1d03-12t07": (0.03, 0.12, 0.07), "n1d55-75t65": (0.55, 0.75, 0.65),           # round 8 (Addendum 10.1)
          "w5-10d03-12t07": (0.03, 0.12, 0.07),                                            # round 9 Part I (Amendment 12)
          "m30-60d60-80t70": (0.60, 0.80, 0.70),                                           # round 9 F-opt (Amendment 12)
-         "d45-55t50": (0.45, 0.55, 0.50), "d20-30t25": (0.20, 0.30, 0.25)}                 # round 9 Part S (Amendment 13)
+         "d45-55t50": (0.45, 0.55, 0.50), "d20-30t25": (0.20, 0.30, 0.25),                 # round 9 Part S (Amendment 13)
+         "d55-70t60": (0.55, 0.70, 0.60)}                  # round 10 (Addendum 15.5, R1 / R2): one strike in the money, 0DTE
 NEXT = {"n1d40-55t45", "n1d50-65t575", "n1d03-12t07", "n1d55-75t65"}
 # Round 9 (SPRINT_PLAN Amendment 12, pre-registered 2026-11-01 before any round-9 code, pull or run):
 #   "w5-10d03-12t07" (Part I): the nearest listed expiry 5-10 calendar days after the session, BS-EST |delta| 0.03-0.12
