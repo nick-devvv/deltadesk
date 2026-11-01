@@ -1,0 +1,250 @@
+{
+ "spec_id": "final_v2_exam",
+ "written": "2026-11-01, after run 8 and before any L1/L2 pull or run",
+ "source": "docs/research/SPRINT_PLAN.md Amendment 7 + Amendment 11 (commit 68a3b1e); Amendment 10 A1 (noise_sh) and B2",
+ "description": "The final locked-period exam: FIN-H, FIN-L, FIN-HS (FIN-H with B2 confidence sizing) and NB-VOL (the vol-sized noise band in shares), each run once on L2 and once on L1 through the --locked/--frozen guard. Research only.",
+ "models": {
+  "path": "sprint/specs/final_v2_models.json",
+  "sha256": "PENDING: the sha256 that tools/sprint_exam.py fit prints (set it with tools/sprint_exam.py freeze)"
+ },
+ "symbols": [
+  "SPY",
+  "QQQ",
+  "IWM"
+ ],
+ "periods": {
+  "L2": {
+   "from": "2024-02-01",
+   "to": "2024-07-31",
+   "warm_from": "2023-12-01",
+   "warm_source": "HIST",
+   "stock_adjustment": "split",
+   "vixy_daily_from": "2022-10-01",
+   "min_trades_fin": 30,
+   "min_trades_nbvol": 100
+  },
+  "L1": {
+   "from": "2026-07-01",
+   "to": "2026-10-30",
+   "warm_from": "2026-05-01",
+   "warm_source": "DEV",
+   "stock_adjustment": "raw",
+   "vixy_daily_from": "2025-03-01",
+   "min_trades_fin": 20,
+   "min_trades_nbvol": 60
+  }
+ },
+ "pull": {
+  "stock_1m": [
+   "SPY",
+   "QQQ",
+   "IWM",
+   "VIXY"
+  ],
+  "vixy_daily": "VIXY (split-adjusted, one request from vixy_daily_from to the period end)",
+  "options_0dte": [
+   "SPY",
+   "QQQ",
+   "IWM"
+  ],
+  "band": 0.03,
+  "option_trades": false,
+  "feed": "sip",
+  "cache": "data/alpaca_exam/<period>/ (the period only; the 1-minute warm-up is read from data/alpaca/)"
+ },
+ "engine": {
+  "spec_id": "final_v2_exam",
+  "symbols": [
+   "SPY",
+   "QQQ",
+   "IWM"
+  ],
+  "defaults": {
+   "entry": "time_1100",
+   "side": "C",
+   "contract": "d03-12t07",
+   "allout": "15:25",
+   "mechanics": "desk",
+   "filters": [],
+   "risk": "none",
+   "tp_buffer": "$0.03",
+   "rr_min": null,
+   "stop": "fixed",
+   "fixed_stop": 0.95,
+   "fixed_target": 99.0,
+   "tp": "none",
+   "trail": "none",
+   "time": "b"
+  },
+  "blocks": [
+   {
+    "name": "reference",
+    "why": "otm_v1-040 unfiltered (the reference for FIN-H, FIN-L, FIN-HS)",
+    "grid": {
+     "filters": [
+      []
+     ]
+    }
+   },
+   {
+    "name": "fin_h",
+    "why": "otm_v1-040 + relative volume at the signal bar >= 1.06 (FIN-H)",
+    "grid": {
+     "filters": [
+      [
+       "rvol_ge106"
+      ]
+     ]
+    }
+   }
+  ]
+ },
+ "costs": {
+  "options": "desk fills; MODELED-SPREAD half-spread 2% of premium (SPY/QQQ/IWM), floor $0.005; logged chains never used; $0.65 per contract per side; PF 2x = the 2x-slippage P/L stamped on every trade",
+  "information_rerun_half_spread_pct": 0.05,
+  "shares": "fill at the open of the bar after the decision +/- $0.01 a share; 2x costs = $0.02 a side; no commission"
+ },
+ "finalists": {
+  "FIN-H": {
+   "engine_run": "fin_h",
+   "rvol_cut": 1.06,
+   "contracts": 1
+  },
+  "FIN-L": {
+   "engine_run": "reference",
+   "model": "fin_l",
+   "take_if_p_win_at_least": 0.5,
+   "features": [
+    "f_minute",
+    "f_weekday",
+    "f_adx",
+    "f_er30",
+    "f_vwap_x60",
+    "f_overlap30",
+    "f_range_atr",
+    "f_rvol",
+    "f_trend_votes",
+    "f_di",
+    "f_noise_true",
+    "f_gap",
+    "f_day_ret",
+    "f_vwap_dist",
+    "f_prev_range",
+    "f_prev_ret",
+    "f_event",
+    "f_vixy_pctl"
+   ],
+   "fit_on": "all HIST 11:00-call trades: hist_v1-005 if present, else factory_hist_v1-012"
+  },
+  "FIN-HS": {
+   "engine_run": "fin_h",
+   "model": "fin_hs.<period>",
+   "features": [
+    "f_minute",
+    "f_weekday",
+    "f_adx",
+    "f_er30",
+    "f_vwap_x60",
+    "f_overlap30",
+    "f_range_atr",
+    "f_rvol",
+    "f_trend_votes",
+    "f_di",
+    "f_noise_true",
+    "f_gap",
+    "f_day_ret",
+    "f_vwap_dist",
+    "f_prev_range",
+    "f_prev_ret",
+    "f_event",
+    "f_vixy_pctl",
+    "f_ret5d",
+    "f_dd20",
+    "f_vixy_chg1",
+    "f_vixy_z20",
+    "f_or30_atr",
+    "f_gap_abs",
+    "f_hod"
+   ],
+   "sizing": "P(win) <= lower tercile cut -> 0 contracts; >= upper cut -> 2; otherwise 1",
+   "fit_on": {
+    "L2": "FIN-H trades (factory_hist_v1-012, f_rvol >= 1.06) through 2024-01-31",
+    "L1": "FIN-H trades (factory_hist_v1-012 + factory_dev_v1-012, f_rvol >= 1.06) through 2026-06-30"
+   }
+  },
+  "NB-VOL": {
+   "rule": "noise_sh_vol (Amendment 10 A1 secondary)",
+   "symbols": [
+    "SPY",
+    "QQQ",
+    "IWM"
+   ],
+   "sides": "long and short",
+   "notional": "10000 x min(4, 0.02 / sd of the 14 prior daily close-to-close returns)"
+  }
+ },
+ "references": {
+  "FIN-H": "reference",
+  "FIN-L": "reference",
+  "FIN-HS": "reference (shown); the bar compares P/L per contract with FIN-H",
+  "NB-VOL": "random direction on the same entries and exits"
+ },
+ "bars": {
+  "FIN-H": {
+   "min_trades": {
+    "L2": 30,
+    "L1": 20
+   },
+   "pf_at_least": 1.25,
+   "pf_2x_above": 1.0,
+   "expectancy_above": "reference"
+  },
+  "FIN-L": {
+   "min_trades": {
+    "L2": 30,
+    "L1": 20
+   },
+   "pf_at_least": 1.25,
+   "pf_2x_above": 1.0,
+   "expectancy_above": "reference"
+  },
+  "FIN-HS": {
+   "min_trades": {
+    "L2": 30,
+    "L1": 20
+   },
+   "trades_counted_as": "FIN-H trades",
+   "sized_pf_at_least": 1.25,
+   "sized_pf_2x_above": 1.0,
+   "pnl_per_contract_above": "FIN-H expectancy"
+  },
+  "NB-VOL": {
+   "min_trades": {
+    "L2": 100,
+    "L1": 60
+   },
+   "expectancy_2x_above": 0.0,
+   "random_direction_p_below": 0.1
+  }
+ },
+ "seeds": {
+  "nbvol_random_direction": {
+   "seeds": [
+    31,
+    230
+   ],
+   "draws": 200,
+   "rng": "numpy default_rng(seed)"
+  },
+  "bootstrap_information": {
+   "seed": 29,
+   "draws": 2000
+  }
+ },
+ "verdicts": {
+  "holds": "passes on both L2 and L1 (then a new versioned PAPER ledger and 40 forward trades; never real money without Nick's explicit yes)",
+  "mixed": "passes on one period (reported, not promoted)",
+  "fails": "passes on neither (dropped)"
+ },
+ "one_shot": "Each period runs once. A crash may be re-run with the same frozen spec and the same code commit. Any code change after the first L1/L2 read makes the exam void for that finalist, and it is reported as such."
+}
