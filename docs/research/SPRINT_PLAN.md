@@ -1077,6 +1077,30 @@ The full grid is reported, including the share of cells with a positive holdout 
 
 **Trials:** 162.
 
+### Addendum 15.2, 2026-11-01: noise band loss autopsy fixes (discovery 2016-2019 only; written before any test on 2020+)
+
+The autopsy used round 8's noise_sh_vol share trades, 2016-2019 only: 2,796 trades, mean +$4.25 a trade, t 2.24 (in-sample, BACKTEST).
+- **First trade of the day:** +$6.86 a trade (n 1,787, t 2.68). Later re-entries: -$1.04 (2nd) and -$1.35 (3rd).
+- **Symbol-days by number of trades:** 1 trade +$34.1 a day; 2 trades -$21.3; 3 trades -$53.6. That's the chop whipsaw.
+- **By entry hour:**
+  - 10:00 hour: +$8.95 (t 2.51);
+  - 11:00: +$4.03;
+  - 12:00: +$1.97;
+  - 13:00: -$3.99;
+  - 14:00: +$2.78;
+  - 15:00: -$0.90.
+- **Holding time:** trades exiting within 30 minutes average -$37.70 (n 1,130). Trades held 240+ minutes average +$147.35.
+- **By symbol:** SPY +$1.77 (t 0.56), weaker than QQQ (+$5.81) and IWM (+$5.16). Not acted on: weak evidence.
+
+**Fixes, frozen** (each alone and all together; A1's rules otherwise unchanged, vol-sized):
+- **N1:** one trade per symbol per day. After the first exit, no re-entry.
+- **N2:** no new entry after the check finishing 12:00.
+- **N12:** N1 and N2 together.
+
+**Test:** holdout 1 = 2020-01..2024-01 and holdout 2 = DEV, each with Part A's 7-item bar, against the unfixed NB-VOL on the same windows. A fix holds only if it beats the unfixed version's daily Sharpe in both holdouts.
+
+**Trials:** 3 (round 10).
+
 ## Limits
 
 - Backtests only.
