@@ -3,6 +3,7 @@ equals holdout 2's L-call learner, FIN-HS equals round 8's B2 refit and tiers), 
 the verdicts, the one-shot log policy, the dirty-tree check, the guard's refusals before any request, the exam's engine
 pass against engine.run_pass, and no look-ahead in the finalists' decisions. Synthetic data only: no L1/L2 data is read or
 made up (the end-to-end run on a synthetic "locked" fixture is tests/test_sprint_exam_e2e.py)."""
+import hashlib
 import json
 import math
 import subprocess
@@ -89,10 +90,15 @@ def opt_row(day, pnl, pnl2=None, sym="SPY", c=None):
 # ---------------------------------------------------------------- the frozen spec
 def test_shipped_spec_is_the_canonical_amendment_11_spec():
     p = SPECS / "final_v2_exam.json"
-    assert p.read_text() == exam.spec_text(exam.canonical_spec())          # byte for byte: freeze changes only the models sha256
     spec = json.loads(p.read_text())
+    canon = exam.canonical_spec()
+    frozen = spec["models"]["sha256"]
+    if frozen != exam.PENDING:                                             # after `freeze`: the committed models file's sha256
+        assert frozen == hashlib.sha256((SPECS / "final_v2_models.json").read_bytes()).hexdigest()
+        canon["models"]["sha256"] = frozen
+    assert p.read_text() == exam.spec_text(canon)                          # byte for byte: freeze changes only the models sha256
     assert exam.check_spec(spec) is None
-    assert spec["models"] == {"path": "sprint/specs/final_v2_models.json", "sha256": exam.PENDING}
+    assert spec["models"] == {"path": "sprint/specs/final_v2_models.json", "sha256": frozen}
     assert {k: (v["from"], v["to"]) for k, v in spec["periods"].items()} == {"L2": ("2024-02-01", "2024-07-31"),
                                                                              "L1": ("2026-07-01", "2026-10-30")}
     assert spec["periods"]["L2"]["warm_source"] == "HIST" and spec["periods"]["L1"]["warm_source"] == "DEV"
