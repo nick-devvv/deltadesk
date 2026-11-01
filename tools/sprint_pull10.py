@@ -64,14 +64,16 @@ sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE / "tools"))
 import pull_alpaca as PA  # noqa: E402
 from sprint import ivdata as IV  # noqa: E402
+from sprint import data as SD  # noqa: E402
 from sprint import periods  # noqa: E402
+from sprint import r10credit as RC  # noqa: E402
 from sprint import r10swing as SW  # noqa: E402
 from sprint import spread_est as SE  # noqa: E402
 from sprint import universe as U  # noqa: E402
 from sprint.data import parse_occ  # noqa: E402
 
 ET = "America/New_York"
-STAGES = ("stock15", "needs")
+STAGES = ("stock15", "needs", "export")
 BATCH = 100
 NET_BACKOFF = (5, 15, 30, 60, 120, 300)
 MAX_ROUNDS = 40
@@ -102,10 +104,91 @@ def register(name, fn, window=None):
 register("div", IV.needed_option_contracts)
 register("r10swing", SW.needed_option_contracts)
 register("spread_cal", SE.needed_option_contracts)
-# Round 10 integrator: one line each, e.g.
-#   from sprint import r10grid, r10credit
-#   register("r10grid", r10grid.needed_option_contracts)
-#   register("r10credit", r10credit.needed_option_contracts)
+
+
+def credit_needs(ctx):
+    """"r10credit" provider (integration): for every DEV day in the pull's span and SPY/QQQ, the 0DTE contracts C1-C4 can need
+    (sprint/r10credit.needed_option_contracts, ATM IV read from the tapes on file) that no 0DTE cache (options/, options_r10/)
+    holds yet; whole-session bars. Computed once per run (ctx.cache), then filtered against what the pull already asked."""
+    if "r10credit_needs" not in ctx.cache:
+        a, b = ctx.span
+        out = []
+        for d in [d for d in IV.dev_days() if a <= d <= b]:
+            if periods.overlaps(d, d):
+                continue
+            for u in RC.SYMBOLS:
+                df = SD.read_stock(u, d, d, ctx.root)
+                if df is None or not len(df):
+                    continue
+                tapes = RC.read_tapes(u, d, ctx.root)
+                miss = [s for s in RC.needed_option_contracts(d, df, u, tapes=tapes) if s not in tapes]
+                if miss:
+                    out.append(IV.need(d, IV.W_DAY, miss, "r10credit", 2))
+        ctx.cache["r10credit_needs"] = out
+    return ctx.cache["r10credit_needs"]
+
+
+register("r10credit", credit_needs)
+# Round 10 integrator: r10grid's provider is registered once round10/grid is merged.
+
+EXPORT_UNDERS = ("SPY", "QQQ", "IWM")
+
+
+def export_index_options(root, log, days=None, unders=EXPORT_UNDERS):
+    """"export" stage (integration, no network): copy the SPY/QQQ/IWM contracts the "needs" stage fetched (r10/opt/<day>/*.p*.csv.gz)
+    into the layout the 0DTE readers use: data/alpaca/options_r10/<U>/<day>/bars.csv.gz for contracts expiring that day and
+    data/alpaca/options_r10_next/<U>/<day>/bars.csv.gz for later expiries (the next-expiry reader keeps the nearest). The
+    columns are the pull's (symbol, ts, o, h, l, c, v, n, vw), as in options/. Rows are de-duplicated on (symbol, ts) keeping
+    the longest-window copy's row; a re-run rewrites identical files. Locked days are never read or written."""
+    root = Path(root)
+    base = root / IV.R10 / "opt"
+    if not base.exists():
+        log("[export] no round 10 option bars on file yet")
+        return {"days": 0, "files": 0, "rows": 0}
+    want = set(days) if days else None
+    n_days = n_files = n_rows = 0
+    for folder in sorted(p for p in base.iterdir() if p.is_dir()):
+        try:
+            d = date.fromisoformat(folder.name)
+        except ValueError:
+            continue
+        if (want is not None and d not in want) or periods.overlaps(d, d):
+            continue
+        parts = sorted(folder.glob("*.p*.csv.gz"))
+        frames = []
+        for f in parts:
+            df = pd.read_csv(f, compression="gzip")
+            if not len(df):
+                continue
+            w = f.name.split(".p")[0]
+            df["_w"] = int(w.split("-")[1]) - int(w.split("-")[0]) if "-" in w else 0
+            frames.append(df)
+        if not frames:
+            continue
+        df = pd.concat(frames, ignore_index=True)
+        meta = {s: parse_occ(s) for s in pd.unique(df["symbol"].astype(str))}
+        df = df[df["symbol"].astype(str).map(lambda s: bool(meta.get(s)) and meta[s]["root"] in unders if meta.get(s) else False)]
+        if not len(df):
+            continue
+        n_days += 1
+        df = df.sort_values(["symbol", "ts", "_w"], ascending=[True, True, False], kind="stable")
+        df = df.drop_duplicates(["symbol", "ts"], keep="first").drop(columns=["_w"])
+        exp = df["symbol"].astype(str).map(lambda s: meta[s]["expiry"])
+        und = df["symbol"].astype(str).map(lambda s: meta[s]["root"])
+        for u in unders:
+            for sub, sel in (("options_r10", (und == u) & (exp == d)), ("options_r10_next", (und == u) & (exp > d))):
+                part = df[sel]
+                if not len(part):
+                    continue
+                out = root / sub / u / d.isoformat() / "bars.csv.gz"
+                cols = [c for c in ("symbol", "ts", "o", "h", "l", "c", "v", "n", "vw") if c in part.columns]
+                part = part[cols].sort_values(["symbol", "ts"], kind="stable").reset_index(drop=True)
+                part = part.assign(ts=pd.to_datetime(part["ts"], utc=True, format="ISO8601").dt.tz_convert(ET))
+                PA._write_gz(out, part)
+                n_files += 1
+                n_rows += len(part)
+    log(f"[export] {n_days} days, {n_files} files, {n_rows} rows into options_r10/ and options_r10_next/")
+    return {"days": n_days, "files": n_files, "rows": n_rows}
 
 OFFERS = ("ctx", "root", "log", "days", "a", "b", "start", "end", "bars", "universe")
 
@@ -606,6 +689,8 @@ def main(argv=None):
                 log(f"[stock15] {pull_stock15(ctx, x.feed, days)}")
             elif st == "needs":
                 log(f"[needs] {pull_needs(ctx, provs)}")
+            elif st == "export":
+                export_index_options(root, log, days)
             log(f"[{st}] finished in {(time.time() - ts) / 60:.1f} min; {disk_mb(root)} MB on disk for round 10")
     except periods.LockedPeriod as e:
         log(str(e))

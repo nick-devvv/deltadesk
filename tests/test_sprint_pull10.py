@@ -300,3 +300,57 @@ def test_spread_cal_asks_only_for_chain_contracts_the_0dte_cache_lacks(env, tmp_
     assert len(got) and set(got["symbol"]) <= set(syms[1:]) and IV.minutes(got).min() >= 0
     ctx.span = (D2, D2)                                       # outside the pull's span: nothing asked
     assert SE.needed_option_contracts(ctx) == []
+
+
+# ---------------------------------------------------------------- integration: the r10credit provider and the export stage
+def _stock_day(root, sym, d, px=500.0):
+    ts = pd.date_range(f"{d} 09:30", periods=390, freq="1min", tz="America/New_York")
+    df = pd.DataFrame({"ts": ts, "o": px, "h": px + 0.2, "l": px - 0.2, "c": px, "v": 1000.0})
+    PA._write_gz(root / "stocks" / sym / f"{d.strftime('%Y-%m')}.csv.gz", df)
+
+
+def test_the_module_registers_the_credit_provider_and_runs_the_export_stage():
+    assert "r10credit" in open(P10.__file__).read() and "export" in P10.STAGES
+    assert P10.STAGES.index("export") > P10.STAGES.index("needs")
+
+
+def test_credit_needs_asks_for_the_0dte_contracts_no_cache_holds(env):
+    from sprint import r10credit as RC
+    root, m, fa = env
+    _stock_day(root, "SPY", D1)
+    ctx = P10.Ctx(root, print, [D1], span=(D1, D1))
+    out = P10.credit_needs(ctx)
+    assert len(out) == 1 and out[0].day == D1 and out[0].window == IV.W_DAY and out[0].tag == "r10credit"
+    need = RC.needed_option_contracts(D1, RC.data.read_stock("SPY", D1, D1, root), "SPY", tapes={})
+    assert set(out[0].symbols) == set(need) and all(parse_occ(s)["expiry"] == D1 for s in out[0].symbols)
+    have = pd.DataFrame([{"ts": pd.Timestamp(f"{D1} 10:00", tz="America/New_York"), "o": 1.0, "h": 1.0, "l": 1.0, "c": 1.0,
+                          "v": 1.0, "symbol": need[0]}])
+    PA._write_gz(root / "options" / "SPY" / D1.isoformat() / "bars.csv.gz", have)
+    ctx2 = P10.Ctx(root, print, [D1], span=(D1, D1))
+    assert need[0] not in P10.credit_needs(ctx2)[0].symbols          # already on file: not asked again
+    assert P10.credit_needs(ctx2) is P10.credit_needs(ctx2)          # computed once per run
+
+
+def test_export_writes_0dte_and_next_expiry_files_in_the_reader_layout(env):
+    from sprint import r10credit as RC
+    root, m, fa = env
+    nxt = date(2025, 3, 7)
+    s0, s1, other = occ("SPY", D1, "C", 500), occ("SPY", nxt, "P", 495), occ("AAPL", nxt, "C", 200)
+    ts = [pd.Timestamp(f"{D1} 10:0{k}", tz="America/New_York") for k in range(3)]
+    rows = [{"symbol": s, "ts": t, "o": 1.0 + k, "h": 1.1 + k, "l": 0.9 + k, "c": 1.0 + k, "v": 5.0, "n": 3, "vw": 1.0 + k}
+            for s in (s0, s1, other) for k, t in enumerate(ts)]
+    df = pd.DataFrame(rows)
+    PA._write_gz(IV.opt_dir(root, D1) / f"{IV.wkey(IV.W_DAY)}.p0001.csv.gz", df)
+    dup = df[df["symbol"] == s0].assign(c=99.0)                     # the same minutes again from a shorter window
+    PA._write_gz(IV.opt_dir(root, D1) / f"{IV.wkey(IV.W_LAST)}.p0001.csv.gz", dup)
+    res = P10.export_index_options(root, print)
+    assert res["days"] == 1 and res["files"] == 2
+    tapes = RC.read_tapes("SPY", D1, root)                           # options/ + options_r10/
+    assert set(tapes) == {s0} and float(tapes[s0].c[30]) == 1.0      # whole-day window's row kept, not the duplicate
+    f_next = root / "options_r10_next" / "SPY" / D1.isoformat() / "bars.csv.gz"
+    got = pd.read_csv(f_next, compression="gzip")
+    assert set(got["symbol"]) == {s1} and list(got.columns)[:2] == ["symbol", "ts"]
+    assert not (root / "options_r10" / "AAPL").exists()
+    before = (root / "options_r10" / "SPY" / D1.isoformat() / "bars.csv.gz").read_bytes()
+    P10.export_index_options(root, print)
+    assert (root / "options_r10" / "SPY" / D1.isoformat() / "bars.csv.gz").read_bytes() == before   # a re-run is identical
