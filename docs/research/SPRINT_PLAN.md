@@ -1360,6 +1360,41 @@ For a 30-day at-the-money straddle on a stock trading $50 million+ a day, 10% is
 
 Any promotion still needs 40 forward paper trades with real fills, which is the real check on this estimate.
 
+### Addendum 16.2, 2026-11-01: Addendum 15.3 corrected to the framework as published (before any round 10 run or result)
+
+Addendum 15.3 promised the alpaca-options-framework "exactly as published". The round 10 build showed that its frozen list left out part of the bot's live path. Re-reading the framework's main.py, signals.py, momentum.py and config.py (as data), the live bot does the following.
+
+**Entry** (`check_entry`, on SPY's finished 1-minute bars):
+- **Direction:** a call needs all of:
+  - close > session VWAP;
+  - EMA(5) > EMA(20) of 1-minute closes;
+  - 5-bar ROC >= +0.03%;
+  - at least 3 consecutive green bars.
+  
+  A put mirrors each of these.
+- **Volatility:** ATR5 >= $0.20. ATR5 is the mean true range of the last 5 one-minute bars.
+- **Window:** 09:45-12:00.
+- **Cooldown:** 3 bars.
+- **Premium:** $0.20-$10.00.
+
+**Strike:**
+- The 0.60 x 5-day-ATR target (capped at $4.50, on the $1 grid) only sets the window of strikes watched: the target ±5 strikes.
+- The bot enters only an out-of-the-money strike within 0.3% of SPY (its "activation zone").
+- So the contract is the nearest out-of-the-money strike in the window within 0.3% of SPY's entry price. If none qualifies, there is no trade.
+
+**Exits:** as 15.3:
+- stop at 50% of entry;
+- +50% target;
+- trail armed at +20%, exiting at 88% of the peak;
+- the SPY stop at 0.75 x ATR5 (floor $0.10);
+- all out 15:25.
+
+The momentum-flip exit in signals.py's `check_exit` is not called by main.py, so it is not part of the live bot and is not used.
+
+**Unchanged:** sizing (max(1, floor($150 / (0.5 x entry x 100)))), the day gates, the windows and the bars.
+
+**What this replaces:** these rules replace 15.3's list. The list-only version is not run. Trials stay at 2 (with and without the day gates), and R2's in-the-money swap applies to this corrected rule set.
+
 ## Limits
 
 - Backtests only.
