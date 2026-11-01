@@ -1,0 +1,116 @@
+sprint_round8: round-8 HIST /home/box/sprint/data/sprint/trades_round8_hist_v1_2026-11-01.csv.gz, DEV /home/box/sprint/data/sprint/trades_round8_dev_v1_2026-11-01.csv.gz; run 7 HIST /home/box/sprint/data/sprint/trades_factory_hist_v1_2026-10-31.csv.gz, DEV /home/box/sprint/data/sprint/trades_factory_dev_v1_2026-10-31.csv.gz
+  bars SPY: HIST 2033 sessions (with warm-up), DEV 479
+  bars QQQ: HIST 2033 sessions (with warm-up), DEV 479
+  bars IWM: HIST 2033 sessions (with warm-up), DEV 479
+  VIXY daily: 2512 closes
+  shares DEV IWM 2024-08-01 (1/479 sessions)
+  shares DEV IWM 2026-06-30 (479/479 sessions)
+  shares DEV QQQ 2024-08-01 (1/479 sessions)
+  shares DEV QQQ 2026-06-30 (479/479 sessions)
+  shares DEV SPY 2024-08-01 (1/479 sessions)
+  shares DEV SPY 2026-06-30 (479/479 sessions)
+  shares HIST IWM 2016-01-04 (1/2033 sessions)
+  shares HIST IWM 2017-12-27 (501/2033 sessions)
+  shares HIST IWM 2019-12-23 (1001/2033 sessions)
+  shares HIST IWM 2021-12-16 (1501/2033 sessions)
+  shares HIST IWM 2023-12-13 (2001/2033 sessions)
+  shares HIST IWM 2024-01-31 (2033/2033 sessions)
+  shares HIST QQQ 2016-01-04 (1/2033 sessions)
+  shares HIST QQQ 2017-12-27 (501/2033 sessions)
+  shares HIST QQQ 2019-12-23 (1001/2033 sessions)
+  shares HIST QQQ 2021-12-16 (1501/2033 sessions)
+  shares HIST QQQ 2023-12-13 (2001/2033 sessions)
+  shares HIST QQQ 2024-01-31 (2033/2033 sessions)
+  shares HIST SPY 2016-01-04 (1/2033 sessions)
+  shares HIST SPY 2017-12-27 (501/2033 sessions)
+  shares HIST SPY 2019-12-23 (1001/2033 sessions)
+  shares HIST SPY 2021-12-16 (1501/2033 sessions)
+  shares HIST SPY 2023-12-13 (2001/2033 sessions)
+  shares HIST SPY 2024-01-31 (2033/2033 sessions)
+shares done in 69s: 286860 trades -> /home/box/sprint/data/sprint/trades_round8_shares_2026-11-01.csv.gz
+  option pass HIST: MODELED (BS, calibrated IV); calibration /home/box/sprint/data/sprint/calib_modeled.json (sha256 4d50070991c1); d40-55t45|C <- d40-55t45|C x0.831; d40-55t45|P <- d40-55t45|P x0.956; d55-75t65|C <- d55-75t65|C x0.821; d55-75t65|P <- d55-75t65|P x1.025; n1d40-55t45|C <- n1d40-55t45|C x0.684; n1d40-55t45|P <- d40-55t45|P (fallback for n1d40-55t45|P) x0.956; n1d55-75t65|C <- d55-75t65|C (fallback for n1d55-75t65|C) x0.821; n1d55-75t65|P <- d55-75t65|P (fallback for n1d55-75t65|P) x1.025
+  option pass modeled IWM 2016-01-04 (1/2033 sessions, 0s)
+  option pass modeled IWM 2016-12-29 (251/2033 sessions, 43s)
+  option pass modeled IWM 2017-12-27 (501/2033 sessions, 85s)
+  option pass modeled IWM 2018-12-26 (751/2033 sessions, 127s)
+  option pass modeled IWM 2019-12-23 (1001/2033 sessions, 170s)
+  option pass modeled IWM 2020-12-18 (1251/2033 sessions, 211s)
+  option pass modeled IWM 2021-12-16 (1501/2033 sessions, 254s)
+  option pass modeled IWM 2022-12-14 (1751/2033 sessions, 298s)
+  option pass modeled IWM 2023-12-13 (2001/2033 sessions, 341s)
+  option pass modeled IWM 2024-01-31 (2033/2033 sessions, 346s)
+  option pass modeled QQQ 2016-01-04 (1/2033 sessions, 346s)
+  option pass modeled QQQ 2016-12-29 (251/2033 sessions, 387s)
+  option pass modeled QQQ 2017-12-27 (501/2033 sessions, 430s)
+  option pass modeled QQQ 2018-12-26 (751/2033 sessions, 474s)
+  option pass modeled QQQ 2019-12-23 (1001/2033 sessions, 518s)
+  option pass modeled QQQ 2020-12-18 (1251/2033 sessions, 562s)
+  option pass modeled QQQ 2021-12-16 (1501/2033 sessions, 608s)
+  option pass modeled QQQ 2022-12-14 (1751/2033 sessions, 656s)
+  option pass modeled QQQ 2023-12-13 (2001/2033 sessions, 704s)
+  option pass modeled QQQ 2024-01-31 (2033/2033 sessions, 711s)
+  option pass modeled SPY 2016-01-04 (1/2033 sessions, 711s)
+  option pass modeled SPY 2016-12-29 (251/2033 sessions, 753s)
+  option pass modeled SPY 2017-12-27 (501/2033 sessions, 797s)
+  option pass modeled SPY 2018-12-26 (751/2033 sessions, 844s)
+  option pass modeled SPY 2019-12-23 (1001/2033 sessions, 891s)
+  option pass modeled SPY 2020-12-18 (1251/2033 sessions, 938s)
+  option pass modeled SPY 2021-12-16 (1501/2033 sessions, 986s)
+  option pass modeled SPY 2022-12-14 (1751/2033 sessions, 1036s)
+  option pass modeled SPY 2023-12-13 (2001/2033 sessions, 1084s)
+  option pass modeled SPY 2024-01-31 (2033/2033 sessions, 1090s)
+option pass HIST (MODELED) done in 1106s: 2694779 trades -> /home/box/sprint/data/sprint/trades_round8_options_hist_2026-11-01.csv.gz
+  option pass real IWM 2024-08-01 (1/479 sessions, 0s)
+  option pass real IWM 2025-08-01 (251/479 sessions, 42s)
+  option pass real IWM 2026-06-30 (479/479 sessions, 81s)
+  option pass real QQQ 2024-08-01 (1/479 sessions, 81s)
+  option pass real QQQ 2025-08-01 (251/479 sessions, 132s)
+  option pass real QQQ 2026-06-30 (479/479 sessions, 181s)
+  option pass real SPY 2024-08-01 (1/479 sessions, 181s)
+  option pass real SPY 2025-08-01 (251/479 sessions, 231s)
+  option pass real SPY 2026-06-30 (479/479 sessions, 280s)
+option pass DEV (REAL) done in 285s: 859318 trades -> /home/box/sprint/data/sprint/trades_round8_options_dev_2026-11-01.csv.gz
+A noise_sh     primary fail long-only fail (n 7005, exp $1.39, corr FIN-H 0.212) [BACKTEST, shares]
+A last30       primary fail long-only fail (n 7461, exp $0.05, corr FIN-H 0.029) [BACKTEST, shares]
+A gapfade_vix  primary fail long-only fail (n 486, exp $-3.91, corr FIN-H 0.044) [BACKTEST, shares]
+A-opt aopt_noise_sh_d55      fail DEV n 1181 exp $-6.45 PF 0.887 [BACKTEST, REAL]
+A-opt aopt_noise_sh_n1d55    fail DEV n 1200 exp $-14.55 PF 0.752 [BACKTEST, REAL]
+A3    a3_gapfade_vix_d55     PASS DEV n 113 exp $106.42 PF 1.905 [BACKTEST, REAL]
+A3    a3_gapfade_vix_n1d55   PASS DEV n 89 exp $80.70 PF 1.707 [BACKTEST, REAL]
+B2 otm_c_1030   PASS DEV PASS 2018-2024 PASS [BACKTEST, REAL / MODELED]
+B2 otm_c_1100   PASS DEV PASS 2018-2024 PASS [BACKTEST, REAL / MODELED]
+B2 otm_c_1200   PASS DEV PASS 2018-2024 PASS [BACKTEST, REAL / MODELED]
+B3 newhigh_c     PASS [BACKTEST, MODELED / REAL]
+B4 b4_d03_i       PASS steadier than FIN-H: no (DEV n 485, PF 2.352) [BACKTEST, MODELED / REAL]
+B4 b4_d03_ii      fail steadier than FIN-H: no (DEV n 485, PF 2.943) [BACKTEST, MODELED / REAL]
+B4 b4_d03_iii     fail steadier than FIN-H: no (DEV n 485, PF 0.176) [BACKTEST, MODELED / REAL]
+B4 b4_d03_iv      fail steadier than FIN-H: no (DEV n 485, PF 0.489) [BACKTEST, MODELED / REAL]
+B4 b4_n1d03_i     fail steadier than FIN-H: no (DEV n 293, PF 3.032) [BACKTEST, MODELED / REAL]
+B4 b4_n1d03_ii    fail steadier than FIN-H: no (DEV n 293, PF 3.405) [BACKTEST, MODELED / REAL]
+B4 b4_n1d03_iii   fail steadier than FIN-H: no (DEV n 293, PF 0.208) [BACKTEST, MODELED / REAL]
+B4 b4_n1d03_iv    fail steadier than FIN-H: no (DEV n 293, PF 0.829) [BACKTEST, MODELED / REAL]
+D shares ind_rsi              fail long-only fail [BACKTEST, shares]
+D shares ind_bb               fail long-only fail [BACKTEST, shares]
+D shares ind_ema              fail long-only fail [BACKTEST, shares]
+D shares ind_macd             fail long-only fail [BACKTEST, shares]
+D shares conf_level_rsi       fail long-only fail [BACKTEST, shares]
+D shares conf_trend_pullback  fail long-only fail [BACKTEST, shares]
+D opt d1_ind_rsi_d40               chosen s50_tnone  fail     signal exit fail [BACKTEST, MODELED / REAL]
+D opt d1_ind_rsi_n1d40             chosen s50_tnone  fail     signal exit fail [BACKTEST, MODELED / REAL]
+D opt d2_ind_bb_d40                chosen s50_t50    fail     signal exit fail [BACKTEST, MODELED / REAL]
+D opt d2_ind_bb_n1d40              chosen s50_t50    fail     signal exit fail [BACKTEST, MODELED / REAL]
+D opt d3_ind_ema_d40               chosen s50_tnone  fail     signal exit fail [BACKTEST, MODELED / REAL]
+D opt d3_ind_ema_n1d40             chosen s50_tnone  fail     signal exit fail [BACKTEST, MODELED / REAL]
+D opt d4_ind_macd_d40              chosen s30_tnone  fail     signal exit fail [BACKTEST, MODELED / REAL]
+D opt d4_ind_macd_n1d40            chosen s50_t50    fail     signal exit fail [BACKTEST, MODELED / REAL]
+D opt d5_conf_level_rsi_d40        chosen s50_t50    fail     signal exit fail [BACKTEST, MODELED / REAL]
+D opt d5_conf_level_rsi_n1d40      chosen s50_tnone  fail     signal exit fail [BACKTEST, MODELED / REAL]
+D opt d6_conf_trend_pullback_d40   chosen s50_tnone  fail     signal exit fail [BACKTEST, MODELED / REAL]
+D opt d6_conf_trend_pullback_n1d40 chosen s50_tnone  fail     signal exit fail [BACKTEST, MODELED / REAL]
+book 2018-01-02..2024-01-31 (option sleeves MODELED, shares real): total $83936.62, per year $13824.86, max DD $-4019.18, months green 39/73 [BACKTEST]
+book 2024-08-01..2026-06-30 DEV, REAL: total $51338.82, per year $27009.15, max DD $-7651.56, months green 8/23 [BACKTEST]
+book mixed: modeled 2018-2024 options + real 2024-2026 options (shares real throughout): total $135275.44, per year $16968.35, max DD $-7651.56, months green 47/96 [BACKTEST]
+WARNING: 7190 run-7 sleeve trades were written before the round-8 features (B1); re-stamped from cached bars (P/L unchanged).
+round 8 done in 1511s
+report: /home/box/sprint/data/sprint/round8_2026-11-01.md
+json:   /home/box/sprint/data/sprint/round8_2026-11-01.json

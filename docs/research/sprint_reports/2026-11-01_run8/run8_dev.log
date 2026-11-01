@@ -1,0 +1,49 @@
+sprint 2026-11-01.sprint3: spec round8_dev_v1 (9 runs, sha256 76dfcdfbb3af), period DEV 2024-08-01..2026-06-30, symbols IWM,QQQ,SPY, MODELED-SPREAD: half-spread = 2% of premium (SPY/QQQ/IWM), 10% single stocks, floor $0.005
+  IWM 2024-08-01 (1/479 sessions, 2s)
+  IWM 2024-10-11 (51/479 sessions, 4s)
+  IWM 2024-12-23 (101/479 sessions, 5s)
+  IWM 2025-03-10 (151/479 sessions, 6s)
+  IWM 2025-05-20 (201/479 sessions, 7s)
+  IWM 2025-08-01 (251/479 sessions, 9s)
+  IWM 2025-10-13 (301/479 sessions, 10s)
+  IWM 2025-12-23 (351/479 sessions, 11s)
+  IWM 2026-03-09 (401/479 sessions, 13s)
+  IWM 2026-05-19 (451/479 sessions, 14s)
+  IWM 2026-06-30 (479/479 sessions, 15s)
+  QQQ 2024-08-01 (1/479 sessions, 18s)
+  QQQ 2024-10-11 (51/479 sessions, 20s)
+  QQQ 2024-12-23 (101/479 sessions, 22s)
+  QQQ 2025-03-10 (151/479 sessions, 25s)
+  QQQ 2025-05-20 (201/479 sessions, 27s)
+  QQQ 2025-08-01 (251/479 sessions, 30s)
+  QQQ 2025-10-13 (301/479 sessions, 32s)
+  QQQ 2025-12-23 (351/479 sessions, 35s)
+  QQQ 2026-03-09 (401/479 sessions, 38s)
+  QQQ 2026-05-19 (451/479 sessions, 40s)
+  QQQ 2026-06-30 (479/479 sessions, 43s)
+  SPY 2024-08-01 (1/479 sessions, 45s)
+  SPY 2024-10-11 (51/479 sessions, 47s)
+  SPY 2024-12-23 (101/479 sessions, 50s)
+  SPY 2025-03-10 (151/479 sessions, 53s)
+  SPY 2025-05-20 (201/479 sessions, 56s)
+  SPY 2025-08-01 (251/479 sessions, 59s)
+  SPY 2025-10-13 (301/479 sessions, 62s)
+  SPY 2025-12-23 (351/479 sessions, 65s)
+  SPY 2026-03-09 (401/479 sessions, 68s)
+  SPY 2026-05-19 (451/479 sessions, 71s)
+  SPY 2026-06-30 (479/479 sessions, 73s)
+pass 1 done in 73s
+run                config                                               n  win%    exp$    PF  PF2x   maxDD$
+round8_dev_v1-007  SPY+QQQ+IWM time_1100 C fixed 50/9900 desk n1d03   293    28   18.46  3.40  2.81     -298
+round8_dev_v1-006  SPY+QQQ+IWM time_1100 C fixed 95/9900 desk n1d03   293    29   17.58  3.03  2.70     -359
+round8_dev_v1-003  SPY+QQQ+IWM time_1100 C fixed 50/9900 desk d03-1   485     7   13.35  2.94  2.27     -957
+round8_dev_v1-002  SPY+QQQ+IWM time_1100 C fixed 95/9900 desk d03-1   485    12   13.22  2.35  2.10    -1278
+round8_dev_v1-001  SPY+QQQ+IWM newhigh_c C fixed 95/9900 desk d03-1   203    13   11.97  2.55  2.23     -490
+round8_dev_v1-009  SPY+QQQ+IWM time_1100 C fixed 50/100 desk n1d03-   293    33   -1.26  0.83  0.65     -448
+round8_dev_v1-004  SPY+QQQ+IWM time_1100 C fixed 50/9900 tr:gb50 de   485    29   -2.64  0.18  0.05    -1299
+round8_dev_v1-008  SPY+QQQ+IWM time_1100 C fixed 50/9900 tr:gb50 de   293    39   -2.67  0.21  0.04     -802
+round8_dev_v1-005  SPY+QQQ+IWM time_1100 C fixed 50/100 desk d03-12   485    26   -2.78  0.49  0.34    -1387
+
+run log: /home/box/sprint/data/sprint/runs_grok-bot-vm-510907181.csv
+report:  /home/box/sprint/data/sprint/report_2026-11-01_round8_dev_v1.md
+trades:  /home/box/sprint/data/sprint/trades_round8_dev_v1_2026-11-01.csv.gz
