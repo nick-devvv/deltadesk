@@ -34,6 +34,18 @@ and its PF is within +/-35% of the real PF. A strategy that fails has its HIST n
 Idealizations (stated in every modeled report): a 0DTE contract every session (before Nov 2022 SPY/QQQ/IWM did not list
 one every weekday); a flat smile and no intraday IV change; a price every minute; the 2% half-spread may be optimistic
 for 2016-2019.
+
+Next-expiry modeled tapes (round 8, SPRINT_PLAN Addendum 10.1/10.2: the HIST twins of n1d03-12t07, n1d40-55t45 and
+n1d55-75t65 are MODELED and labeled NOT VALIDATED). The same model with the expiry at 16:00 of the NEXT NYSE session after
+the day (`next_session`, from the sprint calendar), in line with the 0DTE model's "an expiry every session" idealization;
+time to expiry = minutes to 16:00 today + 1440 x the calendar days to that session, exactly the convention the contract
+picker (sprint/contracts.py) and the simulator use for real next-expiry contracts, so the picker's BS-EST IV recovers the
+modeled IV. Bars are built only through today's close (13:00 on early-close days). The multiplier is run 4's calibration
+key for the rule and side when it exists and has enough trades (n1d40-55t45|C does); otherwise (n1d40-55t45|P,
+n1d03-12t07|C, n1d55-75t65|C/P have no key in run 4's file) the key of the same delta band on 0DTE ("d..." without the
+"n1" prefix) is used and labeled as a fallback (`multiplier_for`). Literal reading: Amendment 10 prices HIST options with
+run 4's calibration, which has no key for most next-expiry rules; refusing would leave the pre-registered HIST twins
+without numbers.
 """
 import json
 import math
@@ -106,15 +118,33 @@ def _cents(x):
     return np.maximum(np.round(x, 2), TICK)
 
 
-class ModeledDay:
-    """Modeled 0DTE tapes for one stock-only DayContext, built on demand and cached per (strike, right, iv)."""
+def next_session(day):
+    """The next NYSE session after `day` (weekday, not a holiday of the sprint calendar)."""
+    from datetime import timedelta
+    from .periods import holidays
+    hol = holidays()
+    d = day + timedelta(days=1)
+    while d.weekday() >= 5 or d.isoformat() in hol:
+        d += timedelta(days=1)
+    return d
 
-    def __init__(self, ctx):
+
+class ModeledDay:
+    """Modeled 0DTE tapes for one stock-only DayContext, built on demand and cached per (strike, right, iv).
+    expiry: a later expiry date (next-expiry tapes; see the module docstring), default the day itself (0DTE)."""
+
+    def __init__(self, ctx, expiry=None):
         self.ctx = ctx
         self.close_n = ctx.close_idx
+        self.expiry = expiry if expiry is not None and expiry > ctx.day else ctx.day
         i = np.arange(N)
-        self.Ta = np.maximum(self.close_n - i, bs.MIN_T_MIN) / bs.YEAR_MIN       # minutes left at the bar's start
-        self.Tb = np.maximum(self.close_n - i - 1, bs.MIN_T_MIN) / bs.YEAR_MIN   # ... at the bar's end
+        if self.expiry > ctx.day:                                                # to 16:00 + calendar days (picker's convention)
+            extra = 1440 * (self.expiry - ctx.day).days
+            self.Ta = np.maximum(N - i + extra, bs.MIN_T_MIN) / bs.YEAR_MIN
+            self.Tb = np.maximum(N - i - 1 + extra, bs.MIN_T_MIN) / bs.YEAR_MIN
+        else:
+            self.Ta = np.maximum(self.close_n - i, bs.MIN_T_MIN) / bs.YEAR_MIN   # minutes left at the bar's start
+            self.Tb = np.maximum(self.close_n - i - 1, bs.MIN_T_MIN) / bs.YEAR_MIN   # ... at the bar's end
         o, h, l, c = (np.asarray(x, float) for x in (ctx.o, ctx.h, ctx.l, ctx.c))
         self.ok = ~(np.isnan(o) | np.isnan(h) | np.isnan(l) | np.isnan(c)) & (i < self.close_n)
         fill = lambda x: np.where(self.ok, x, 1.0)
@@ -122,7 +152,7 @@ class ModeledDay:
         self._cache = {}
 
     def symbol(self, K, right):
-        return f"{self.ctx.sym}{self.ctx.day:%y%m%d}{right}{int(round(K * 1000)):08d}"
+        return f"{self.ctx.sym}{self.expiry:%y%m%d}{right}{int(round(K * 1000)):08d}"
 
     def _build(self, Ks, right, iv):
         """Tapes for several strikes at once (one array call per price series; the same formula per element)."""
@@ -141,7 +171,7 @@ class ModeledDay:
         out = []
         for j, k in enumerate(np.asarray(Ks, float)):
             t = OptionTape(self.symbol(k, right), right, k, o[j], h[j], lo[j], c[j], vol)
-            t.expiry = self.ctx.day
+            t.expiry = self.expiry
             t.modeled = True
             self._cache[(float(k), right, round(float(iv), 10))] = t
             out.append(t)
@@ -241,6 +271,19 @@ def multiplier(calib, rule, side):
     if not s.get("ok"):
         raise ValueError(f"MODELED tapes: calibration for {k} has only {s['n']} trades (needs {calib.get('min_n', MIN_CALIB)})")
     return float(s["median"])
+
+
+def multiplier_for(calib, rule, side):
+    """(multiplier, calibration key used) for a contract rule and side. Next-expiry rules ("n1...") use their own key when
+    run 4's calibration has it with enough trades, else the same delta band's 0DTE key (labeled fallback; see the module
+    docstring). Every other rule is exactly `multiplier` (a missing or thin key still refuses)."""
+    try:
+        return multiplier(calib, rule, side), calib_key(rule, side)
+    except ValueError:
+        if not str(rule).startswith("n1"):
+            raise
+    base = str(rule)[2:]
+    return multiplier(calib, base, side), calib_key(base, side) + " (fallback for " + calib_key(rule, side) + ")"
 
 
 def load_calib(path):

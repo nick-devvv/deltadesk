@@ -45,7 +45,11 @@ VALID = {"stop": {"premium", "level", "noise", "fixed"}, "mechanics": {"desk", "
                    "gb50", "gb60", "vwap", "ema9"}, "side": {"both", "C", "P"},
          "filters": {"after14", "chop2", "trend_only", "noise_trend", "sma20_side", "sma20_side_1pct", "skip_fomc", "skip_fomc_cpi",
                      "vixy_falling", "gap_side_075", "vixy_pctl_le40", "vixy_pctl_ge60", "vixy_not_rising",
-                     "vixy_rising_1pct", "day_up", "day_down", "wed_fri", "skip_opex"}, "risk": {"none", "bot"}}
+                     "vixy_rising_1pct", "day_up", "day_down", "wed_fri", "skip_opex", "rvol_ge106"}, "risk": {"none", "bot"}}
+# Round 8 (SPRINT_PLAN Addendum 10.1, B4 exit iii): a fixed stop may carry a giveback trail ("fixed -50% stop plus trail gb50").
+# sim.simulate already applies both (the higher premium trigger wins); only this validator refused the pair before. Desk
+# mechanics only; every other trail or take-profit with the fixed stop is still refused.
+FIXED_TRAILS = {"none", "gb20", "gb30", "gb40", "gb50", "gb60"}
 
 
 def label_for(tag):
@@ -97,8 +101,9 @@ def validate(runs):
         if x.stop == "fixed":
             if not (x.fixed_stop and x.fixed_target and 0 < x.fixed_stop < 1 and 0 < x.fixed_target <= 100):
                 raise ValueError(f"{r['run_id']}: the fixed stop needs fixed_stop in (0, 1) and fixed_target in (0, 100]")
-            if x.tp != "none" or x.trail != "none":
-                raise ValueError(f"{r['run_id']}: the fixed stop/target exit takes no other take-profit or trail")
+            if x.tp != "none" or x.trail not in FIXED_TRAILS or (x.trail != "none" and x.mechanics != "desk"):
+                raise ValueError(f"{r['run_id']}: the fixed stop/target exit takes no other take-profit or trail "
+                                 "(only a giveback trail with desk mechanics)")
         elif x.fixed_stop or x.fixed_target or x.mechanics != "desk":
             raise ValueError(f"{r['run_id']}: fixed_stop/fixed_target/mechanics need stop='fixed'")
 
@@ -173,10 +178,11 @@ def run_spec(spec_path, a=None, b=None, locked=None, frozen=None, data_root=None
         cp = Path(calib_path) if calib_path else out_dir / "calib_modeled.json"
         calib = MD.load_calib(cp)
         calib["_file"], calib["_sha"] = str(cp), periods.sha256_file(cp)[:12]
-        mods = {}
+        mods, mod_src = {}, {}
         for r in runs:
             for sd in (("C", "P") if r["side"] == "both" else (r["side"],)):
-                mods[MD.calib_key(r["exit"].contract, sd)] = MD.multiplier(calib, r["exit"].contract, sd)   # refuses thin keys
+                k = MD.calib_key(r["exit"].contract, sd)
+                mods[k], mod_src[k] = MD.multiplier_for(calib, r["exit"].contract, sd)   # refuses thin keys (n1: 0DTE fallback)
         spread = SP.SpreadModel(pct=float(spread_pct)) if spread_pct is not None else SP.SpreadModel()
     else:
         spread = SP.SpreadModel(pct=float(spread_pct)) if spread_pct is not None else \
@@ -185,7 +191,7 @@ def run_spec(spec_path, a=None, b=None, locked=None, frozen=None, data_root=None
         f"{','.join(syms)}, {spread.describe()}")
     if mods is not None:
         log(f"  tapes: {MD.LABEL}; calibration {calib['_file']} (sha256 {calib['_sha']}), multipliers "
-            + ", ".join(f"{k} x{v:.3f}" for k, v in sorted(mods.items()))
+            + ", ".join(f"{k} x{v:.3f}" + (f" [{mod_src[k]}]" if mod_src[k] != k else "") for k, v in sorted(mods.items()))
             + (f"; history from {warm_from} (indicators only)" if warm_from else ""))
     t0 = time.time()
     writer = engine.TradeWriter(out_dir / f"trades_{spec['spec_id']}{suffix}_{today}.csv.gz")
@@ -332,6 +338,10 @@ def run_spec(spec_path, a=None, b=None, locked=None, frozen=None, data_root=None
                          + ", ".join(f"{MD.calib_key(r['exit'].contract, sd)} {mods[MD.calib_key(r['exit'].contract, sd)]:.3f}"
                                      for sd in (("C", "P") if r["side"] == "both" else (r["side"],)))
                          + f" (calib {calib['_sha']}); 0DTE priced every session")
+            if contracts.is_next(r["exit"].contract):
+                notes.append("next expiry MODELED at the next NYSE session, NOT VALIDATED against real prices; multiplier "
+                             + ", ".join(mod_src[MD.calib_key(r["exit"].contract, sd)]
+                                         for sd in (("C", "P") if r["side"] == "both" else (r["side"],))))
             if (extra.get("validation") or {}).get(r["block"]):
                 v = extra["validation"][r["block"]]
                 notes.append(f"validation vs {v['real_run']}: {'PASS' if v['pass'] else 'FAIL'} (PF ratio {v['pf_ratio']})")
@@ -375,8 +385,8 @@ def _lab(r):
     x = r["exit"]
     if x.stop == "fixed":
         f = "+".join(r["filters"])
-        return (f"{'+'.join(r['symbols'])} {r['entry']} {r['side']} fixed {x.fixed_stop * 100:g}/{x.fixed_target * 100:g} {x.mechanics} "
-                f"{x.contract}" + (f" {f}" if f else ""))
+        return (f"{'+'.join(r['symbols'])} {r['entry']} {r['side']} fixed {x.fixed_stop * 100:g}/{x.fixed_target * 100:g}"
+                + (f" tr:{x.trail}" if x.trail != "none" else "") + f" {x.mechanics} {x.contract}" + (f" {f}" if f else ""))
     s = f"{r['entry']} {x.stop[:4]} tp{x.tp}"
     if x.tp in ("B", "C", "D", "E"):
         s += f"/{x.tp_buffer}"

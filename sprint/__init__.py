@@ -23,5 +23,12 @@ Modules:
   modeled   MODELED (BS, calibrated IV) 0DTE tapes from stock bars, the IV proxy, calibration and validation math
             (HIST = 2016-01-04..2024-01-31, SPRINT_PLAN Amendment 5)
   underlying  Layer 1 of the HIST check: the same entries and filters on stock bars only (no option model)
+  factory   the 10-year strategy factory (Amendment 9)
+Round 8 (SPRINT_PLAN Amendment 10 + Addenda 10.1-10.3):
+  shares    Part A (noise_sh, last30, gapfade_vix) and the Part D share simulators, the pass bar and steadiness metrics
+  ind5      5-minute bars, RSI / Bollinger / EMA / MACD / ATR, the D1-D6 decision rules
+  optpass   the option twins evaluated in one pass per entry (D grids + signal exit, random-side twins, A-opt, A3 twins)
+  round8    the readouts (Part A, A-opt, B2-B4, Part D, the book, trials, deflated Sharpe) and the report
 """
-VERSION = "2026-10-31.sprint2"      # sprint2: HIST period, modeled tapes, Layer 1 (Amendment 5); real-tape runs unchanged
+VERSION = "2026-11-01.sprint3"      # sprint3: round 8 (modeled next-expiry tapes, rvol_ge106, fixed stop + giveback trail,
+                                    # newhigh_c); every earlier run type is unchanged. sprint2: HIST period, modeled tapes, Layer 1

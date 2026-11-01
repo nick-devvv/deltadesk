@@ -17,13 +17,28 @@ by +1 for calls and -1 for puts, so a positive number always means "in the trade
                    in-sample look at v2-034 found "prior day up > 0.3%" days losing; the learner tests it walk-forward)
   f_event          1 on an FOMC statement or CPI release day, 0 otherwise, empty if the calendar doesn't cover the date
   f_vixy_pctl      VIX proxy: VIXY's percentile among 252 daily closes up to the prior session (empty when not loaded)
+Round 8, B1 (SPRINT_PLAN Amendment 10, pre-registered 2026-11-01 before any round-8 run), appended at the END of FEATURES so
+every earlier column keeps its position; each is known at the end of the decision bar j:
+  f_ret5d          side-signed % return over the 5 sessions to the prior close: prior close / the close 5 sessions before it - 1
+  f_dd20           prior close vs the highest close of the 20 prior sessions (the prior session included), in % (<= 0)
+  f_vixy_chg1      VIXY's prior-session close / the VIXY close before it - 1, in % (VIXY split-adjusted daily file)
+  f_vixy_z20       VIXY's prior-session close, z vs the 20 VIXY closes before it (their mean and sample sd, ddof 1)
+  f_or30_atr       the 09:30-10:00 range (bars 0..29, high minus low) / daily ATR(14); empty before the bar finishing 10:00
+  f_gap_abs        |gap| in %: |today's open / prior close - 1| x 100
+  f_hod            1 if the decision bar's close is at or above every earlier high of the session (bars 0..j-1), else 0
+A feature without enough history is empty, never estimated. `restamp` fills only these seven on trade rows written
+before they existed (run 7's factory files), from cached bars, without touching anything else on the row.
+Note: sprint/learn.py's default feature list is FEATURES, so a learner now also reads the seven new columns when a trade file
+has them; on older trade files they are empty and learn._prep_fit drops all-empty columns, so older results are unchanged.
 """
 import math
 
 import numpy as np
 
-FEATURES = ["f_minute", "f_weekday", "f_adx", "f_er30", "f_vwap_x60", "f_overlap30", "f_range_atr", "f_rvol", "f_trend_votes",
-            "f_di", "f_noise_true", "f_gap", "f_day_ret", "f_vwap_dist", "f_prev_range", "f_prev_ret", "f_event", "f_vixy_pctl"]
+FEATURES18 = ["f_minute", "f_weekday", "f_adx", "f_er30", "f_vwap_x60", "f_overlap30", "f_range_atr", "f_rvol", "f_trend_votes",
+              "f_di", "f_noise_true", "f_gap", "f_day_ret", "f_vwap_dist", "f_prev_range", "f_prev_ret", "f_event", "f_vixy_pctl"]
+NEW7 = ["f_ret5d", "f_dd20", "f_vixy_chg1", "f_vixy_z20", "f_or30_atr", "f_gap_abs", "f_hod"]      # round 8, B1
+FEATURES = FEATURES18 + NEW7
 
 
 def _num(x, nd=4):
@@ -65,7 +80,134 @@ def entry_features(ctx, j, side):
     if vd is not None and prev:
         from . import data
         out["f_vixy_pctl"] = _num(data.percentile_rank(vd, prev["day"]))
+    out.update(new_features(ctx, j, side))
     return out
+
+
+# ---------------------------------------------------------------- round 8, B1
+_VX = {}
+
+
+def _vix_arrays(vd):
+    """(position by date, closes array) of a VIXY daily close series (cached per object; the cache holds the object so
+    its id is never reused while cached)."""
+    hit = _VX.get(id(vd))
+    if hit is not None and hit[0] is vd:
+        return hit[1], hit[2]
+    pos = {d: k for k, d in enumerate(vd.index)}
+    vals = vd.to_numpy(float)
+    _VX[id(vd)] = (vd, pos, vals)
+    return pos, vals
+
+
+def vixy_prior(vd, prior_day, n=20):
+    """(close on prior_day, % change vs the close before it, z vs the n closes before it: mean and sample sd) from VIXY's
+    daily closes; None for any value without enough history. Nothing after prior_day is read."""
+    if vd is None or prior_day is None:
+        return None, None, None
+    pos, vals = _vix_arrays(vd)
+    k = pos.get(prior_day)
+    if k is None:
+        return None, None, None
+    x = float(vals[k])
+    chg = (x / vals[k - 1] - 1) * 100 if k >= 1 and vals[k - 1] > 0 else None
+    z = None
+    if k >= n:
+        w = vals[k - n:k]
+        sd = float(np.std(w, ddof=1))
+        z = (x - float(np.mean(w))) / sd if sd > 0 else None
+    return x, chg, z
+
+
+def day_pos(series):
+    """{day: position in series.days} (cached on the series)."""
+    pos = series.__dict__.get("_dpos")
+    if pos is None or len(pos) != len(series.days):
+        pos = {d: k for k, d in enumerate(series.days)}
+        series.__dict__["_dpos"] = pos
+    return pos
+
+
+def _datr(series, day):
+    cache = series.__dict__.setdefault("_datr_cache", {})
+    if day not in cache:
+        cache[day] = series.daily_atr(day)
+    return cache[day]
+
+
+def new_features(ctx, j, side):
+    """The seven round-8 features at the end of decision bar j (SPRINT_PLAN Amendment 10, B1)."""
+    sg = 1.0 if side == "C" else -1.0
+    s, d = ctx.series, ctx.day
+    out = dict.fromkeys(NEW7)
+    k = day_pos(s).get(d)
+    closes = s.daily["close"].to_numpy(float)[max(0, k - 20):k] if k else np.array([])
+    if len(closes) >= 6:
+        out["f_ret5d"] = _num(sg * (closes[-1] / closes[-6] - 1) * 100)
+    if len(closes) >= 20:
+        out["f_dd20"] = _num((closes[-1] / closes.max() - 1) * 100)
+    prev_day = s.days[k - 1] if k else None
+    vd = ctx.aux.get("VIXY_D") if ctx.aux else None
+    if vd is not None and prev_day is not None:
+        _x, chg, z = vixy_prior(vd, prev_day, 20)
+        out["f_vixy_chg1"], out["f_vixy_z20"] = _num(chg), _num(z)
+    if j >= 29:
+        hi, lo = ctx.h[:30], ctx.l[:30]
+        datr = _datr(s, d)
+        if datr and not np.isnan(hi).all():
+            out["f_or30_atr"] = _num((float(np.nanmax(hi)) - float(np.nanmin(lo))) / datr)
+    o0 = float(ctx.o[0])
+    if len(closes) and not math.isnan(o0):
+        out["f_gap_abs"] = _num(abs(o0 / closes[-1] - 1) * 100)
+    cj = float(ctx.c[j]) if 0 <= j < len(ctx.c) else math.nan
+    if not math.isnan(cj):
+        earlier = ctx.h[:j]
+        out["f_hod"] = 1 if (j == 0 or np.isnan(earlier).all() or cj >= float(np.nanmax(earlier))) else 0
+    return out
+
+
+def missing(r, names):
+    for k in names:
+        v = r.get(k)
+        if v is None or v == "" or (isinstance(v, float) and math.isnan(v)):
+            return True
+    return False
+
+
+def restamp(rows, series=None, aux=None, root=None, names=None):
+    """Fill the seven round-8 features (or `names`, a subset of NEW7) on rows that lack them, from cached bars, at each
+    trade's signal bar. series: {(src, symbol): data.Series} already loaded (src "HIST" or "DEV"); a missing one is loaded
+    from `root` (HIST with its warm-up from periods.WARMUP, DEV from its first day). Nothing else on a row changes (trade
+    P/L included). Returns the number of rows filled."""
+    from datetime import date
+    from . import data
+    from .periods import DEV, HIST, WARMUP
+    names = list(names or NEW7)
+    need = [r for r in rows if missing(r, names)]
+    if not need:
+        return 0
+    series = series if series is not None else {}
+    if aux is None:
+        aux = {"VIXY_D": data.read_daily("VIXY", root)}
+    ctxs = {}
+    n = 0
+    for r in need:
+        d = date.fromisoformat(str(r["day"])[:10])
+        src = r.get("_src") or ("HIST" if d <= HIST[1] else "DEV")
+        key = (src, r["symbol"])
+        if key not in series:
+            a, b = (WARMUP["HIST"], HIST[1]) if src == "HIST" else DEV
+            series[key] = data.Series(r["symbol"], data.read_stock(r["symbol"], a, b, root))
+        ser = series[key]
+        if d not in ser.rth:
+            continue
+        ck = (key, d)
+        if ck not in ctxs:
+            ctxs[ck] = data.DayContext(ser, d, {}, None, aux=aux)
+        f = new_features(ctxs[ck], int(float(r["signal_idx"])), r["side"])
+        r.update({k: f[k] for k in names})
+        n += 1
+    return n
 
 
 def matrix(rows, names=None):

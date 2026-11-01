@@ -28,6 +28,9 @@ Filters (entry-level, pre-registered in SPRINT_PLAN "Day type"):
                VIXY decays over time (futures roll), so this percentile runs lower than a true IV rank: a labeled proxy.
   vixy_not_rising / vixy_rising_1pct   VIXY's last finished 1-minute close at the decision is <= its prior close x 1.01
                (VIX not rising) / >= its prior close x 1.01 (rising at least 1%). PROXY: VIXY.
+  rvol_ge106   (round 8, SPRINT_PLAN Addendum 10.1, B4) FIN-H's frozen cut as a pre-entry filter: the relative volume at the
+               signal bar (daytype rvol, the value stamped as f_rvol) is at least 1.06; unknown rvol is not traded. For a
+               once-a-day entry (time_1100) this equals filtering the unfiltered run's trades on f_rvol >= 1.06 (run 7).
 Several filters on one run must all pass (oa_crosscheck_v2's "calm" regime = vixy_pctl_le40 + vixy_not_rising +
 gap_side_075; the mirrored put regime = vixy_pctl_ge60 + vixy_rising_1pct).
 An event day outside the calendar's coverage is not traded by these filters (counted as "event calendar unknown").
@@ -37,6 +40,9 @@ prices every contract with Black-Scholes from the stock bars at IV = the day's I
 the run's contract rule and side, strikes built around the price at the decision bar; nothing else changes. Days without
 an IV proxy (fewer than 10 prior sessions) are skipped and counted. warm_from loads stock (and VIXY) history before the
 period for indicators only; trades are taken inside [a, b] only.
+Round 8 (Addendum 10.1): modeled tapes also price next-expiry rules ("n1..."), expiring at the next NYSE session, with
+modeled.multiplier_for (run 4's key when it exists, else the same band's 0DTE key, labeled); NOT VALIDATED against real
+prices. Real-tape runs and modeled 0DTE runs are unchanged.
 """
 import csv
 import gzip
@@ -184,6 +190,12 @@ def _filters_ok(r, ctx, sig, day_count):
         g = round(float(ctx.o[0]) / prev["close"] - 1, 10)        # exact at the 0.75% edge despite float noise
         if not ((0 < g <= 0.0075) if sig.side == "C" else (-0.0075 <= g < 0)):
             return "gap outside 0 to +/-0.75% for this side"
+    if "rvol_ge106" in fs:
+        rv = f.get("rvol")
+        if rv is None:
+            return "rvol unknown (rvol_ge106)"
+        if not rv >= 1.06:
+            return "rvol below 1.06 (rvol_ge106)"
     return None
 
 
@@ -236,10 +248,8 @@ def run_pass(runs, a, b, root=None, spread=None, progress=None, writer=None, lim
     mult = {}
     if modeled:
         for r in runs:
-            if contracts.is_next(r["exit"].contract):
-                raise ValueError(f"{r['run_id']}: MODELED tapes price 0DTE only, not {r['exit'].contract}")
             for sd in (("C", "P") if r["side"] == "both" else (r["side"],)):
-                mult[(r["exit"].contract, sd)] = MD.multiplier(calib, r["exit"].contract, sd)
+                mult[(r["exit"].contract, sd)] = MD.multiplier_for(calib, r["exit"].contract, sd)[0]
     h0 = warm_from if warm_from is not None and warm_from < a else a
     res = {r["run_id"]: {"trades": [], "skips": Counter(), "signals": 0} for r in runs}
     sessions = {}
@@ -275,6 +285,7 @@ def run_pass(runs, a, b, root=None, spread=None, progress=None, writer=None, lim
             ctx = data.DayContext(series, day, tapes, spread, early_close=None if early_close is None else day.isoformat() in early_close,
                                   aux=aux, tapes_next=tnext)
             md = MD.ModeledDay(ctx) if modeled else None
+            md_next = None                                        # modeled next-expiry tapes, built when a run asks
             ivp = MD.iv_proxy(series, day) if modeled else None
             sig_cache, pick_cache = {}, {}
             for r in rs:
@@ -310,7 +321,13 @@ def run_pass(runs, a, b, root=None, spread=None, progress=None, writer=None, lim
                     pk = (sig.key, r["exit"].contract)
                     if pk not in pick_cache:
                         if modeled:                               # strikes around the price at the decision bar
-                            ctx.tapes = md.pool(float(ctx.c[sig.idx]), sig.side, ivp * mult[(r["exit"].contract, sig.side)])
+                            iv_m = ivp * mult[(r["exit"].contract, sig.side)]
+                            if nxt:
+                                if md_next is None:
+                                    md_next = MD.ModeledDay(ctx, expiry=MD.next_session(day))
+                                ctx.tapes_next = md_next.pool(float(ctx.c[sig.idx]), sig.side, iv_m)
+                            else:
+                                ctx.tapes = md.pool(float(ctx.c[sig.idx]), sig.side, iv_m)
                         pick_cache[pk] = contracts.pick(ctx, sig.side, sig.idx, r["exit"].contract)
                     tape, info = pick_cache[pk]
                     if tape is None:

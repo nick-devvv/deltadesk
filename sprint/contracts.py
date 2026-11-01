@@ -14,6 +14,9 @@ Next-expiry rules (setups_v2, pre-registered 2026-10-31): "n1d40-55t45" and "n1d
 from the NEXT listed expiry after the session (1 DTE for SPY/QQQ on most days; Friday -> Monday is 3 calendar days),
 bought and sold the same session like every sprint trade. BS-EST time to expiry = minutes to 16:00 today + 1440 x the
 calendar days to the expiry.
+Round 8 (SPRINT_PLAN Addendum 10.1, pre-registered 2026-11-01 before any round-8 run): "n1d03-12t07" (B4: FIN-H's far
+out-of-the-money band on the next expiry) and "n1d55-75t65" (A-opt: the noise ledger's band on the next expiry), the same
+way as n1d40-55t45: the next listed expiry after the session, BS-EST time including the calendar days to that expiry.
 Far out-of-the-money rules (otm_v1, pre-registered 2026-10-31): "d03-12t07" (|delta| 0.03-0.12, target 0.07) and
 "d06-15t10" (0.06-0.15, target 0.10): the deltas of Option Alpha's top-listed SPX/XSP lottery puts and calls (0.06-0.10).
 SPY/QQQ/IWM have $1 strikes, about 0.5 (SPY/QQQ) to 1 (IWM) standard deviations of the rest-of-day move apart at
@@ -28,8 +31,9 @@ from . import bs
 
 RULES = {"d40-55t45": (0.40, 0.55, 0.45), "d50-65t575": (0.50, 0.65, 0.575), "d55-75t65": (0.55, 0.75, 0.65),
          "d45-60t50": (0.45, 0.60, 0.50), "n1d40-55t45": (0.40, 0.55, 0.45), "n1d50-65t575": (0.50, 0.65, 0.575),
-         "d03-12t07": (0.03, 0.12, 0.07), "d06-15t10": (0.06, 0.15, 0.10)}
-NEXT = {"n1d40-55t45", "n1d50-65t575"}
+         "d03-12t07": (0.03, 0.12, 0.07), "d06-15t10": (0.06, 0.15, 0.10),
+         "n1d03-12t07": (0.03, 0.12, 0.07), "n1d55-75t65": (0.55, 0.75, 0.65)}          # round 8 (Addendum 10.1)
+NEXT = {"n1d40-55t45", "n1d50-65t575", "n1d03-12t07", "n1d55-75t65"}
 
 
 def is_next(rule):

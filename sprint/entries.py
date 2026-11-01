@@ -60,6 +60,13 @@ IMPLEMENTED
                   2026-11-01 before any run): the same rule on the bar that finishes at 10:00 (index 29), 12:00 (149),
                   13:00 (209) and 14:00 (269). No signal when that bar is missing or within 2 bars of the close (so no
                   13:00 or 14:00 signal on a 1:00 PM early-close day).
+  newhigh_c       (round 8, SPRINT_PLAN Amendment 10 B3 "wait for proof", pre-registered 2026-11-01 before any round-8 run;
+                  calls only) the FIRST finished bar with index 89-269 (finishing 11:00-14:00) whose close is strictly above
+                  every earlier high of the session (bars 0..i-1) AND whose relative volume at that bar (daytype rvol, the
+                  value stamped as f_rvol) is at least 1.06 (FIN-H's frozen cut). Both conditions qualify the same bar
+                  (literal reading: the first bar meeting all of them, not the first new high checked once). One signal per
+                  day and symbol; none within 2 bars of the close (early-close days stop at bar 207). invalid = none (the
+                  run uses a fixed premium exit: d03-12t07, -95% stop, all out 15:25).
   flush           Reversal after a flush, both sides. Calls: within the last 5 finished 1-minute bars the low fell at
                   least 1.5 x ATR(14, 5m) below the highest high of those 5 bars, that high came BEFORE the low (a drop),
                   the flush low is the session's low so far, and at least one of the 5 bars had volume >= 2x the mean of
@@ -348,6 +355,27 @@ def time_entry(ctx, side, idx, setup):
     return [Signal(setup, ctx.sym, ctx.day, s, idx, float(ctx.c[idx]), None, {}) for s in sides]
 
 
+# ---------------------------------------------------------------- round 8, B3: wait for proof (calls)
+NEWHIGH_FIRST, NEWHIGH_LAST, NEWHIGH_RVOL = 89, 269, 1.06
+
+
+def newhigh_c(ctx, side="both"):
+    if side not in ("both", "C"):
+        return []
+    dt = ctx.daytype()
+    for i in range(NEWHIGH_FIRST, min(NEWHIGH_LAST, ctx.close_idx - 3) + 1):
+        c = ctx.c[i]
+        if math.isnan(c):
+            continue
+        earlier = ctx.h[:i]
+        if np.isnan(earlier).all() or not c > float(np.nanmax(earlier)):
+            continue
+        rv = dt.features(i).get("rvol")
+        if rv is not None and rv >= NEWHIGH_RVOL:
+            return [Signal("newhigh_c", ctx.sym, ctx.day, "C", i, float(c), None, {"rvol": rv})]
+    return []
+
+
 # ---------------------------------------------------------------- reversal after a flush
 def flush(ctx, side="both"):
     out, done = [], set()
@@ -398,6 +426,7 @@ SETUPS = {
     "vwap_macd": vwap_macd,
     "pd_retest": pd_retest,
     "flush": flush,
+    "newhigh_c": newhigh_c,                                     # round 8, B3
 }
 for _n in FB_VARIANTS:
     SETUPS[_n] = (lambda n: lambda ctx, side="both": failed_break(ctx, side, n))(_n)
@@ -410,6 +439,7 @@ ENTRY_WINDOWS = {"orb15": (15, ORB_CUTOFF), "orb30": (30, ORB_CUTOFF), "orb60": 
                  "flush": (DESK_FIRST, DESK_LAST)}
 ENTRY_WINDOWS.update({_n: (DESK_FIRST, DESK_LAST) for _n in FB_VARIANTS})
 ENTRY_WINDOWS.update({_n: (DESK_FIRST, DESK_LAST) for _n in TIME_ENTRIES})
+ENTRY_WINDOWS["newhigh_c"] = (NEWHIGH_FIRST, NEWHIGH_LAST)
 
 
 def signals(ctx, setup, side="both"):
