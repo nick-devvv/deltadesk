@@ -9,7 +9,9 @@ Shared mechanics for V1, V2 and V2-s (as written):
   Hold       to the next rebalance's 15:45. If a realized 8-K Item 2.02 date falls inside the hold, exit at the last 15:45
              before it (LOOK-AHEAD CAVEAT, as G2: the 8-K date is the realized date).
   Fills      the 15:45-16:00 last trade +/- the measured half-spread, plus $0.65 per contract per side; every result at mid,
-             50% and 100% of the measured spread; pass/fail judged at 100%.
+             50% and 100% of the measured spread; pass/fail judged at 100%. Addendum 16.1: the half-spread is the
+             ESTIMATED-SPREAD (sprint/spread_est.py); V1, V2, V2-s and the V3/V4 twins are judged at 100% of it; mid, 50%, the
+             10% MODELED default and F-opt's 2% are reported as sensitivities.
   Benchmark  the same structure on 10 random eligible names on the same dates, 200 draws, seeds 31-230.
   Pass       (all at 100%): at least 100 positions; PF >= 1.2; mean return per position above the 90th percentile of the
              random draws; positive in at least 4 of the 6 two-month blocks of 2025-07..2026-06.
@@ -30,7 +32,8 @@ V4 new_high (Zarattini, Pagani & Wilcox 2025): shares, U-STK + U-ETF: buy at the
    minus 3 x ATR(20), raised daily, never lowered (3 x ATR(20) is the desk's frozen choice). $10,000 a position, at most 10
    open, ties to the higher 20-day dollar volume. Discovery 2016-2019, holdout 2020-2023, then DEV; Part F's bar; the share
    of profit from the top 7% of trades. Options twin (DEV REAL): a delta 0.60-0.70 call 60-120 days out, exited on the
-   stock's stop and rolled at 30 days left; F-opt's bar.
+   stock's stop and rolled at 30 days left; F-opt's bar. Addendum 16.1: both twins keep every other item of F-opt's bar with
+   the ESTIMATED-SPREAD in place of F-opt's 2% ("PF 2x" doubles it).
 Trials: V1 1, V2 1, V2-s 1, V3 2, V4 2 = 7 (round 10 = 7,767; the deflated Sharpe uses the run logs' count + 7,767).
 
 Builder's reading (the most literal reading where the text is ambiguous or impossible with our data):
@@ -50,11 +53,12 @@ Builder's reading (the most literal reading where the text is ambiguous or impos
       exit day is settled at intrinsic value from the stock's raw daily close on the expiry day (no spread, no fee: exercise
       or expiry). A leg without a 15:45-15:59 print on a traded exit day has no fill: the position is not counted, and
       counted as such (G2's rule).
-  R6  "The measured half-spread" = sprint/spread.py's SpreadModel from the desk's logged chains (MEASURED-SPREAD where a cell
-      of that underlying has data; the chains hold SPY/QQQ 0DTE rows), else its MODELED default (2% of premium for
-      SPY/QQQ/IWM/DIA, 10% for every other name, $0.005 floor). Each row carries its label. Fill = print + s x k x half-
-      spread, k = 0 (mid), 0.5 (50%), 1 (100%); s = +1 buying, -1 selling (sells floored at 0). The 2x line (k = 2) is
-      information.
+  R6  The half-spread (Addendum 16.1, replacing this builder's first reading) = the ESTIMATED-SPREAD of the fill's
+      underlying, calendar month and premium bucket (sprint/spread_est.py, its readings S1-S6; fallback spread.py's MODELED
+      default, labeled). Fill = print + s x k x half-spread; s = +1 buying, -1 selling (sells floored at 0). Levels (LEVELS):
+      "mid" k = 0, "50" k = 0.5, "100" k = 1 (judged), "2x" k = 2 (stress); sensitivities at k = 1 with a flat half-spread:
+      "m10" 10% of premium (the old MODELED default) and "m2" 2% (F-opt's), $0.005 floor. Each row carries the judged
+      model's label(s).
   R7  Return per straddle = P/L / debit (both legs' fills x 100 + entry fees). PF = sum of positive returns / |sum of negative
       returns| (equal weight per position, as G2). Two-month blocks by exit day; "positive" = mean return > 0.
   R8  Benchmark: for each draw (default_rng(seed), seeds 31-230), on each rebalance day in order, 10 names drawn without
@@ -83,8 +87,8 @@ Builder's reading (the most literal reading where the text is ambiguous or impos
   R14 V3 twin: "first expiry after the report" = the first Friday expiry (Thursday on a holiday Friday) whose 16:00 close is
       after the acceptance, else the first monthly after it (the earlier with any print among the probed calls). Calls with a
       15:45-15:59 print on the entry day, BS-EST delta (IV from the print, the stock's close in the print's minute) in
-      0.50-0.60, nearest 0.55 (ties: lower premium, then symbol). Costs = F-opt's (2% half-spread, $0.005 floor, $0.65 a
-      side; 2x = twice the half-spread); the measured-spread P/L is information. Random-date twin: G2's fixed pool, 5 random
+      0.50-0.60, nearest 0.55 (ties: lower premium, then symbol). Costs (Addendum 16.1): the ESTIMATED-SPREAD each side
+      (2x = twice it) + $0.65 a side; F-opt's 2% and the other LEVELS are sensitivities. Random-date twin: G2's fixed pool, 5 random
       dates per twin event (default_rng(31)) drawn from R13's candidates inside DEV, expiry = the first one after the random
       exit day; 200 draws (seeds 31-230) each take one priced pool date per event; pass needs p < 0.05 on the mean P/L.
   R15 V4: "at the highest close of the prior 252 sessions" = the close >= the max of the name's previous 252 closes (own
@@ -101,8 +105,13 @@ Builder's reading (the most literal reading where the text is ambiguous or impos
       BS-EST delta 0.60-0.70 nearest 0.65 picked as F-opt picks (first print 09:30-09:34, S = the raw open). On the first
       session with 30 or fewer calendar days left (before the share exit), the call is sold at its first print of that
       session and a new call is bought by the same rule at that open. Out at the share exit's open (first print of that
-      session). A missing print or no contract to roll into: the trade is not counted, and counted as such. Costs = F-opt's.
-Compounding view: a hook for sprint/compound.py (another builder's module), see compounding_view().
+      session). A missing print or no contract to roll into: the trade is not counted, and counted as such. Costs as R14,
+      per leg (each leg's own days, minutes and premium buckets).
+  R17 Compounding view (Amendment 16, information; sprint/compound.simulate, merged from round10/noise by the integrator):
+      for each rule that passes, its trades in each holdout window with every session of that window: V1/V2/V2-s and both
+      twins DEV; V3 shares DEV; V4 shares holdout 2020-01..2024-01 and DEV, each on its own. compound.simulate needs each
+      trade's $ at risk (RISK_OF): the debit for long options (at the judged cost), the margin for V2-s, the notional for V3
+      shares (no stop) and shares x 3 x ATR(20) at the entry day's close for V4 shares (the planned loss at the first stop).
 """
 import json
 import math
@@ -116,6 +125,8 @@ import pandas as pd
 from . import bs, edgar, periods, shares
 from . import ivdata as IV
 from . import multiday as M
+from . import spread as SP
+from . import spread_est as SE
 from . import universe as U
 from .catalyst import occ, occ_root
 
@@ -129,7 +140,11 @@ SWING_TRIALS = 7
 ROUND10_TOTAL = 7767
 assert sum(TRIALS.values()) == SWING_TRIALS
 TOP_N = 10
-K_LEVELS = (("mid", 0.0), ("50", 0.5), ("100", 1.0), ("2x", 2.0))
+LEVELS = (("mid", "est", 0.0), ("50", "est", 0.5), ("100", "est", 1.0), ("2x", "est", 2.0), ("m10", "m10", 1.0),
+          ("m2", "m2", 1.0))                     # Addendum 16.1: judged at "100"; the others are sensitivities
+LEVEL_NAMES = {"mid": "mid", "50": "50% of ESTIMATED-SPREAD", "100": "100% of ESTIMATED-SPREAD (judged)",
+               "2x": "200% of ESTIMATED-SPREAD (stress)", "m10": "MODELED 10% of premium (the old default)",
+               "m2": "MODELED 2% of premium (F-opt's)"}
 FEE, MULT = 0.65, 100
 RANDOM_SEEDS = tuple(range(31, 231))
 BOOT_SEED, BOOT_DRAWS = 29, 2000
@@ -409,17 +424,28 @@ def intrinsic(sym, S):
     return max(0.0, S - m["strike"]) if m["right"] == "C" else max(0.0, m["strike"] - S)
 
 
-def price_position(pos, exit_px, settle_S, name, spread):
-    """P/L at every k (R6). pos: choose_straddle / choose_condor; exit_px: {occ: (minute, price)} for a traded exit, or
-    None with settle_S = the stock's expiry-day close. Returns {k name: {pnl, ret, capital}} and the spread labels."""
+def spread_set(spread):
+    """{"est": the judged model, "m10": MODELED 10%, "m2": MODELED 2%}. A dict passes through; a single model becomes "est"."""
+    if isinstance(spread, dict):
+        return spread
+    return {"est": spread, "m10": SP.SpreadModel(pct=0.10), "m2": SP.SpreadModel(pct=0.02)}
+
+
+def price_position(pos, exit_px, settle_S, name, spread, day_in=None, day_out=None):
+    """P/L at every level of LEVELS (R6). pos: choose_straddle / choose_condor; exit_px: {occ: (minute, price)} for a traded
+    exit, or None with settle_S = the stock's expiry-day close. spread: spread_set's dict or one model (the judged one).
+    Returns ({level: {pnl, ret, capital}}, the judged model's labels)."""
+    sp = spread_set(spread)
     labels = set()
     out = {}
-    for kn, k in K_LEVELS:
+    for kn, mk, k in LEVELS:
+        model = sp[mk]
         cash_in, fees, cash_out = 0.0, 0.0, 0.0
         for sym, s in pos["legs"]:
             m, p = pos["entry"][sym]
-            hs, lab = spread.half_spread(name, p, m)
-            labels.add(lab)
+            hs, lab = SE.hs_of(model, name, p, m, day_in)
+            if mk == "est":
+                labels.add(lab)
             fill = p + s * k * hs if s > 0 else max(0.0, p + s * k * hs)
             cash_in += -s * fill * MULT
             fees += FEE
@@ -427,8 +453,9 @@ def price_position(pos, exit_px, settle_S, name, spread):
                 cash_out += s * intrinsic(sym, settle_S) * MULT
             else:
                 mx, px = exit_px[sym]
-                hx, lab = spread.half_spread(name, px, mx)
-                labels.add(lab)
+                hx, lab = SE.hs_of(model, name, px, mx, day_out)
+                if mk == "est":
+                    labels.add(lab)
                 fx = max(0.0, px - s * k * hx)
                 cash_out += s * fx * MULT
                 fees += FEE
@@ -476,7 +503,7 @@ def position_outcome(name, t, x, kind, ctxd):
         if not all(s in by_sym for s, _ in pos["legs"]):
             return None, "no exit print 15:45-15:59 for every leg"
         exit_px = {s: by_sym[s] for s, _ in pos["legs"]}
-    res, labels = price_position(pos, exit_px, settle, name, ctxd["spread"])
+    res, labels = price_position(pos, exit_px, settle, name, ctxd["spread"], t, xe)
     out_day = exp if settle is not None else xe
     row = {"symbol": name, "day": out_day.isoformat(), "entry_day": t.isoformat(),
            "exit_day": out_day.isoformat(), "scheduled_exit": x.isoformat(), "report_exit": str(acc) if acc else "",
@@ -624,7 +651,7 @@ def vol_pass(rows, p90):
     pfr = -1.0 if pf is None else pf
     mean = s.get("mean_ret")
     checks = [(f"at least {MIN_POSITIONS} positions ({s['positions']})", s["positions"] >= MIN_POSITIONS),
-              (f"PF >= {PF_MIN} at 100% of the spread (on returns: {pf})", pfr >= PF_MIN),
+              (f"PF >= {PF_MIN} at 100% of the ESTIMATED-SPREAD (on returns: {pf})", pfr >= PF_MIN),
               (f"mean return per position above the random draws' 90th percentile ({_pct(mean)} vs {_pct(p90)})",
                mean is not None and p90 is not None and mean > p90),
               (f"positive in at least {BLOCKS_MIN} of the 6 two-month blocks of 2025-07..2026-06 ({green} of 6)", green >= BLOCKS_MIN)]
@@ -653,7 +680,7 @@ def vol_family(outs, seeds=RANDOM_SEEDS):
         rows, sk = rule_positions(outs, v)
         p90, means = benchmark(outs, v, seeds)
         pb = vol_pass(rows, p90)
-        res[v] = {"name": VARIANTS[v][0], "kind": VARIANTS[v][1], "levels": {kn: kstats(rows, kn) for kn, _ in K_LEVELS},
+        res[v] = {"name": VARIANTS[v][0], "kind": VARIANTS[v][1], "levels": {kn: kstats(rows, kn) for kn, _m, _k in LEVELS},
                   "pass_bar": pb, "pass": pb["pass"], "skips": sk, "boot_ci_100": boot_ci(rows),
                   "random": {"draws": int(len(means)), "mean": _r(np.mean(means), 6) if len(means) else None, "p90": p90},
                   "label": (PAPER + "; " if v == "V2-s" else "") + f"{REAL}; return on " + ("margin" if v == "V2-s" else "debit")}
@@ -899,8 +926,35 @@ def pick_last15(name, day, pidx, sm, expiries, band):
 
 
 def opt_leg(b_in, b_out, pct=OPT_HS, k=1.0):
+    """F-opt's P/L of one call leg: half-spread pct of premium ($0.005 floor) x k each side, $0.65 a side."""
     hi, ho = max(pct * b_in, OPT_FLOOR), max(pct * b_out, OPT_FLOOR)
     return MULT * (max(0.0, b_out - k * ho) - (b_in + k * hi)) - 2 * FEE
+
+
+def twin_pnls(sym, legs, spread=None):
+    """A long-call twin's P/L at every level of LEVELS (Addendum 16.1: judged at "100" = 100% of the ESTIMATED-SPREAD,
+    "2x" doubles it; "m2" = F-opt's 2%). legs: [(buy, buy minute, buy day, sell, sell minute, sell day)]. Returns
+    ({level: P/L}, the first leg's debit at the judged cost, the judged model's labels)."""
+    sp = spread_set(spread if spread is not None else SP.SpreadModel())
+    out, labels, debit = {}, set(), None
+    for kn, mk, k in LEVELS:
+        tot = 0.0
+        for n, (b_in, m_in, d_in, b_out, m_out, d_out) in enumerate(legs):
+            hi, la = SE.hs_of(sp[mk], sym, b_in, m_in, d_in)
+            ho, lb = SE.hs_of(sp[mk], sym, b_out, m_out, d_out)
+            if mk == "est":
+                labels |= {la, lb}
+                if n == 0 and kn == "100":
+                    debit = MULT * (b_in + hi) + FEE
+            tot += MULT * (max(0.0, b_out - k * ho) - (b_in + k * hi)) - 2 * FEE
+        out[kn] = tot
+    return out, debit, sorted(labels)
+
+
+def _twin_fields(p, debit, labels):
+    row = {f"pnl_{kn}": round(v, 2) for kn, v in p.items()}
+    row.update(pnl=row["pnl_100"], pnl_2x=row["pnl_2x"], debit=round(debit, 2), spread_label="+".join(labels))
+    return row
 
 
 def v3_twin_row(it, bars, spread):
@@ -917,17 +971,15 @@ def v3_twin_row(it, bars, spread):
     if info["symbol"] not in out:
         return None, "no print of the chosen call 15:45-15:59 on the exit day"
     b_in, b_out, mx = info["px"], out[info["symbol"]][2], out[info["symbol"]][1]
-    h_in, _ = spread.half_spread(it["symbol"], b_in, info["minute"])
-    h_out, lab = spread.half_spread(it["symbol"], b_out, mx)
-    meas = MULT * (max(0.0, b_out - h_out) - (b_in + h_in)) - 2 * FEE
-    return {"variant": "earn_runup_opt" if it["kind"] == "event" else "earn_runup_opt_pool", "event": it["n"],
-            "symbol": it["symbol"], "day": it["exit"].isoformat(), "entry_day": it["entry"].isoformat(),
-            "exit_day": it["exit"].isoformat(), "_src": "DEV", "side": "C", "contract": info["symbol"], "strike": info["strike"],
-            "expiry": info["expiry"], "dte": info["dte"], "delta_est": info["delta"], "iv_est": info["iv"],
-            "entry_basis": b_in, "exit_basis": b_out, "debit": round(MULT * (b_in + max(OPT_HS * b_in, OPT_FLOOR)) + FEE, 2),
-            "pnl": round(opt_leg(b_in, b_out), 2), "pnl_2x": round(opt_leg(b_in, b_out, k=2.0), 2),
-            "pnl_spread_model": round(meas, 2), "spread_model_label": lab, "entry_idx": 0, "entry_time": "15:45",
-            "label": f"{REAL}; {SB}; {LOOKAHEAD}"}, None
+    p, debit, labels = twin_pnls(it["symbol"], [(b_in, info["minute"], it["entry"], b_out, mx, it["exit"])], spread)
+    row = {"variant": "earn_runup_opt" if it["kind"] == "event" else "earn_runup_opt_pool", "event": it["n"],
+           "symbol": it["symbol"], "day": it["exit"].isoformat(), "entry_day": it["entry"].isoformat(),
+           "exit_day": it["exit"].isoformat(), "_src": "DEV", "side": "C", "contract": info["symbol"], "strike": info["strike"],
+           "expiry": info["expiry"], "dte": info["dte"], "delta_est": info["delta"], "iv_est": info["iv"],
+           "entry_basis": b_in, "exit_basis": b_out, "entry_idx": 0, "entry_time": "15:45",
+           "label": f"{REAL}; {SB}; {LOOKAHEAD}"}
+    row.update(_twin_fields(p, debit, labels))
+    return row, None
 
 
 def twin_random(rows, pool_rows, seeds=RANDOM_SEEDS):
@@ -1026,7 +1078,7 @@ def v4_book(panel, univ_of, slots=V4_SLOTS):
                                   float(panel.adj_o[x, j] / panel.adj_o[h["e"], j]), "open",
                                   f"close {c:.2f} < stop {h['stop']:.2f} on {panel.days[t]}: out at the next open",
                                   {"signal_day": panel.days[h["t"]].isoformat(), "stop_at_exit": round(float(h["stop"]), 4),
-                                   "high_since_entry": round(float(h["hc"]), 4)})
+                                   "high_since_entry": round(float(h["hc"]), 4), "risk_per_share": h["risk"]})
                 if tr:
                     out.append(tr)
                 continue
@@ -1035,6 +1087,8 @@ def v4_book(panel, univ_of, slots=V4_SLOTS):
                 if np.isfinite(atr[t, j]):
                     cand = h["hc"] - V4_MULT * atr[t, j]
                     h["stop"] = max(h["stop"], cand) if np.isfinite(h["stop"]) else cand
+                    if h["risk"] is None and t == h["e"]:          # information: the planned loss at the first stop
+                        h["risk"] = V4_MULT * float(atr[t, j]) * float(panel.raw_c[t, j] / panel.adj_c[t, j])
         cand = np.flatnonzero(sig[t])
         if not len(cand):
             continue
@@ -1053,7 +1107,7 @@ def v4_book(panel, univ_of, slots=V4_SLOTS):
         if len(picks) > free:
             info["no_slot"] += len(picks) - max(free, 0)
         for _d, _s, j, e in picks[:max(free, 0)]:
-            held[j] = {"e": e, "t": t, "sp": float(panel.raw_c[t, j]), "hc": np.nan, "stop": np.nan}
+            held[j] = {"e": e, "t": t, "sp": float(panel.raw_c[t, j]), "hc": np.nan, "stop": np.nan, "risk": None}
             info["entries"] += 1
     if held:
         dropped["still open when the data end (exit would be in L1)"] += len(held)
@@ -1125,14 +1179,14 @@ def pick_open(name, day, opens, S, band=V4_BAND, dte=V4_DTE):
                 continue
             key = (abs(dd - tgt), v[2], ee, v[0])
             if best is None or key < best[0]:
-                best = (key, {"symbol": v[0], "strike": k, "expiry": ee, "px": v[2], "delta": round(float(dd), 3),
+                best = (key, {"symbol": v[0], "strike": k, "expiry": ee, "px": v[2], "minute": v[1], "delta": round(float(dd), 3),
                               "iv": round(float(vv), 4), "dte": (ee - day).days})
     if best is None:
         return None, f"no call with BS-EST delta in {lo:.2f}-{hi:.2f}"
     return best[1], None
 
 
-def v4_twin_walk(tr, bars, raw_open, sessions):
+def v4_twin_walk(tr, bars, raw_open, sessions, spread=None):
     """Walk one V4 share trade's call twin (R16). Returns ("need", (day, window, symbols)) for the first missing file
     part, ("skip", why), or ("row", row). raw_open(day) -> the stock's raw open; sessions: DEV sessions (dates)."""
     sym = tr["symbol"]
@@ -1153,7 +1207,8 @@ def v4_twin_walk(tr, bars, raw_open, sessions):
         return info
     if info is None:
         return "skip", f"entry: {why}"
-    legs = [{"buy_day": e.isoformat(), "contract": info["symbol"], "buy": info["px"], "delta": info["delta"], "dte": info["dte"]}]
+    legs = [{"buy_day": e.isoformat(), "contract": info["symbol"], "buy": info["px"], "buy_minute": info["minute"], "delta": info["delta"],
+             "dte": info["dte"]}]
     held = info
     for s in [d for d in sessions if e < d <= x]:
         if s != x and (held["expiry"] - s).days > V4_ROLL:
@@ -1171,37 +1226,69 @@ def v4_twin_walk(tr, bars, raw_open, sessions):
             return nxt
         if nxt is None:
             return "skip", f"roll on {s}: {why}"
-        legs.append({"buy_day": s.isoformat(), "contract": nxt["symbol"], "buy": nxt["px"], "delta": nxt["delta"], "dte": nxt["dte"]})
+        legs.append({"buy_day": s.isoformat(), "contract": nxt["symbol"], "buy": nxt["px"], "buy_minute": nxt["minute"],
+                     "delta": nxt["delta"], "dte": nxt["dte"]})
         held = nxt
     if "sell" not in legs[-1]:
         return "skip", "the exit day is not a DEV session on file"
-    pnl = sum(opt_leg(g["buy"], g["sell"]) for g in legs)
-    pnl2 = sum(opt_leg(g["buy"], g["sell"], k=2.0) for g in legs)
-    return "row", {"variant": "new_high_opt", "symbol": sym, "day": x.isoformat(), "entry_day": e.isoformat(), "exit_day": x.isoformat(),
-                   "_src": "DEV", "side": "C", "contract": legs[0]["contract"], "rolls": len(legs) - 1, "legs": json.dumps(legs),
-                   "delta_est": legs[0]["delta"], "dte": legs[0]["dte"],
-                   "debit": round(MULT * (legs[0]["buy"] + max(OPT_HS * legs[0]["buy"], OPT_FLOOR)) + FEE, 2),
-                   "pnl": round(pnl, 2), "pnl_2x": round(pnl2, 2), "share_pnl": tr["pnl"], "entry_idx": 0, "entry_time": "09:30",
-                   "exit_late": any(g.get("late") for g in legs), "label": REAL + ("" if sym in U.U_ETF else f"; {SB}")}
+    p, debit, labels = twin_pnls(sym, [(g["buy"], g["buy_minute"], date.fromisoformat(g["buy_day"]), g["sell"], g["sell_minute"],
+                                        date.fromisoformat(g["sell_day"])) for g in legs], spread)
+    row = {"variant": "new_high_opt", "symbol": sym, "day": x.isoformat(), "entry_day": e.isoformat(), "exit_day": x.isoformat(),
+           "_src": "DEV", "side": "C", "contract": legs[0]["contract"], "rolls": len(legs) - 1, "legs": json.dumps(legs),
+           "delta_est": legs[0]["delta"], "dte": legs[0]["dte"], "share_pnl": tr["pnl"], "entry_idx": 0, "entry_time": "09:30",
+           "exit_late": any(g.get("late") for g in legs), "label": REAL + ("" if sym in U.U_ETF else f"; {SB}")}
+    row.update(_twin_fields(p, debit, labels))
+    return "row", row
 
 
 # ---------------------------------------------------------------- the compounding view (hook)
-def compounding_view(name, rows, kind):
-    """HOOK (round 10 integrator): Amendment 16's compounding view ($3,000 account, 2,000 bootstrap paths of the holdout
-    trades resampled by session; fixed-fractional risk 1%, 2% and 5%) lives in sprint/compound.py, built by another builder.
-    This calls compound.view(rows, kind=..., name=...) when that module exists; until then it returns a marked placeholder."""
+RISK_OF = {"debit": "the option's debit at the judged cost (a long option can lose all of it)",
+           "margin": "the condor's margin (width minus credit)",
+           "notional": "the position's notional (no stop: the whole position is at risk)",
+           "stop": "shares x 3 x ATR(20) at the entry day's close (the planned loss at the first stop)"}
+
+
+def risk_of(row, how):
+    """The $ a trade put at risk, for sprint/compound.simulate (Amendment 16's compounding view); None if not positive."""
+    if how == "stop":
+        rps = row.get("risk_per_share")
+        v = float(row["shares"]) * float(rps) if rps not in (None, "") and rps == rps else None
+    else:
+        v = row.get(how)
     try:
-        from . import compound  # noqa: F401  (another builder's module; absent on this branch)
+        v = float(v)
+    except (TypeError, ValueError):
+        return None
+    return v if math.isfinite(v) and v > 0 else None
+
+
+def compounding_view(name, rows, how, sessions, title=None):
+    """HOOK (round 10 integrator): Amendment 16's compounding view, computed by sprint/compound.py (another builder's module,
+    on branch round10/noise; merged by the integrator, never copied here): compound.simulate(rows, sessions=..., label=...)
+    with rows {"day", "pnl", "risk"} (risk from RISK_OF[how]) and every session of the window (ISO strings), then
+    compound.render_md(view, title) for the report. Rows outside `sessions` or without a positive risk are left out (counted).
+    Until sprint/compound.py is on the branch it returns a marked placeholder."""
+    try:
+        from . import compound  # (another builder's module; absent on this branch until the integrator merges it)
     except ImportError:
-        return {"hook": "sprint/compound.py is not on this branch yet; the integrator wires compounding_view()", "rule": name,
-                "trades": len(rows)}
-    fn = getattr(compound, "view", None)
-    if fn is None:
-        return {"hook": "sprint/compound.py has no view(); the integrator adapts compounding_view()", "rule": name}
-    try:
-        return fn(rows, kind=kind, name=name)
-    except TypeError as e:
-        return {"hook": f"sprint/compound.view signature differs ({e}); the integrator adapts compounding_view()", "rule": name}
+        return {"hook": "sprint/compound.py is not on this branch yet; the integrator's merge wires compounding_view()",
+                "rule": name, "trades": len(rows)}
+    days = [d if isinstance(d, str) else d.isoformat() for d in sessions]
+    known = set(days)
+    recs, skipped = [], 0
+    for r in rows:
+        d, rk = str(r["day"])[:10], risk_of(r, how)
+        if d not in known or rk is None:
+            skipped += 1
+            continue
+        recs.append({"day": d, "pnl": float(r["pnl"]), "risk": rk})
+    if not recs:
+        return {"rule": name, "why": "no trade with a positive risk inside the window", "skipped": skipped}
+    label = f"{compound.LABEL}; {name}; risk = {RISK_OF[how]}"
+    view = compound.simulate(recs, sessions=days, label=label)
+    view["rule"], view["risk"], view["skipped_rows"] = name, RISK_OF[how], skipped
+    view["md"] = compound.render_md(view, title or name)
+    return view
 
 
 # ---------------------------------------------------------------- the pull's provider (tools/sprint_pull10.py)

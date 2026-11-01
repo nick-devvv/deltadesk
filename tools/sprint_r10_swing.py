@@ -8,7 +8,9 @@ Research only: reads cached bars, EDGAR records and option bars; never trades; n
 
 Reads (data/alpaca unless --data): daily9/ and universe/ustk.json (round 9), ../edgar/ (headers.jsonl, company_tickers.json;
 round 9), r10/ (round 10's stock15 and option bars; sprint/ivdata.py layout); the logged chains folder (default data/chains)
-for the measured half-spread (sprint/spread.py; MODELED default where a cell has no data).
+for the calibration of Addendum 16.1's ESTIMATED-SPREAD (sprint/spread_est.py: Abdi-Ranaldo half-spreads from round 10's
+1-minute option bars, calibrated on the measured SPY/QQQ chains; V1, V2, V2-s and the V3/V4 twins are judged at 100% of it,
+with mid, 50%, the 10% MODELED default and F-opt's 2% as sensitivities).
 Parts: DIV (D-IV's table and coverage report), VOL (V1, V2 and V2-s together: they share the sort, the holds and the
 benchmark), V3, V4. Writes data/sprint/r10swing_<date>.md and .json, the D-IV table data/sprint/r10_div_<date>.csv.gz and the
 trade files data/sprint/trades_r10swing_{V1,V2,V2s,V3,V3opt,V3pool,V4,V4opt}_<date>.csv.gz; prints the summary. Labels:
@@ -33,8 +35,8 @@ import numpy as np
 
 HERE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(HERE))
-from sprint import data, edgar as E, factory, ivdata as IV, multiday as M, periods, round8, runner, shares  # noqa: E402
-from sprint import r10swing as SW, report as R, spread as SP, universe as U  # noqa: E402
+from sprint import book, data, edgar as E, factory, ivdata as IV, multiday as M, periods, round8, runner, shares  # noqa: E402
+from sprint import r10swing as SW, report as R, spread as SP, spread_est as SE, universe as U  # noqa: E402
 
 PARTS = ("DIV", "VOL", "V3", "V4")
 
@@ -122,12 +124,22 @@ def part_vol(root, log, warnings, panels, uni, tab, spread, edgar_in):
     outs = SW.vol_outcomes(hl, ctxd, lambda t, names: SW._rv_on(panels, rv, t, names), log)
     res, rows = SW.vol_family(outs)
     res["dropped_holds"] = [{"t": t.isoformat(), "x": x.isoformat(), "why": w} for t, x, w in dropped]
-    res["spread"] = spread.describe()
+    res["spread"] = spread["est"].describe()
     for v, rr in rows.items():
         why = check_rows(rr, v)
         if why:
             raise periods.LockedPeriod(why)
     return res, rows
+
+
+def twin_levels(rows):
+    """F-opt's numbers (round8.ostats) of a twin's trades at every cost level (Addendum 16.1's sensitivities)."""
+    out = {}
+    for kn, _m, _k in SW.LEVELS:
+        rr = [dict(r, pnl=r[f"pnl_{kn}"]) for r in rows]
+        st = round8.ostats(rr)
+        out[kn] = {k: st.get(k) for k in ("trades", "win_rate", "expectancy", "pf", "total", "max_dd")}
+    return out
 
 
 # ---------------------------------------------------------------- V3
@@ -161,11 +173,9 @@ def part_v3(root, log, warnings, panels, spread, edgar_in):
     fb = M.fopt_bar(rows)
     checks = fb["checks"] + [(f"beats the random-date twin, p < 0.05 on the mean P/L (p = {tp}; {n_ev} events with priced pool dates)",
                               tp is not None and tp < 0.05)]
-    meas = [float(r["pnl_spread_model"]) for r in rows]
     twin = {"bar": dict(fb, checks=checks, pass_=all(ok for _, ok in checks)), "pass": all(ok for _, ok in checks), "random_p": tp,
             "events": sum(1 for i in items if i["kind"] == "event"), "pool_dates": sum(1 for i in items if i["kind"] == "pool"),
-            "skips": dict(skips), "spread_model_info": {"trades": len(meas), "total": round(sum(meas), 2),
-                                                         "pf": shares._pf(meas) if meas else None, "model": spread.describe()}}
+            "skips": dict(skips), "levels": twin_levels(rows)}
     log(f"  V3: {len(ev)} 2.02 events, {len(tr)} share trades ({'PASS' if pb['pass'] else 'fail'}); twin {len(rows)} trades")
     res = {"events": len(ev), "info": info, "pass_bar": pb, "pass": pb["pass"], "years": shares.years_table(tr), "random_p": rp,
            "random_info": rinfo, "twin": twin}
@@ -173,7 +183,7 @@ def part_v3(root, log, warnings, panels, spread, edgar_in):
 
 
 # ---------------------------------------------------------------- V4
-def part_v4(root, log, warnings, panels):
+def part_v4(root, log, warnings, panels, spread):
     p, univ = SW.v4_panel(panels)
     if not p.symbols:
         warnings.append("V4: no daily bars: V4 not run.")
@@ -192,7 +202,7 @@ def part_v4(root, log, warnings, panels):
         if not (SW.DEV_A.isoformat() <= t["entry_day"] and t["exit_day"] <= SW.DEV_B.isoformat()):
             continue
         targets += 1
-        kind, val = SW.v4_twin_walk(t, bars, SW.raw_open_fn(p, t["symbol"]), sess)
+        kind, val = SW.v4_twin_walk(t, bars, SW.raw_open_fn(p, t["symbol"]), sess, spread)
         if kind == "row":
             rows.append(val)
         elif kind == "need":
@@ -204,9 +214,34 @@ def part_v4(root, log, warnings, panels):
     res = {"info": info, "pass_bar": pb, "pass": pb["pass"], "windows": SW.v4_windows(tr), "top7": SW.top_share(tr), "random_p": rp,
            "random_info": rinfo, "years": shares.years_table(tr),
            "by_universe": {u: shares.stats([t for t in tr if t["universe"] == u]) for u in ("U-ETF", "U-STK")},
-           "twin": {"bar": fb, "pass": fb["pass"], "targets": targets, "skips": dict(skips),
+           "twin": {"bar": fb, "pass": fb["pass"], "targets": targets, "skips": dict(skips), "levels": twin_levels(rows),
                     "rolls": sum(int(r["rolls"]) for r in rows), "late_exits": sum(1 for r in rows if r.get("exit_late"))}}
     return res, tr, rows
+
+
+# ---------------------------------------------------------------- the compounding view (R17)
+def compounding(res, var, all_rows):
+    """Amendment 16's compounding view for every rule that passes, through r10swing.compounding_view (sprint/compound.py)."""
+    dev = [d.isoformat() for d in IV.dev_days()]
+    hold = [d for d in book.sessions_between("2020-01-01", "2024-01-31")]
+    out = {}
+    V = res.get("VOL") or {}
+    for v in ("V1", "V2", "V2-s"):
+        if V.get(v, {}).get("pass"):
+            how = "margin" if v == "V2-s" else "debit"
+            out[f"{v} (DEV)"] = SW.compounding_view(v, var[f"{v} {SW.VARIANTS[v][0]}"], how, dev, f"{v} {SW.VARIANTS[v][0]}, DEV")
+    for key, nm, how in (("V3", "earn_runup", "notional"), ("V4", "new_high", "stop")):
+        o = res.get(key)
+        if o and o["pass"]:
+            sh = all_rows.get(f"{key} shares") or []
+            out[f"{key} shares (DEV)"] = SW.compounding_view(f"{key} shares", sh, how, dev, f"{key} {nm} shares, DEV")
+            if key == "V4":
+                out["V4 shares (holdout 2020-2023)"] = SW.compounding_view("V4 shares", sh, how, hold,
+                                                                           "V4 new_high shares, holdout 2020-01..2024-01")
+        if o and o["twin"]["pass"]:
+            out[f"{key} options (DEV)"] = SW.compounding_view(f"{key} options", var[f"{key} {nm} options"], "debit", dev,
+                                                              f"{key} {nm} options twin, DEV")
+    return out
 
 
 # ---------------------------------------------------------------- the report
@@ -248,7 +283,8 @@ def summary_lines(res):
         o = V[v]
         s = o["levels"]["100"]
         out.append(f"{v} {o['name']} ({o['label']}): {_yn(o['pass'])}, {s.get('positions')} positions, mean return {_pct(s.get('mean_ret'))} "
-                   f"at 100% of the spread (mid {_pct(o['levels']['mid'].get('mean_ret'))}), PF {s.get('pf_ret')}"
+                   f"at 100% of the ESTIMATED-SPREAD (mid {_pct(o['levels']['mid'].get('mean_ret'))}, 10% MODELED "
+                   f"{_pct(o['levels']['m10'].get('mean_ret'))}), PF {s.get('pf_ret')}"
                    + ("" if o["pass"] else f" (first fail: {_first_fail(o['pass_bar']['checks'])})"))
     for key, nm in (("V3", "earn_runup"), ("V4", "new_high")):
         o = res.get(key)
@@ -286,9 +322,14 @@ def render(res, meta):
     _vol_md(L, res.get("VOL"))
     _v3_md(L, res.get("V3"))
     _v4_md(L, res.get("V4"))
+    _spread_md(L, res.get("spread"))
     L += ["## Compounding view (information)", ""]
     for k, v in (res.get("compounding") or {}).items():
-        L.append(f"- {k}: {v}")
+        if v.get("md"):
+            L += v["md"]
+            L.append(f"  - risk unit: {v.get('risk')}; rows left out (outside the window or no positive risk): {v.get('skipped_rows')}.")
+        else:
+            L.append(f"- {k}: {v}")
     if not res.get("compounding"):
         L.append("- No rule passed, so there is nothing to compound (Amendment 16 runs the view only for passing rules).")
     L += ["", "## Deflated Sharpe (information, DEV daily P/L)", ""] + _head(("variant", f"DSR (N = {t['total_for_dsr']})"))
@@ -299,6 +340,22 @@ def render(res, meta):
           "CLAUDE.md step 5 (out-of-sample and 40 forward paper trades). V2-s is option selling: paper research only. Not "
           "financial advice."]
     return "\n".join(L) + "\n"
+
+
+def _spread_md(L, S):
+    L += ["## Option costs: the ESTIMATED-SPREAD (Addendum 16.1)", ""]
+    if not S:
+        L += ["NOT BUILT (no option part in this run).", ""]
+        return
+    c = S["calibration"]
+    L.append(f"{S['describe']}.")
+    L.append(f"- Pools: {S['pools']} (underlying x month x premium bucket), {S['pools_with_5_pairs']} with at least 5 minute pairs, "
+             f"{S['pairs']} pairs in all; median pooled half-spread ${S['median_pool_half_spread']}.")
+    L.append(f"- Calibration on the measured SPY/QQQ chains (DEV days only): ratio {c.get('ratio')} ({c.get('label')}); raw median "
+             f"{c.get('raw_median')}; {c.get('chain_days')} chain days, {c.get('chain_rows')} usable chain rows, "
+             f"{c.get('matched_contract_days')} matched contract-days.")
+    L.append(f"- Fills priced (every level, judged model): {S['fills']}.")
+    L.append("")
 
 
 def _div_md(L, D):
@@ -334,11 +391,11 @@ def _vol_md(L, V):
     L.append("")
     for v in ("V1", "V2", "V2-s"):
         o = V[v]
-        L.append(f"**{v} {o['name']}** ({o['label']}): **{_yn(o['pass'])}** (judged at 100% of the spread)")
+        L.append(f"**{v} {o['name']}** ({o['label']}): **{_yn(o['pass'])}** (judged at 100% of the ESTIMATED-SPREAD)")
         _checks(L, o["pass_bar"]["checks"])
         L += _head(VOL_COLS)
-        for kn, lab in (("mid", "mid"), ("50", "50%"), ("100", "100%"), ("2x", "200% (stress)")):
-            s = o["levels"][kn]
+        for kn, _m, _k in SW.LEVELS:
+            s, lab = o["levels"][kn], SW.LEVEL_NAMES[kn]
             L.append(_row([lab, s.get("positions"), _f((s.get("win_rate") or 0) * 100, 1) if s.get("positions") else "-",
                            _pct(s.get("mean_ret")), _pct(s.get("avg_win_ret")), _pct(s.get("avg_loss_ret")), s.get("pf_ret"),
                            _f(s.get("pnl_total")), _f(s.get("expectancy")), s.get("pf_dollars"), _f(s.get("max_dd"))]))
@@ -373,6 +430,11 @@ def _twin(L, name, tw, extra=""):
     L.append(_row([d.get("trades"), _f((d.get("win_rate") or 0) * 100, 1) if d.get("trades") else "-", _f(d.get("expectancy")),
                    _f(d.get("pf")), _f(d.get("pf_2x")), _f(d.get("total")), _f(d.get("max_dd"))]))
     L.append(f"- Not priced: {tw.get('skips') or 'none'}.")
+    L += _head(("cost (sensitivities; judged at 100% of the ESTIMATED-SPREAD)", "trades", "win %", "exp $", "PF", "total $", "max DD $"))
+    for kn, _m, _k in SW.LEVELS:
+        x = (tw.get("levels") or {}).get(kn) or {}
+        L.append(_row([SW.LEVEL_NAMES[kn], x.get("trades"), _f((x.get("win_rate") or 0) * 100, 1) if x.get("trades") else "-",
+                       _f(x.get("expectancy")), _f(x.get("pf")), _f(x.get("total")), _f(x.get("max_dd"))]))
 
 
 def _v3_md(L, V):
@@ -386,9 +448,8 @@ def _v3_md(L, V):
     _fpass(L, "V3 shares (Part F's 7-item bar)", V)
     L.append("")
     tw = V["twin"]
-    _twin(L, "V3 options twin (delta 0.50-0.60 call, first expiry after the report; F-opt's bar + the random-date twin; REAL)", tw,
-          f"; {tw['events']} events, {tw['pool_dates']} random pool dates")
-    L.append(f"- At the measured/modeled half-spread (information): {tw['spread_model_info']}.")
+    _twin(L, "V3 options twin (delta 0.50-0.60 call, first expiry after the report; F-opt's bar at the ESTIMATED-SPREAD + the "
+             "random-date twin; REAL)", tw, f"; {tw['events']} events, {tw['pool_dates']} random pool dates")
     L.append("")
 
 
@@ -407,7 +468,8 @@ def _v4_md(L, V):
     L.append(f"- Share of profit from the top 7% of trades: {V['top7']}. By universe: {V['by_universe']}.")
     L.append("")
     tw = V["twin"]
-    _twin(L, "V4 options twin (delta 0.60-0.70 call 60-120 days, rolled at 30 days left, out on the stock's stop; F-opt's bar; REAL)", tw,
+    _twin(L, "V4 options twin (delta 0.60-0.70 call 60-120 days, rolled at 30 days left, out on the stock's stop; F-opt's bar at "
+             "the ESTIMATED-SPREAD; REAL)", tw,
           f"; {tw['targets']} DEV share trades to carry, {tw['rolls']} rolls, {tw['late_exits']} late exits")
     L.append("")
 
@@ -419,7 +481,8 @@ def main(argv=None):
     ap.add_argument("--out", default=str(HERE / "data" / "sprint"))
     ap.add_argument("--today", default=None)
     ap.add_argument("--parts", default=",".join(PARTS))
-    ap.add_argument("--chains-dir", default=str(HERE / "data" / "chains"), help="logged chains for the measured half-spread")
+    ap.add_argument("--chains-dir", default=str(HERE / "data" / "chains"),
+                    help="logged chains: the ESTIMATED-SPREAD's calibration (Addendum 16.1)")
     ap.add_argument("--runs-csv", nargs="+", default=None)
     x = ap.parse_args(argv)
     t_all = time.time()
@@ -429,14 +492,19 @@ def main(argv=None):
     today = x.today or date.today().isoformat()
     parts = [p.strip().upper() for p in x.parts.split(",") if p.strip()]
     log = lambda s: print(s, flush=True)
-    warnings, files, res, var = [], {}, {}, {}
+    warnings, files, res, var, all_rows = [], {}, {}, {}, {}
     log(f"sprint_r10_swing: parts {', '.join(parts)}; cache {root}; every number is a BACKTEST; L1/L2 never read")
     panels = SW.load_panels(root, log)
     if not U.read_ustk(root):
         warnings.append("No U-STK list (data/alpaca/universe/ustk.json): U-ETF names only.")
     uni = SW.Universe(panels)
     days = IV.dev_days()
-    spread = SP.from_chains(x.chains_dir)
+    spread = None
+    if {"VOL", "V3", "V4"} & set(parts):
+        est = SE.build(root, x.chains_dir, days, log)
+        spread = {"est": est, "m10": SP.SpreadModel(pct=0.10), "m2": SP.SpreadModel(pct=0.02)}
+        if est.cal.get("ratio") == 1.0 and "fewer than" in str(est.cal.get("label")):
+            warnings.append(f"ESTIMATED-SPREAD calibration: {est.cal['label']}; ratio 1 used (labeled).")
     edgar_in = SW.load_edgar(root)
     tab = None
     if "DIV" in parts or "VOL" in parts:
@@ -459,29 +527,20 @@ def main(argv=None):
             files["V3opt"] = write_rows(out / f"trades_r10swing_V3opt_{today}.csv.gz", rows)
             files["V3pool"] = write_rows(out / f"trades_r10swing_V3pool_{today}.csv.gz", pool)
             var["V3 earn_runup shares"] = round8.in_win(tr, SW.DEV_A.isoformat(), SW.DEV_B.isoformat())
+            all_rows["V3 shares"] = tr
             var["V3 earn_runup options"] = rows
     if "V4" in parts:
-        V4, tr, rows = part_v4(root, log, warnings, panels)
+        V4, tr, rows = part_v4(root, log, warnings, panels, spread)
         res["V4"] = V4
         if V4:
             files["V4"] = write_rows(out / f"trades_r10swing_V4_{today}.csv.gz", tr)
             files["V4opt"] = write_rows(out / f"trades_r10swing_V4opt_{today}.csv.gz", rows)
             var["V4 new_high shares"] = round8.in_win(tr, SW.DEV_A.isoformat(), SW.DEV_B.isoformat())
+            all_rows["V4 shares"] = tr
             var["V4 new_high options"] = rows
-    # the compounding view for every rule that passes (HOOK: sprint/compound.py, another builder's module)
-    comp = {}
-    V = res.get("VOL") or {}
-    for v in ("V1", "V2", "V2-s"):
-        if V.get(v, {}).get("pass"):
-            comp[v] = SW.compounding_view(v, var[f"{v} {SW.VARIANTS[v][0]}"], "option")
-    for key in ("V3", "V4"):
-        o = res.get(key)
-        if o and o["pass"]:
-            sh = var[f"{key} {'earn_runup' if key == 'V3' else 'new_high'} shares"]
-            comp[f"{key} shares"] = SW.compounding_view(f"{key} shares", sh, "shares")
-        if o and o["twin"]["pass"]:
-            comp[f"{key} options"] = SW.compounding_view(f"{key} options", var[f"{key} {'earn_runup' if key == 'V3' else 'new_high'} options"], "option")
-    res["compounding"] = comp
+    if spread is not None:
+        res["spread"] = dict(spread["est"].summary(), describe=spread["est"].describe())
+    res["compounding"] = compounding(res, var, all_rows)
     n_prior = count_trials(out, x.runs_csv)
     res["trials"] = trials(n_prior)
     dev_days = [d.isoformat() for d in days]

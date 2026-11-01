@@ -265,3 +265,38 @@ def test_div_provider_probes_monthly_only_names_and_recovers_the_vol(env, capsys
     P10.status(root, print, [D1, D2])
     o = capsys.readouterr().out
     assert "D-IV: 2 of 2" in o and "stock15: 2 of 2" in o
+
+
+# ---------------------------------------------------------------- Addendum 16.1's calibration provider
+def test_the_module_registers_the_three_round10_swing_providers():
+    src = open(P10.__file__).read()
+    for line in ('register("div", IV.needed_option_contracts)', 'register("r10swing", SW.needed_option_contracts)',
+                 'register("spread_cal", SE.needed_option_contracts)'):
+        assert line in src
+
+
+def test_spread_cal_asks_only_for_chain_contracts_the_0dte_cache_lacks(env, tmp_path):
+    from sprint import spread_est as SE
+    root, m, fa = env
+    chains = tmp_path / "chains"
+    chains.mkdir()
+    k = int(_atm(m))
+    syms = [occ("SPY", D1, "C", k + j) for j in range(3)]
+    rows = [{"logged_at": f"{D1}T10:00:05-05:00", "underlying": "SPY", "spot": k, "symbol": s, "type": "C", "expiry": D1.isoformat(),
+             "strike": float(k + j), "bid": 1.0, "ask": 1.1} for j, s in enumerate(syms)]
+    pd.DataFrame(rows).to_csv(chains / f"{D1}.csv.gz", index=False, compression="gzip")
+    (chains / "2026-07-06.csv.gz").write_bytes(b"inside L1: never opened")
+    (chains / "2024-05-01.csv.gz").write_bytes(b"inside L2: never opened")
+    have = pd.DataFrame([{"ts": pd.Timestamp(f"{D1} 10:00", tz="America/New_York"), "o": 1.0, "h": 1.0, "l": 1.0, "c": 1.0, "v": 1.0,
+                          "symbol": syms[0]}])
+    PA._write_gz(root / "options" / "SPY" / D1.isoformat() / "bars.csv.gz", have)
+    P10.register("spread_cal", SE.needed_option_contracts)
+    ctx = P10.Ctx(root, print, [D1, D2], chains_dir=chains)
+    new, refused, errors = P10.collect(ctx)
+    assert new == {(D1, IV.W_DAY): (syms[1:], 1, ["spread_cal"])} and not refused and not errors
+    out = P10.pull_needs(ctx)
+    assert out["contracts"] == 2 and out["rounds"] == 1
+    got = IV.read_opt(root, D1, IV.W_DAY)
+    assert len(got) and set(got["symbol"]) <= set(syms[1:]) and IV.minutes(got).min() >= 0
+    ctx.span = (D2, D2)                                       # outside the pull's span: nothing asked
+    assert SE.needed_option_contracts(ctx) == []

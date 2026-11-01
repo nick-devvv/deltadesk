@@ -65,6 +65,8 @@ def test_report_json_labels_and_trade_files(world):
     out = world["out"]
     md = (out / f"r10swing_{TODAY}.md").read_text()
     for lab in ("BACKTEST", "REAL", "BS-EST", "SURVIVORSHIP-BIASED", "LOOK-AHEAD CAVEAT", "PAPER RESEARCH ONLY", "## D-IV",
+                "## Option costs: the ESTIMATED-SPREAD (Addendum 16.1)", "judged at 100% of the ESTIMATED-SPREAD",
+                "MODELED 10% of premium (the old default)", "MODELED 2% of premium (F-opt's)",
                 "## V1 term_slope", "## V3 earn_runup", "## V4 new_high", "Compounding view", "Deflated Sharpe", "Not financial advice"):
         assert lab in md, lab
     for f in ("V1", "V2", "V2s", "V3", "V3opt", "V3pool", "V4", "V4opt"):
@@ -74,7 +76,8 @@ def test_report_json_labels_and_trade_files(world):
     assert set(res) >= {"DIV", "VOL", "V3", "V4", "trials", "dsr", "compounding"}
     for v in ("V1", "V2", "V2-s"):
         o = res["VOL"][v]
-        assert set(o["levels"]) == {"mid", "50", "100", "2x"} and len(o["pass_bar"]["checks"]) == 4 and o["random"]["draws"] == 200
+        assert set(o["levels"]) == {"mid", "50", "100", "2x", "m10", "m2"} and len(o["pass_bar"]["checks"]) == 4
+        assert o["random"]["draws"] == 200
     assert "PAPER RESEARCH ONLY" in res["VOL"]["V2-s"]["label"]
     assert len(res["V3"]["pass_bar"]["checks"]) == 7 and len(res["V4"]["pass_bar"]["checks"]) == 7
     assert len(res["V3"]["twin"]["bar"]["checks"]) == 5 and len(res["V4"]["twin"]["bar"]["checks"]) == 4
@@ -105,8 +108,9 @@ def test_option_rows_stay_in_dev_and_carry_every_spread_level(world):
     for f in ("V1", "V2", "V2s"):
         df = pd.read_csv(out / f"trades_r10swing_{f}_{TODAY}.csv.gz", compression="gzip")
         assert len(df) and (df["entry_day"] >= "2024-08-01").all() and (df["exit_day"] <= "2026-06-30").all()
-        for k in ("mid", "50", "100", "2x"):
+        for k in ("mid", "50", "100", "2x", "m10", "m2"):
             assert df[f"pnl_{k}"].notna().all()
+        assert df["spread_label"].str.contains("ESTIMATED-SPREAD|MODELED-SPREAD").all()
         assert (df["pnl_mid"] >= df["pnl_100"] - 1e-9).all() and (df["pnl_100"] >= df["pnl_2x"] - 1e-9).all()
         assert (df["rank"].between(1, 10)).all()
     v2s = pd.read_csv(out / f"trades_r10swing_V2s_{TODAY}.csv.gz", compression="gzip")
@@ -138,3 +142,16 @@ def test_trade_rows_touching_l1_or_l2_are_refused(world, tmp_path, monkeypatch):
     out.mkdir()
     with pytest.raises(periods.LockedPeriod):
         T10.main(["--data", str(world["root"]), "--out", str(out), "--today", TODAY, "--parts", "V4"])
+
+
+def test_the_estimated_spread_is_built_from_the_pulled_bars_and_labeled(world):
+    res = _res(world["out"])
+    sp = res["spread"]
+    assert sp["label"] == "ESTIMATED-SPREAD" and sp["pools"] > 0 and sp["pairs"] > 0
+    c = sp["calibration"]
+    assert c["ratio"] == 1.0 and "fewer than 200" in c["label"]               # no chains in the synthetic world
+    assert set(sp["fills"]) <= {"ESTIMATED-SPREAD", "MODELED-SPREAD (fallback: fewer than 5 minute pairs)"}
+    for key in ("V3", "V4"):
+        assert set(res[key]["twin"]["levels"]) == {"mid", "50", "100", "2x", "m10", "m2"}
+    v4 = pd.read_csv(world["out"] / f"trades_r10swing_V4opt_{TODAY}.csv.gz", compression="gzip")
+    assert (v4["pnl_mid"] >= v4["pnl"] - 1e-9).all() and (v4["pnl"] >= v4["pnl_2x"] - 1e-9).all() and v4["debit"].gt(0).all()

@@ -19,8 +19,12 @@ Stages:
   needs    option 1-minute bars asked for by the registered "needs" providers, repeated until no provider needs more (a
            provider may ask in phases: D-IV probes the next expiry only where the last one had no print). Files:
            data/alpaca/r10/opt/<day>/<HHMM-HHMM>.pNNNN.csv.gz (append-only parts) + <HHMM-HHMM>.json (asked + printed).
-           Providers on this branch: "div" (sprint/ivdata.py: D-IV, 15:45-16:00, 2 expiries x the strikes bracketing spot)
-           and "r10swing" (sprint/r10swing.py: V1/V2 exit legs, V2-s condor legs, the V3 and V4 option twins).
+           Providers on this branch: "div" (sprint/ivdata.py: D-IV, 15:45-16:00, 2 expiries x the strikes bracketing spot),
+           "r10swing" (sprint/r10swing.py: V1/V2 exit legs, V2-s condor legs, the V3 and V4 option twins) and "spread_cal"
+           (sprint/spread_est.py, Addendum 16.1: whole-session bars of the chain-logged SPY/QQQ 0DTE contracts on DEV days
+           that the existing 0DTE cache, data/alpaca/options/<U>/<day>/bars.csv.gz, lacks; that cache holds $1 strikes within
+           3% of the open and the day's range, while the chains log strikes within 3% of each minute's spot, so edge strikes
+           on trending days are missing. Chain files: --chains-dir, default data/chains; files dated in L1/L2 never opened).
 The registry ("needs" providers): a provider is any function that returns the option contracts a round-10 part needs. Plug
 one in with ONE line next to the two below, e.g.
       register("r10grid", r10grid.needed_option_contracts)
@@ -62,6 +66,7 @@ import pull_alpaca as PA  # noqa: E402
 from sprint import ivdata as IV  # noqa: E402
 from sprint import periods  # noqa: E402
 from sprint import r10swing as SW  # noqa: E402
+from sprint import spread_est as SE  # noqa: E402
 from sprint import universe as U  # noqa: E402
 from sprint.data import parse_occ  # noqa: E402
 
@@ -96,6 +101,7 @@ def register(name, fn, window=None):
 
 register("div", IV.needed_option_contracts)
 register("r10swing", SW.needed_option_contracts)
+register("spread_cal", SE.needed_option_contracts)
 # Round 10 integrator: one line each, e.g.
 #   from sprint import r10grid, r10credit
 #   register("r10grid", r10grid.needed_option_contracts)
@@ -306,8 +312,9 @@ class Ctx:
     stock_minutes(day), asked/printed(day, window), is_done/mark_done(day, tag), div_result(day, names), priority(day),
     cache (a dict kept for the whole run), offers() (for the registry)."""
 
-    def __init__(self, root, log, days, panels=None, span=None):
+    def __init__(self, root, log, days, panels=None, span=None, chains_dir=None):
         self.root, self.log = Path(root), log
+        self.chains_dir = Path(chains_dir) if chains_dir else SE.CHAINS
         self.bars = IV.Bars(root, keep=64)
         self.days = list(days)
         self.span = tuple(span) if span else (IV.DEV_A, IV.DEV_B)
@@ -482,7 +489,7 @@ def pull_needs(ctx, providers=None, max_rounds=MAX_ROUNDS):
 
 
 # ---------------------------------------------------------------- the estimate (no network)
-def estimate(n_days, names_per_day, rebalances=22, v3_events=None, v4_trades=None, div_scope="all", per_min=None):
+def estimate(n_days, names_per_day, rebalances=22, v3_events=None, v4_trades=None, div_scope="all", per_min=None, chain_days=0):
     """Requests and minutes, from the universe size. Assumptions (stated, not measured): about 5 strikes per expiry probe
     (2 per plausible grid, 3-4 grids, overlaps), 1.4 probes for the 30-day expiry and 2.5 for the 90-day one on average;
     V2-s probes about 4 strikes x 3 grids per condor leg; every probe or fetch of 100 contracts is one request (15 or 390
@@ -496,7 +503,8 @@ def estimate(n_days, names_per_day, rebalances=22, v3_events=None, v4_trades=Non
           "div": int(d_div * math.ceil(names * 2 * 5 * (1.4 + 2.5) / BATCH)),
           "v1_v2_v2s": int(rebalances * math.ceil(names * (4 * 10 + 6) / BATCH) + rebalances * 3),
           "v3_twin": int(v3 * (1 + SW.V3_POOL) * 1.3 * 0.5),
-          "v4_twin": int(v4 * 6)}
+          "v4_twin": int(v4 * 6),
+          "spread_cal": int(chain_days * 2)}
     tot = sum(st.values())
     return {"days": n_days, "div_days": d_div, "names_per_day": round(names, 1), "requests": st, "total_requests": tot,
             "minutes": round(tot / per_min, 1), "hours": round(tot / per_min / 60, 1), "per_minute": per_min}
@@ -513,7 +521,7 @@ def estimate_from_cache(root, log, div_scope="all"):
         src = f"the U-STK filter on {len(sample)} sampled DEV sessions"
     if not avg or avg <= len(U.U_ETF):
         avg, src = len(U.U_ETF) + 1000, "an assumed 1,000 U-STK names a day (no U-STK daily bars to measure)"
-    e = estimate(len(days), avg, len(SW.holds()[0]), div_scope=div_scope)
+    e = estimate(len(days), avg, len(SW.holds()[0]), div_scope=div_scope, chain_days=len(SE.chain_files(SE.CHAINS)))
     log(f"Estimate (no network): {len(days)} DEV sessions, about {e['names_per_day']} D-IV names a day (from {src}); "
         f"D-IV on {e['div_days']} sessions ({div_scope}).")
     for k, v in e["requests"].items():
@@ -552,6 +560,7 @@ def main(argv=None):
                     help="D-IV on every DEV session (default) or only on the rebalance days and the 5 sessions before each")
     ap.add_argument("--from", dest="a", default=None, help="first DEV session (default 2024-08-01)")
     ap.add_argument("--to", dest="b", default=None, help="last DEV session (default 2026-06-30)")
+    ap.add_argument("--chains-dir", default=str(SE.CHAINS), help="logged chains (the spread_cal provider's calibration days)")
     ap.add_argument("--status", action="store_true")
     ap.add_argument("--estimate", action="store_true")
     x = ap.parse_args(argv)
@@ -588,7 +597,7 @@ def main(argv=None):
         f"never requested; providers {', '.join(provs or PROVIDERS)}")
     win = rebalance_window_days()
     div_days = days if x.div_scope == "all" else [d for d in days if d in win]
-    ctx = Ctx(root, log, div_days, span=(a, b))
+    ctx = Ctx(root, log, div_days, span=(a, b), chains_dir=x.chains_dir)
     t0 = time.time()
     try:
         for st in stages:

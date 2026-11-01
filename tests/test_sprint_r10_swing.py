@@ -16,6 +16,7 @@ import pytest
 import sprint_synth  # noqa: F401
 import sprint_r10_swing as T10
 from sprint import bs, edgar, periods
+from sprint import spread_est as SE
 from sprint import ivdata as IV
 from sprint import r10swing as SW
 from sprint import spread as SP
@@ -284,7 +285,8 @@ def _outs(n_names=30, good=0.15, rest=-0.02):
             if k % 7 == 3 and j < 10:
                 r = -0.05
             st[nm] = {"symbol": nm, "day": x.isoformat(), "entry_day": t.isoformat(), "ret_100": r, "ret_mid": r + 0.02, "ret_50": r + 0.01,
-                      "ret_2x": r - 0.02, "pnl_100": 100 * r, "pnl_mid": 100 * r + 2, "pnl_50": 100 * r + 1, "pnl_2x": 100 * r - 2}
+                      "ret_2x": r - 0.02, "ret_m10": r - 0.05, "ret_m2": r, "pnl_100": 100 * r, "pnl_mid": 100 * r + 2,
+                      "pnl_50": 100 * r + 1, "pnl_2x": 100 * r - 2, "pnl_m10": 100 * r - 5, "pnl_m2": 100 * r}
         keys = {"slope": {nm: -j for j, nm in enumerate(names)}, "ratio": {nm: -j for j, nm in enumerate(names)}}
         outs.append({"t": t, "x": x, "keys": keys, "eligible": {"V1": names, "V2": names, "V2-s": names},
                      "picks": {"V1": SW.top(keys["slope"]), "V2": SW.top(keys["ratio"]), "V2-s": SW.top(keys["ratio"], bottom=True)},
@@ -413,11 +415,19 @@ def test_v3_twin_row_costs_are_f_opts():
     info, _ = SW.pick_last15("ABC", day, pidx, {"ABC": {386: S}}, [exp], SW.V3_BAND)
     out = {"ABC": {(exp, info["strike"], "C"): (info["symbol"], 388, info["px"] + 1.0)}}
     bars = FakeBars(last={day: pidx, x: out}, stock={day: {"ABC": {386: S}}})
-    row, why = SW.v3_twin_row(it, bars, SP.SpreadModel())
+    est = SE.SpreadEst()                                      # no pools: every fill falls back to the 10% default (labeled)
+    row, why = SW.v3_twin_row(it, bars, est)
     b_in, b_out = info["px"], info["px"] + 1.0
-    assert why is None and row["pnl"] == pytest.approx(100 * ((b_out - max(0.02 * b_out, 0.005)) - (b_in + max(0.02 * b_in, 0.005))) - 1.3, abs=0.01)
-    assert row["pnl_2x"] < row["pnl"] and row["pnl_spread_model"] < row["pnl"] and row["label"].startswith(SW.REAL)
-    assert SW.v3_twin_row(dict(it, exit=date(2025, 3, 12)), bars, SP.SpreadModel())[0] is None
+    f = lambda pct, k: 100 * ((b_out - k * max(pct * b_out, 0.005)) - (b_in + k * max(pct * b_in, 0.005))) - 1.3
+    assert why is None and row["pnl"] == pytest.approx(f(0.10, 1), abs=0.01) and row["pnl_2x"] == pytest.approx(f(0.10, 2), abs=0.01)
+    assert row["pnl_m2"] == pytest.approx(f(0.02, 1), abs=0.01) == pytest.approx(SW.opt_leg(b_in, b_out), abs=0.01)
+    assert row["pnl_mid"] == pytest.approx(100 * (b_out - b_in) - 1.3, abs=0.01) and row["pnl_m10"] == pytest.approx(row["pnl"], abs=0.01)
+    assert row["debit"] == pytest.approx(100 * (b_in + max(0.1 * b_in, 0.005)) + 0.65, abs=0.01)
+    assert row["spread_label"] == SE.FALLBACK and row["label"].startswith(SW.REAL)
+    est = SE.SpreadEst({("ABC", "2025-03", SP._pb(b_in)): (0.01, 9), ("ABC", "2025-03", SP._pb(b_out)): (0.01, 9)}, ratio=2.0)
+    row, _ = SW.v3_twin_row(it, bars, est)
+    assert row["pnl"] == pytest.approx(100 * ((b_out - 0.02) - (b_in + 0.02)) - 1.3, abs=0.01) and row["spread_label"] == SE.LABEL
+    assert SW.v3_twin_row(dict(it, exit=date(2025, 3, 12)), bars, est)[0] is None
 
 
 # ---------------------------------------------------------------- V4
@@ -550,12 +560,68 @@ def test_v4_twin_asks_first_then_rolls_at_30_days_left():
         prev = [d for d in sess if date.fromisoformat(g["buy_day"]) < d < sell]
         assert all((exp - d).days > 30 for d in prev)
     assert legs[-1]["sell_day"] == "2025-05-15"
-    assert row["pnl"] == pytest.approx(sum(SW.opt_leg(g["buy"], g["sell"]) for g in legs), abs=0.02)
+    assert row["pnl_m2"] == pytest.approx(sum(SW.opt_leg(g["buy"], g["sell"]) for g in legs), abs=0.02)
+    assert row["pnl"] == pytest.approx(sum(SW.opt_leg(g["buy"], g["sell"], pct=0.02) for g in legs), abs=0.02)  # SPY's 2% default
+    kind, r2 = SW.v4_twin_walk(tr, FakeBars(opens=_opens_fn("SPY", S, 0.2), first=_First(S, 0.2)), lambda d: S, sess,
+                               {"est": SP.SpreadModel(pct=0.05), "m10": SP.SpreadModel(pct=0.10), "m2": SP.SpreadModel(pct=0.02)})
+    assert r2["pnl"] == pytest.approx(sum(SW.opt_leg(g["buy"], g["sell"], pct=0.05) for g in legs), abs=0.02)
+    assert r2["pnl_2x"] == pytest.approx(sum(SW.opt_leg(g["buy"], g["sell"], pct=0.05, k=2.0) for g in legs), abs=0.02)
     miss = _First(S, 0.2, missing={legs[0]["contract"]})
     kind, why = SW.v4_twin_walk(tr, FakeBars(opens=_opens_fn("SPY", S, 0.2), first=miss), lambda d: S, sess)
     assert kind == "skip" and "no print of the held call" in why
 
 
-def test_compounding_view_is_a_marked_hook():
-    v = SW.compounding_view("V1", [{"pnl": 1.0}], "option")
+def test_compounding_view_is_a_marked_hook_until_compound_py_is_merged(monkeypatch):
+    import sys
+    monkeypatch.delitem(sys.modules, "sprint.compound", raising=False)
+    import sprint
+    if hasattr(sprint, "compound"):
+        monkeypatch.delattr(sprint, "compound")
+    try:
+        import sprint.compound  # noqa: F401
+        pytest.skip("sprint/compound.py is on this branch (merged): the stub test below covers the call")
+    except ImportError:
+        pass
+    v = SW.compounding_view("V1", [{"day": "2025-03-03", "pnl": 1.0, "debit": 100.0}], "debit", ["2025-03-03"])
     assert "sprint/compound.py" in v["hook"] and v["rule"] == "V1"
+
+
+class _StubCompound:
+    """compound.simulate / render_md with round10/noise's interface (sprint/compound.py at 6bb13f3), recording the call."""
+    LABEL = "compounding view (information, not trials)"
+
+    def __init__(self):
+        self.calls = []
+
+    def simulate(self, rows, sessions=None, start=3000.0, fractions=(0.01, 0.02, 0.05), paths=2000, seed=29, halve=0.5, label=None):
+        days = [str(d)[:10] for d in sessions]
+        for r in rows:
+            assert set(r) >= {"day", "pnl", "risk"} and r["risk"] > 0 and r["day"] in days
+        self.calls.append({"rows": rows, "sessions": days, "label": label})
+        return {"label": label, "input": {"trades": len(rows), "sessions": len(days)}, "fractions": {"1%": {"median_end": 3000.0}}}
+
+    def render_md(self, view, title="Compounding view"):
+        return [f"- **{title}**", ""]
+
+
+def test_compounding_view_calls_compound_simulate_with_risk_and_every_session(monkeypatch):
+    import sys
+    import types
+    import sprint
+    stub = _StubCompound()
+    mod = types.ModuleType("sprint.compound")
+    mod.LABEL, mod.simulate, mod.render_md = stub.LABEL, stub.simulate, stub.render_md
+    monkeypatch.setitem(sys.modules, "sprint.compound", mod)
+    monkeypatch.setattr(sprint, "compound", mod, raising=False)
+    sess = ["2025-03-03", "2025-03-04", "2025-03-05"]
+    rows = [{"day": "2025-03-04", "pnl": 50.0, "debit": 200.0}, {"day": "2025-03-05", "pnl": -20.0, "debit": 0.0},
+            {"day": "2025-06-02", "pnl": 10.0, "debit": 100.0}]
+    v = SW.compounding_view("V1", rows, "debit", sess, "V1 term_slope, DEV")
+    c = stub.calls[0]
+    assert c["sessions"] == sess and c["rows"] == [{"day": "2025-03-04", "pnl": 50.0, "risk": 200.0}]
+    assert v["skipped_rows"] == 2 and v["md"][0] == "- **V1 term_slope, DEV**" and "debit" in v["risk"] and "V1" in c["label"]
+    sh = [{"day": "2025-03-04", "pnl": 30.0, "shares": 100, "risk_per_share": 1.5, "notional": 10_000.0}]
+    SW.compounding_view("V4 shares", sh, "stop", sess)
+    SW.compounding_view("V3 shares", sh, "notional", sess)
+    SW.compounding_view("V2-s", [{"day": "2025-03-03", "pnl": 5.0, "margin": 400.0}], "margin", sess)
+    assert [c["rows"][0]["risk"] for c in stub.calls[1:]] == [150.0, 10_000.0, 400.0]
