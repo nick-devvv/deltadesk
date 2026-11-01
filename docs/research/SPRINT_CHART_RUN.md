@@ -70,19 +70,21 @@ Runs `tools/sprint_round9.py` on the files run 9a pulled plus what runs 1-8 left
 - **Part H**: run 7's "learn when it works" procedure on round 8's 12 share strategies (rules found on 2016-2019 only).
 - **Part I**: FIN-H on the weekly expiry (REAL), beside FIN-H's own 0DTE on the same days.
 - **Part S**: the 1-minute scalper on SPY and QQQ 0DTE (REAL), six target/stop cells, the cell chosen on 2024-08 to 2025-06 and tested on 2025-07 to 2026-06, Nick's 5/3 sizing, and the same triggers on stock bars 2016-2026. Spreads: logged chains in `~/sprint/data/chains` where they exist (only if Nick copied them there earlier; Chart must not copy anything from `~/desk`), else max($0.02, 0.5% of the premium), labeled.
-- Then the book (FIN-H plus every survivor), the trial count (203 + the run logs), the deflated Sharpe and the $3,000 account view.
+- Then the book (FIN-H plus every survivor).
+- **Part E** (SPRINT_PLAN Amendment 14): a model that predicts each morning, before 09:30, whether SPY, QQQ or IWM will have a clean one-way day (high "efficiency ratio"), refit every month on earlier days only, and skips the days it rates in its bottom third. Applied unchanged to FIN-H (run 7's trades), NB-VOL (round 8's vol-sized noise band in shares) and Part S's chosen cells (test half), against 200 random day-skips. It reads only files already on Chart's computer (SPY/QQQ/IWM stock bars, VIXY daily, run 7's and round 8's trade files) and writes `trades_round9_E_<date>.csv.gz` (one gate decision per symbol-day).
+- Then the trial count (206 + the run logs), the deflated Sharpe and the $3,000 account view.
 
 ### What to expect
 
 | Step | Time (estimate) | Disk |
 | --- | --- | --- |
-| Update + sprint tests (340) | 5-10 min | |
+| Update + sprint tests (368) | 5-10 min | |
 | Check the files | seconds | |
-| `tools/sprint_round9.py` | 60-150 min | about 100-200 MB (report + trade files) |
+| `tools/sprint_round9.py` (Part E included) | 60-150 min | about 100-200 MB (report + trade files) |
 | Zip | 1-2 min | about 30-80 MB |
 | **Total** | **about 1-2.5 hours** | |
 
-From synthetic timings on a 2-core machine: Part S took about 2 seconds per symbol-day (958 symbol-days: about 30-40 minutes, about a million option trades); Parts F, G, H and I together about 20-60 minutes at the real sizes (thousands of daily-bar symbols, tens of thousands of 8-K event days, round 8's share trades re-stamped with entry features). The tool needs about 3 GB of memory, so nothing else heavy should run at the same time. The Part S option trade file stays on Chart's computer (about a million rows); its size is shown.
+From synthetic timings on a 2-core machine: Part S took about 2 seconds per symbol-day (958 symbol-days: about 30-40 minutes, about a million option trades); Parts F, G, H and I together about 20-60 minutes at the real sizes (thousands of daily-bar symbols, tens of thousands of 8-K event days, round 8's share trades re-stamped with entry features). Part E adds about 1-3 minutes: it reuses the SPY/QQQ/IWM bars Parts H and S already load (about 7,500 symbol-sessions of pre-open inputs in seconds; 96 monthly refits took 2 seconds at that size; the gate and 200 random skips per window well under a minute). The tool needs about 3 GB of memory, so nothing else heavy should run at the same time. The Part S option trade file stays on Chart's computer (about a million rows); its size is shown.
 
 ### Message for Chart, run 9b (one paste)
 
@@ -97,10 +99,12 @@ If a step fails, show the error and stop. Don't change any code; re-running the 
    cd ~/sprint && .venv/bin/python -m pytest -q tests/test_sprint_*.py 2>&1 | tail -3
 3. Check the files are there (no pull) and the free disk space:
    cd ~/sprint && tail -1 data/sprint/logs/run9_pull.log && .venv/bin/python tools/sprint_pull9.py --status && ls -t data/sprint/trades_round8_shares_*.csv.gz | head -1 && ls -t data/sprint/trades_factory_hist_v1_*.csv.gz | head -1 && ls -t data/sprint/trades_factory_dev_v1_*.csv.gz | head -1 && ls data/alpaca/options/SPY | wc -l && ls data/alpaca/stocks/SPY | head -1 && ls data/alpaca/stocks/SPY | tail -1 && ls -la data/alpaca/daily/VIXY.csv.gz && echo "logged chains for Part S: $(ls data/chains 2>/dev/null | wc -l) files in ~/sprint/data/chains" && df -h ~ | tail -1
-4. Round 9 (about 1-2.5 hours):
+   Part E's inputs (no pull; they print counts and dates only):
+   cd ~/sprint && for s in QQQ IWM; do echo "$s stock months: $(ls data/alpaca/stocks/$s | head -1) to $(ls data/alpaca/stocks/$s | tail -1)"; done && echo "NB-VOL trades for Part E: $(zcat $(ls -t data/sprint/trades_round8_shares_*.csv.gz | head -1) | grep -c '^noise_sh_vol,')" && .venv/bin/python -c "import sys; sys.path.insert(0, '.'); from sprint import data; v = data.read_daily('VIXY'); print('VIXY daily closes for Part E:', len(v), v.index[0], 'to', v.index[-1])"
+4. Round 9 (about 1-2.5 hours; Part E, the efficiency gate, runs near the end and adds about 1-3 minutes):
    cd ~/sprint && .venv/bin/python tools/sprint_round9.py > data/sprint/logs/run9_round9.log 2>&1; tail -50 data/sprint/logs/run9_round9.log
 5. Zip the results and show the summary (the Part S option trade file, about a million rows, stays here; its size is shown):
-   cd ~/sprint && D=$(ls -t data/sprint/round9_*.md | head -1 | sed 's/.*round9_\(.*\)\.md/\1/') && .venv/bin/python -m zipfile -c ~/sprint_results9.zip data/sprint/round9_$D.md data/sprint/round9_$D.json data/sprint/trades_round9_F_$D.csv.gz data/sprint/trades_round9_Fopt_$D.csv.gz data/sprint/trades_round9_G1_$D.csv.gz data/sprint/trades_round9_G2_$D.csv.gz data/sprint/trades_round9_G2pool_$D.csv.gz data/sprint/trades_round9_H_$D.csv.gz data/sprint/trades_round9_I_$D.csv.gz data/alpaca/universe/ustk.json data/sprint/logs/run9_*.log && ls -la ~/sprint_results9.zip && ls -la data/sprint/trades_round9_S_$D.csv.gz
+   cd ~/sprint && D=$(ls -t data/sprint/round9_*.md | head -1 | sed 's/.*round9_\(.*\)\.md/\1/') && .venv/bin/python -m zipfile -c ~/sprint_results9.zip data/sprint/round9_$D.md data/sprint/round9_$D.json data/sprint/trades_round9_F_$D.csv.gz data/sprint/trades_round9_Fopt_$D.csv.gz data/sprint/trades_round9_G1_$D.csv.gz data/sprint/trades_round9_G2_$D.csv.gz data/sprint/trades_round9_G2pool_$D.csv.gz data/sprint/trades_round9_H_$D.csv.gz data/sprint/trades_round9_I_$D.csv.gz data/sprint/trades_round9_E_$D.csv.gz data/alpaca/universe/ustk.json data/sprint/logs/run9_*.log && ls -la ~/sprint_results9.zip && ls -la data/sprint/trades_round9_S_$D.csv.gz
    sed -n '/^## Summary/,/^## Part F/p' data/sprint/round9_$D.md
    (send Nick the file ~/sprint_results9.zip; the Part S trade file stays on this computer)
 ```
@@ -108,10 +112,10 @@ If a step fails, show the error and stop. Don't change any code; re-running the 
 What Nick sends back: step 1's commit line, step 2's last line, step 3's lines, step 4's output (the summary lines and any WARNING lines), step 5's lines and summary, and `~/sprint_results9.zip`.
 
 Checks on the way in:
-- Step 2: 340 sprint tests pass.
-- Step 3: the pull log's last line says `sprint_pull9 done`; round 8's share trade file and run 7's two factory trade files are listed (without run 7's files the book's FIN-H is Part I's same-pass FIN-H on 2024-2026 only, with a WARNING); about 470-479 option days under `options/SPY`; stock months `2015-11` to `2026-06`. The chains count says whether Part S used measured spreads (0 = the max($0.02, 0.5%) fallback everywhere, labeled).
-- Step 4: one summary line per Part F rule and universe, F-opt twin, G1 variant, G2, Part H strategy, Part I, Part S signal and contract, and the book. Every line is a BACKTEST; option lines say REAL; U-STK lines say SURVIVORSHIP-BIASED. Any `WARNING:` line (a part not run because an input is missing, an unfinished pull stage, run 7's files not found) is a problem to look at.
-- Known before any result (Amendments 12 and 13): steady option income mostly belongs to option sellers, which Nick's account can't do; U-STK lists today's survivors only; G2 uses the realized 8-K date (look-ahead caveat); Part S's wins are +3-8%, so the spread decides it, and the logged chains are recent (an assumption for 2024-2025); SMA(200) restarts after L2, so DEV rsi2 trades start about May 2025.
+- Step 2: 368 sprint tests pass.
+- Step 3: the pull log's last line says `sprint_pull9 done`; round 8's share trade file and run 7's two factory trade files are listed (without run 7's files the book's FIN-H is Part I's same-pass FIN-H on 2024-2026 only, with a WARNING); about 470-479 option days under `options/SPY`; stock months `2015-11` to `2026-06`. The chains count says whether Part S used measured spreads (0 = the max($0.02, 0.5%) fallback everywhere, labeled). Part E's lines: QQQ and IWM stock months `2015-11` to `2026-06` like SPY; an NB-VOL trade count above 0; VIXY daily closes from `2014-11-03` to `2026-06-30` (L1/L2 dates are never in the file).
+- Step 4: one summary line per Part F rule and universe, F-opt twin, G1 variant, G2, Part H strategy, Part I, Part S signal and contract, `E gate on` FIN-H, NB-VOL and each Part S chosen cell, and the book. The log shows `Part E: ... symbol-sessions` and `96 monthly refits` (out of sample from 2018-01). Every line is a BACKTEST; option lines say REAL; U-STK lines say SURVIVORSHIP-BIASED. Any `WARNING:` line (a part not run because an input is missing, an unfinished pull stage, run 7's files not found) is a problem to look at.
+- Known before any result (Amendments 12, 13 and 14): Part E's idea comes from an unverified post (no strategy, costs or random-skip comparison shown); steady option income mostly belongs to option sellers, which Nick's account can't do; U-STK lists today's survivors only; G2 uses the realized 8-K date (look-ahead caveat); Part S's wins are +3-8%, so the spread decides it, and the logged chains are recent (an assumption for 2024-2025); SMA(200) restarts after L2, so DEV rsi2 trades start about May 2025.
 
 ## Run 8: round 8, steady share rules, a sharper big-day filter, indicators and levels (about 45-90 minutes, no new data)
 

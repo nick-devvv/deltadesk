@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""tools/sprint_round9.py - SPRINT_PLAN Amendments 12 and 13: round 9 (research only; reads cached bars, EDGAR records and trade
+"""tools/sprint_round9.py - SPRINT_PLAN Amendments 12, 13 and 14: round 9 (research only; reads cached bars, EDGAR records and trade
 files; never trades; no network).
 
   python3 tools/sprint_round9.py                     # after tools/sprint_pull9.py
   python3 tools/sprint_round9.py --parts F,G         # a subset (the others are reported as not run)
+  python3 tools/sprint_round9.py --parts E           # Part E alone (its Part S leg needs S in the same run)
 
 Reads (data/alpaca unless --data): daily9/ (U-ETF + U-STK daily bars), universe/ustk.json, options_fopt/, ../edgar/
 (headers.jsonl, company_tickers.json), g1_bars/, options_g2/, options_w5/, stocks/ (SPY, QQQ, IWM 1-minute bars: HIST
@@ -11,10 +12,13 @@ from its 2015-11-01 warm-up, DEV), options/ (DEV 0DTE bars), daily/VIXY.csv.gz; 
 (round 8's share trades, Part H); run 7's data/sprint/trades_factory_{hist,dev}_v1_*.csv.gz (FIN-H for the book); the
 logged chains folder (default data/chains: MEASURED-SPREAD for Part S where a cell has data).
 Runs Part F (sprint/multiday.py), Part G (sprint/catalyst.py), Part H (sprint/round9.part_h, the factory procedure), Part I
-(sprint/weekly.py), Part S (sprint/scalp.py), then the book, the trials (203 + the run logs), the deflated Sharpe and the
-account view. Writes data/sprint/round9_<date>.md and .json and the per-part trade files
-data/sprint/trades_round9_{F,Fopt,G1,G2,G2pool,H,I,S}_<date>.csv.gz (H = round 8's share trades with the stamped entry
-features; S = every Part S option trade of every cell, about a million rows on real data); prints the summary. Labels everything BACKTEST,
+(sprint/weekly.py), Part S (sprint/scalp.py), then the book, Part E (sprint/effgate.py: the pre-open predicted-efficiency gate
+on FIN-H = run 7's factory trades, NB-VOL = round 8's noise_sh_vol share trades, and Part S's chosen cells on the test half; the
+same SPY/QQQ/IWM stock bars, VIXY daily file and trade files, no new pull), the trials (206 + the run logs), the deflated Sharpe
+and the account view. Writes data/sprint/round9_<date>.md and .json and the per-part trade files
+data/sprint/trades_round9_{F,Fopt,G1,G2,G2pool,H,I,S,E}_<date>.csv.gz (H = round 8's share trades with the stamped entry
+features; S = every Part S option trade of every cell, about a million rows on real data; E = Part E's out-of-sample gate
+decision per symbol-day with its inputs); prints the summary. Labels everything BACKTEST,
 REAL / MODELED (options) and SURVIVORSHIP-BIASED (U-STK). Refuses any trade row dated inside L1 or L2.
 """
 import argparse
@@ -34,10 +38,10 @@ import pandas as pd
 
 HERE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(HERE))
-from sprint import book, catalyst as C, data, edgar as E, engine, factory, multiday as M, periods, round8  # noqa: E402
+from sprint import book, catalyst as C, data, edgar as E, effgate as EG, engine, factory, multiday as M, periods, round8  # noqa: E402
 from sprint import round9 as R9, runner, scalp as S, shares, universe as U, weekly as W  # noqa: E402
 
-PARTS = ("F", "G", "H", "I", "S")
+PARTS = ("F", "G", "H", "I", "S", "E")
 FIN_RVOL = 1.06
 
 
@@ -331,8 +335,70 @@ def load_finh(out, fh=None, fd=None):
     return res, files
 
 
+# ---------------------------------------------------------------- Part E
+def load_nbvol(out, sh_file=None):
+    """NB-VOL: round 8's noise_sh_vol share trades (rows), or None with the file name."""
+    f = sh_file or newest(str(Path(out) / "trades_round8_shares_*.csv.gz"))
+    if not f or not Path(f).exists():
+        return None, f
+    df = pd.read_csv(f, compression="gzip", low_memory=False)
+    rows = df[df["variant"] == "noise_sh_vol"].to_dict("records")
+    for r in rows:
+        r["day"] = str(r["day"])[:10]
+    why = check_rows(rows, "NB-VOL")
+    if why:
+        raise periods.LockedPeriod(why)
+    return rows, f
+
+
+def part_e(log, warnings, series, vd, finh, nbvol, s_test, parts):
+    """Part E (Amendment 14): the gate model on SPY/QQQ/IWM bars, then the gate on FIN-H, NB-VOL and Part S's chosen cells.
+    Returns (result, gated DEV rows by name, decision rows) or (None, {}, [])."""
+    ser = {k: v for k, v in series.items() if k[1] in EG.SYMBOLS and k[0] in ("HIST", "DEV")}
+    if not ser:
+        warnings.append("Part E: no SPY/QQQ/IWM stock bars: Part E not run.")
+        return None, {}, []
+    if vd is None:
+        warnings.append("Part E: no VIXY daily file (data/alpaca/daily/VIXY.csv.gz): the three VIXY inputs are empty.")
+    for src in ("HIST", "DEV"):
+        miss = [s for s in EG.SYMBOLS if (src, s) not in ser]
+        if miss:
+            warnings.append(f"Part E: no {src} stock bars for {', '.join(miss)}.")
+    t0 = time.time()
+    rows = EG.build_rows(ser, vd)
+    t1 = time.time()
+    wf = EG.walk_forward(rows)
+    log(f"  Part E: {len(rows)} symbol-sessions, inputs in {t1 - t0:.0f}s; {wf.get('refits', 0)} monthly refits in {time.time() - t1:.0f}s"
+        + (f" ({wf['error']})" if wf.get("error") else ""))
+    hist_w = ("2018-01..2024-01", EG.E_HIST[0], EG.E_HIST[1])
+    dev_w = ("DEV", EG.DEV_A, EG.DEV_B)
+    st = {}
+    if finh is None:
+        st["FIN-H"] = {"why": "run 7's factory trade files (trades_factory_{hist,dev}_v1_*.csv.gz) not found"}
+    else:
+        st["FIN-H"] = {"rows": finh["HIST"] + finh["DEV"], "kind": "option", "label": "run 7's otm_c_1100 with f_rvol >= 1.06, 1 contract",
+                       "windows": [hist_w + ("MODELED options",), dev_w + ("REAL options",)]}
+    if nbvol is None:
+        st["NB-VOL"] = {"why": "round 8's share trade file (trades_round8_shares_*.csv.gz) not found"}
+    else:
+        st["NB-VOL"] = {"rows": nbvol, "kind": "shares", "label": "round 8's noise_sh_vol, shares",
+                        "windows": [hist_w + ("real shares",), dev_w + ("real shares",)]}
+    if "S" not in parts:
+        st["Part S"] = {"why": "Part S not in this run (--parts)"}
+    elif not s_test:
+        st["Part S"] = {"why": "Part S chose no cell (or did not run)"}
+    else:
+        for key, v in s_test.items():
+            st[f"Part S {key} {v['cell']}"] = {"rows": v["rows"], "kind": "option", "label": "Part S chosen cell, 1 contract, REAL",
+                                               "windows": [("test half",) + EG.S_TEST + ("REAL options",)]}
+    t2 = time.time()
+    res, dev_gated = R9.part_e(wf, st)
+    log(f"  Part E: the gate on {len(st)} strategies in {time.time() - t2:.0f}s")
+    return res, dev_gated, EG.decision_rows(wf)
+
+
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="SPRINT_PLAN Amendments 12-13: round 9 (research only)")
+    ap = argparse.ArgumentParser(description="SPRINT_PLAN Amendments 12-14: round 9 (research only)")
     ap.add_argument("--data", default=None, help="cache root (default data/alpaca)")
     ap.add_argument("--out", default=str(HERE / "data" / "sprint"))
     ap.add_argument("--today", default=None)
@@ -367,11 +433,11 @@ def main(argv=None):
                 f"can, {len(panels['stk'].missing)} without daily bars")
     # stock 1-minute series (H, I, S)
     series = {}
-    need = {"H": ("SPY", "QQQ", "IWM"), "I": W.SYMBOLS, "S": S.SYMBOLS}
+    need = {"H": ("SPY", "QQQ", "IWM"), "I": W.SYMBOLS, "S": S.SYMBOLS, "E": EG.SYMBOLS}
     syms = sorted({s for p in parts if p in need for s in need[p]})
     for sym in syms:
         for src, (a, b) in (("HIST", (periods.WARMUP["HIST"], periods.HIST[1])), ("DEV", periods.DEV)):
-            if src == "HIST" and not ({"H", "S"} & set(parts)):
+            if src == "HIST" and not ({"H", "S", "E"} & set(parts)):
                 continue
             ser = shares.load_series(sym, a, b, root)
             if ser.days:
@@ -440,6 +506,7 @@ def main(argv=None):
             if I["pass"]:
                 by_sleeve["I w5-10d03-12t07"], kinds["I w5-10d03-12t07"], cover["I w5-10d03-12t07"] = ri["weekly"], "option (REAL, 1 contract)", "dev"
     # ---- S
+    s_test = {}
     if "S" in parts:
         ser = {s: series[("DEV", s)] for s in S.SYMBOLS if ("DEV", s) in series}
         if not ser:
@@ -467,6 +534,9 @@ def main(argv=None):
                     rows = [dict(rr, _src="DEV", entry_time=f"{(570 + int(rr['entry_idx'])) // 60:02d}:{(570 + int(rr['entry_idx'])) % 60:02d}")
                             for rr in g.to_dict("records")]
                     r["account"] = R9.account_view(rows, "option", sessions_iso("dev"))
+                    for rr in rows:
+                        rr["day"] = str(rr["day"])[:10]
+                    s_test[key] = {"cell": r["chosen"], "rows": rows}
                 if r["pass_"] and r["chosen"]:
                     allc = cells_dev[cells_dev["cell"] == r["chosen"]]
                     rows = [dict(rr, _src="DEV", entry_time=f"{(570 + int(rr['entry_idx'])) // 60:02d}:{(570 + int(rr['entry_idx'])) % 60:02d}",
@@ -501,6 +571,16 @@ def main(argv=None):
     acc_rows = [r for rows in by_sleeve.values() for r in round8.in_win(rows, R9.DEV_A, R9.DEV_B)]
     res["book"]["account"] = R9.account_view(acc_rows, "mixed", dev_days) if acc_rows else None
     var["FIN-H"] = round8.in_win(fin_rows, R9.DEV_A, R9.DEV_B)
+    # ---- E (after FIN-H's files are read)
+    if "E" in parts:
+        nbvol, nf = load_nbvol(out, x.round8_shares)
+        files["E_nbvol"] = nf
+        Eres, e_dev, e_rows = part_e(log, warnings, series, vd, finh, nbvol, s_test, parts)
+        res["E"] = Eres
+        if Eres is not None:
+            var.update(e_dev)
+            files["E"] = write_rows(out / f"trades_round9_E_{today}.csv.gz", e_rows,
+                                    ["symbol", "day", "seg", "month", "er", "label_cut", "p", "cut", "skip"] + list(EG.FEATURES))
     # ---- trials and the deflated Sharpe
     n_prior = count_trials(out, x.runs_csv)
     res["trials"] = R9.trials(n_prior)

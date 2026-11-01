@@ -1,5 +1,5 @@
-"""sprint/round9.py - round 9's readouts (SPRINT_PLAN Amendment 12, Parts F G H I, and Amendment 13, Part S; pre-registered
-2026-11-01 before any round-9 code, pull or run). Research only: it reads trade lists and never trades. Every number is a
+"""sprint/round9.py - round 9's readouts (SPRINT_PLAN Amendment 12, Parts F G H I, Amendment 13, Part S, and Amendment 14,
+Part E; pre-registered 2026-11-01 before any round-9 code, pull or run). Research only: it reads trade lists and never trades. Every number is a
 BACKTEST. Labels: share results are real Alpaca bars (U-STK ones SURVIVORSHIP-BIASED); option results are REAL (Alpaca
 option prices, DEV) except FIN-H's 2016-2024 book line, which is MODELED (run 7, BS with run 4's calibration).
 
@@ -11,7 +11,10 @@ entry features at each share entry's decision bar (sprint/features.entry_feature
 as "P", so side-signed features point in the trade's direction). Literal-reading note: the amendment's list names 12
 strategies (noise_sh, noise_sh_vol, noise_sh_lo, last30, gapfade_vix, gapfade_vix_lo and D1-D6) while its count says 11
 (11 x 15 = 165 trials). All 12 named strategies run (dropping one would be a choice made here); the trial count stays the
-written 165 (round 9 = 203), and the deflated Sharpe is also shown at +15 trials as information.
+written 165 (round 9 = 206 with Part E), and the deflated Sharpe is also shown at +15 trials as information.
+Part E (Amendment 14, sprint/effgate.py): the pre-open predicted-efficiency gate on FIN-H (run 7's factory trades), NB-VOL
+(round 8's noise_sh_vol share trades) and Part S's chosen cells (test half only); its pass bar per window, the information
+readouts (months green, max drawdown, total without the best day) and the account view, ungated and gated.
 Account view (information; Nick's real account is about $3,000), for every F / G / I / S result and the book, beside the
 pre-registered numbers, never instead of them: P/L per $1,000 of capital (each trade's P/L x 1,000 / the capital it used:
 the notional for shares, the debit for options, i.e. as if every trade used $1,000); max drawdown and worst month as a %
@@ -27,8 +30,8 @@ sleeve "adds steadiness" only if its daily P/L correlation with FIN-H is below 0
 F-opt twin that passes, a G1 variant, G2, each Part H strategy whose verdict is not "none" (its chosen variant's trades),
 Part I, and each Part S signal/contract whose frozen cell passes the test (1 contract; its trades over all of DEV, the
 choice half labeled in-sample). S-size is a sizing overlay of the same trades and is reported, not booked twice.
-Trials: F 6 + G 3 + H 165 + I 1 + S 28 = 203. Deflated Sharpe (information) on DEV daily P/L with N = the run logs' rows +
-203 and the trial-Sharpe variance over every DEV variant scored here.
+Trials: F 6 + G 3 + H 165 + I 1 + S 28 + E 3 = 206. Deflated Sharpe (information) on DEV daily P/L with N = the run logs' rows +
+206 and the trial-Sharpe variance over every DEV variant scored here (Part E's gated DEV trades included).
 """
 import math
 import statistics
@@ -37,15 +40,16 @@ from datetime import date
 
 import numpy as np
 
-from . import book, factory, features, periods, round8, shares
+from . import book, effgate, factory, features, periods, round8, shares
 from . import report as R
 
 HIST_A, HIST_B = periods.HIST[0].isoformat(), periods.HIST[1].isoformat()
 DEV_A, DEV_B = periods.DEV[0].isoformat(), periods.DEV[1].isoformat()
 TRIALS = {"F (2 rules x 2 universes + 2 option twins)": 6, "G (G1 2 sides + G2)": 3,
           "H (11 strategies x (12 rules + 3 learner models))": 165, "I (weekly expiry)": 1,
-          "S (2 signals x 2 contracts x 6 cells + 2 underlying checks + 2 sized variants)": 28}
-ROUND9 = 203
+          "S (2 signals x 2 contracts x 6 cells + 2 underlying checks + 2 sized variants)": 28,
+          "E (the efficiency gate on FIN-H, NB-VOL and Part S)": 3}
+ROUND9 = 206
 assert sum(TRIALS.values()) == ROUND9
 H_STRATEGIES = ("noise_sh", "noise_sh_vol", "noise_sh_lo", "last30", "gapfade_vix", "gapfade_vix_lo",
                 "ind_rsi", "ind_bb", "ind_ema", "ind_macd", "conf_level_rsi", "conf_trend_pullback")
@@ -172,6 +176,78 @@ def account_view(rows, kind, days, account=ACCOUNT, size=None):
     return out
 
 
+# ---------------------------------------------------------------- Part E, the predicted-efficiency gate (Amendment 14)
+def part_e(wf, strategies):
+    """wf: effgate.walk_forward's result. strategies: {name: {"rows", "kind" ("option" / "shares"), "label", "windows": [(key, a,
+    b, price label)]}} or {name: {"why": reason not run}}. Returns (result, gated DEV rows by name for the deflated Sharpe)."""
+    out = {"model": {k: wf.get(k) for k in ("sessions", "refits", "oos_from", "last_fit", "error")}, "fits": wf.get("fits", []),
+           "features": list(effgate.FEATURES), "written_feature_count": effgate.WRITTEN_FEATURE_COUNT, "strategies": {}}
+    dev_gated = {}
+    for name, spec in strategies.items():
+        if spec.get("why") or not wf.get("gate"):
+            out["strategies"][name] = {"why": spec.get("why") or wf.get("error") or "no gate decisions"}
+            continue
+        ev = effgate.evaluate(name, spec["rows"], wf["gate"], spec["windows"])
+        for key, w in ev["windows"].items():
+            a, b = w["window"].split("..")
+            days = book.sessions_between(a, b)
+            sel, kept = w.pop("_sel", []), w.pop("_kept", [])
+            w["account"] = {"ungated": account_view(sel, spec["kind"], days) if sel else None,
+                            "gated": account_view(kept, spec["kind"], days) if kept else None}
+            if a >= DEV_A:
+                dev_gated[f"E {name} gated ({key})"] = kept
+        ev["kind"] = spec["kind"]
+        ev["label"] = spec.get("label", "")
+        out["strategies"][name] = ev
+    return out, dev_gated
+
+
+def _part_e_md(L, E):
+    L += ["## Part E: the pre-open predicted-efficiency gate (Amendment 14)", ""]
+    if not E:
+        L += ["NOT RUN (no SPY/QQQ/IWM stock bars).", ""]
+        return
+    m = E["model"]
+    L.append(f"Daily ER = |close(15:59) - open(09:30)| / the sum of |1-minute close-to-close moves|; label = top tercile of the "
+             f"training window's days, per symbol. {len(E['features'])} pre-open inputs (the amendment lists 16 and calls them "
+             f"{E['written_feature_count']}; all listed are used), each from sessions before the day only. sprint/learn's logit "
+             f"(L2 lambda 1, class-balanced) pooled over SPY, QQQ and IWM, refit monthly on all earlier sessions (24 months minimum); "
+             f"skip a symbol-day when its P(top-tercile ER) <= the 1/3 quantile of that refit's training predictions. "
+             f"Out of sample from {m.get('oos_from')}; {m.get('refits')} refits over {m.get('sessions')} symbol-sessions. "
+             f"BACKTEST: shares real; FIN-H 2018-01..2024-01 MODELED, DEV REAL; Part S REAL (test half only).")
+    if m.get("error"):
+        L.append(f"- Model: {m['error']}.")
+    if m.get("last_fit"):
+        L.append("- Strongest logit weights (last refit; + = more likely a high-efficiency day): " +
+                 ", ".join(f"{k} {v:+g}" for k, v in m["last_fit"]) + ".")
+    L.append("")
+    for name, ev in E["strategies"].items():
+        if ev.get("why"):
+            L += [f"- **{name}**: NOT RUN ({ev['why']}).", ""]
+            continue
+        L.append(f"**{name}** ({ev.get('label') or ev['kind']}): **{_yn(ev['pass'])}** (needs every window)")
+        for key, w in ev["windows"].items():
+            L.append(f"- {key} {w['window']} ({w.get('prices')}): **{_yn(w['pass_'])}**")
+            _checks(L, w["checks"])
+        L += _head(("window", "", "trades", "win %", "exp $", "PF", "PF 2x", "total $", "months green", "max DD $", "w/o best day $"))
+        for key, w in ev["windows"].items():
+            for side in ("ungated", "gated"):
+                s, inf = w.get(side) or {}, (w.get("info") or {}).get(side) or {}
+                L.append(_row([key, side, s.get("trades", 0), _f((s.get("win_rate") or 0) * 100, 1) if s.get("trades") else "-",
+                               _f(s.get("expectancy")), _f(s.get("pf")), _f(s.get("pf_2x")), _f(s.get("total")),
+                               f"{inf.get('months_green')}/{inf.get('months')}" if inf.get("trades") else "-", _f(inf.get("max_dd")),
+                               _f(inf.get("without_best_day"))]))
+        for key, w in ev["windows"].items():
+            if w.get("trades"):
+                L.append(f"- {key}: {w['skipped_units']} of {w['units']} symbol-days skipped ({w['skipped_trades']} trades); symbol-days "
+                         f"without a prediction (kept): {w['no_prediction_units']}; random whole-day skips (seeds "
+                         f"{w['random']['seeds']}): mean {_f(w['random']['mean'])}, 95th pct {_f(w['random']['p95'])}, share at or above "
+                         f"the gated total {w['random']['p_at_or_above']}.")
+                for side in ("ungated", "gated"):
+                    _account_md(L, (w.get("account") or {}).get(side), f"{key} {side} account view (information, $3,000 account)")
+        L.append("")
+
+
 # ---------------------------------------------------------------- the book
 def coverage_days(kind):
     """Sessions a sleeve could trade: "hist+dev" (2016-01-04..2024-01-31 + DEV) or "dev" (DEV only)."""
@@ -203,7 +279,7 @@ def run_book(by_sleeve, kinds, cover):
 
 # ---------------------------------------------------------------- trials and the deflated Sharpe
 def dsr_table(variants_dev, n_prior, dev_days, extra=0):
-    """{name: deflated Sharpe} on DEV daily P/L, N = the run logs' rows + 203 (+ extra), the trial-Sharpe variance over
+    """{name: deflated Sharpe} on DEV daily P/L, N = the run logs' rows + 206 (+ extra), the trial-Sharpe variance over
     every DEV variant given. Returns (table, sr_var, N)."""
     daily = {k: round8._daily_a(v, dev_days) for k, v in variants_dev.items()}
     srs = {k: R.sharpe(d) for k, (d, n) in daily.items()}
@@ -217,7 +293,9 @@ def dsr_table(variants_dev, n_prior, dev_days, extra=0):
 def trials(n_prior):
     return {"parts": TRIALS, "round9": ROUND9, "prior_in_run_logs": int(n_prior), "total_for_dsr": int(n_prior) + ROUND9,
             "h_note": f"Part H's list names {len(H_STRATEGIES)} strategies; its written count is {H_WRITTEN_COUNT} (165 trials). "
-                      f"All {len(H_STRATEGIES)} run; the deflated Sharpe uses the written count, and is also shown at +15 trials."}
+                      f"All {len(H_STRATEGIES)} run; the deflated Sharpe uses the written count, and is also shown at +15 trials.",
+            "e_note": "Part E's written count is 3 (FIN-H, NB-VOL, Part S); each Part S chosen cell (signal x contract) is gated and "
+                      "judged on its own, and the written count is kept."}
 
 
 # ---------------------------------------------------------------- the report
@@ -310,8 +388,8 @@ def _fpass_md(L, name, o, label):
 
 def render(res, meta):
     L = [f"# Sprint round 9: steadier money (multi-day, all-stock catalysts, the honest tweak search, weekly expiries, the 1-minute "
-         f"scalper), {meta['today']}", "",
-         "SPRINT_PLAN Amendments 12 and 13, pre-registered 2026-11-01 before any round-9 code, pull or run. **Every number is a "
+         f"scalper, the efficiency gate), {meta['today']}", "",
+         "SPRINT_PLAN Amendments 12, 13 and 14, pre-registered 2026-11-01 before any round-9 code, pull or run. **Every number is a "
          "BACKTEST.** Shares: real Alpaca bars. Options: **REAL** Alpaca option prices on DEV 2024-08-01..2026-06-30 (FIN-H's "
          "2018-2024 book line is **MODELED**, run 7). U-STK results are **SURVIVORSHIP-BIASED** (today's listed stocks only). "
          "L1 (2026-07-01..10-30) and L2 (2024-02-01..07-31) were never pulled or read; a multi-day trade touching them is dropped.",
@@ -322,13 +400,15 @@ def render(res, meta):
     t = res["trials"]
     L.append(f"Trials: round 9 = {t['round9']} ({', '.join(f'{k}: {v}' for k, v in t['parts'].items())}); the run logs hold "
              f"{t['prior_in_run_logs']}; the deflated Sharpe uses N = {t['total_for_dsr']} (sr variance {res.get('sr_var')} over "
-             f"{res.get('dev_variants_scored')} DEV variants). {t['h_note']}")
+             f"{res.get('dev_variants_scored')} DEV variants). {t['h_note']} {t.get('e_note', '')}")
     L.append("")
     _part_f_md(L, res.get("F"))
     _part_g_md(L, res.get("G"))
     _part_h_md(L, res.get("H"), res.get("dsr", {}))
     _part_i_md(L, res.get("I"))
     _part_s_md(L, res.get("S"))
+    if "E" in res:
+        _part_e_md(L, res.get("E"))
     _book_md(L, res.get("book"))
     L += ["## Deflated Sharpe (information, DEV daily P/L)", ""] + _head(("variant", f"DSR (N = {t['total_for_dsr']})", "DSR (N + 15)"))
     for k, v in sorted((res.get("dsr") or {}).items()):
@@ -565,6 +645,18 @@ def summary_lines(res):
             sz = r.get("s_size") or {}
             out.append(f"S {key} (REAL): cell {r['chosen'] or 'none'}, test {_yn(r['pass_'])}, {t.get('trades', 0)} trades, PF {t.get('pf')}, "
                        f"PF 2x {t.get('pf_2x')}; S-size {_yn(sz.get('pass')) if sz else '-'}")
+    E = res.get("E")
+    if E:
+        for name, ev in E["strategies"].items():
+            if ev.get("why"):
+                out.append(f"E gate on {name}: NOT RUN ({ev['why']})")
+                continue
+            parts = []
+            for key, w in ev["windows"].items():
+                g, u = w.get("gated") or {}, w.get("ungated") or {}
+                parts.append(f"{key} {_yn(w['pass_'])} (exp ${u.get('expectancy')} -> ${g.get('expectancy')}, {w.get('skipped_units', 0)} "
+                             f"symbol-days skipped, PF 2x {g.get('pf_2x')})")
+            out.append(f"E gate on {name} ({ev.get('label') or ev['kind']}): {_yn(ev['pass'])}; " + "; ".join(parts))
     B = res.get("book")
     if B:
         b = B["windows"]["dev"]["res"]["book"]
