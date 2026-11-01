@@ -17,13 +17,13 @@ def test_trials_are_206_and_the_dsr_uses_run_logs_plus_206():
     assert sum(R9.TRIALS.values()) == 206 == R9.ROUND9
     assert R9.TRIALS["S (2 signals x 2 contracts x 6 cells + 2 underlying checks + 2 sized variants)"] == 28
     t = R9.trials(1234)
-    assert t["total_for_dsr"] == 1437 and "12 strategies" in t["h_note"] and "written count is 11" in t["h_note"]
+    assert t["total_for_dsr"] == 1440 and "12 strategies" in t["h_note"] and "written count is 11" in t["h_note"]
     days = book.sessions_between("2024-08-01", "2026-06-30")
     rng = np.random.default_rng(1)
     var = {f"v{k}": [{"day": d, "pnl": float(rng.normal(0.5 * k, 10)), "pnl_2x": 0.0} for d in days[::2]] for k in range(4)}
     tab, sv, n = R9.dsr_table(var, 1234, days)
     tab2, _sv, n2 = R9.dsr_table(var, 1234, days, extra=15)
-    assert n == 1437 and n2 == 1452 and sv > 0
+    assert n == 1440 and n2 == 1455 and sv > 0
     assert all(tab2[k] <= tab[k] for k in tab if tab[k] is not None)
     assert len(R9.H_STRATEGIES) == 12 and R9.H_WRITTEN_COUNT == 11
 
