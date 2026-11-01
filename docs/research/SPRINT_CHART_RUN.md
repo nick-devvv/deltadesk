@@ -46,9 +46,9 @@ If a step fails, show the error and stop. Don't change any code; re-running the 
 5. Round 8: the share rules, the indicator rules, the option pass, Part B and the book:
    cd ~/sprint && .venv/bin/python tools/sprint_round8.py > data/sprint/logs/run8_round8.log 2>&1; tail -70 data/sprint/logs/run8_round8.log
 6. Zip everything and show the summary table:
-   cd ~/sprint && .venv/bin/python -m zipfile -c ~/sprint_results8.zip $(ls -t data/sprint/round8_*.md | head -1) $(ls -t data/sprint/round8_*.json | head -1) $(ls -t data/sprint/trades_round8_shares_*.csv.gz | head -1) $(ls -t data/sprint/trades_round8_options_hist_*.csv.gz | head -1) $(ls -t data/sprint/trades_round8_options_dev_*.csv.gz | head -1) $(ls -t data/sprint/trades_round8_hist_v1_*.csv.gz | head -1) $(ls -t data/sprint/trades_round8_dev_v1_*.csv.gz | head -1) $(ls -t data/sprint/report_*_round8_hist_v1.md | head -1) $(ls -t data/sprint/report_*_round8_dev_v1.md | head -1) data/sprint/logs/run8_*.log data/sprint/runs_*.csv && ls -la ~/sprint_results8.zip
+   cd ~/sprint && .venv/bin/python -m zipfile -c ~/sprint_results8.zip $(ls -t data/sprint/round8_*.md | head -1) $(ls -t data/sprint/round8_*.json | head -1) $(ls -t data/sprint/trades_round8_shares_*.csv.gz | head -1) $(ls -t data/sprint/trades_round8_options_dev_*.csv.gz | head -1) $(ls -t data/sprint/trades_round8_hist_v1_*.csv.gz | head -1) $(ls -t data/sprint/trades_round8_dev_v1_*.csv.gz | head -1) $(ls -t data/sprint/report_*_round8_hist_v1.md | head -1) $(ls -t data/sprint/report_*_round8_dev_v1.md | head -1) data/sprint/logs/run8_*.log data/sprint/runs_*.csv && ls -la ~/sprint_results8.zip && ls -la $(ls -t data/sprint/trades_round8_options_hist_*.csv.gz | head -1)
    sed -n '/^## Summary/,/^## Part A/p' "$(ls -t data/sprint/round8_*.md | head -1)"
-   (send Nick the file ~/sprint_results8.zip)
+   (send Nick the file ~/sprint_results8.zip; the HIST option trade file, millions of rows, stays on this computer)
 ```
 
 What Nick sends back: step 1's commit line, step 2's last line, step 3's lines, step 4's lines, step 5's output (the summary lines and any WARNING lines), step 6's table, and `~/sprint_results8.zip`.
