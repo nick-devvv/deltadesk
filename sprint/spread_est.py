@@ -12,6 +12,10 @@ As written (Addendum 16.1):
              the same minutes; the median ratio of measured to estimated half-spread, clipped to 0.5-3.0, scales every
              estimate. Fewer than 200 matched contract-days: a ratio of 1, labeled.
   Label      "ESTIMATED-SPREAD".
+Addendum 16.3 (before any round 10 run or result): only minute pairs where both minutes have at least 2 trades (the bar's
+  trade count) count; the ESTIMATED-SPREAD used for pass/fail is max(calibrated estimate, 2% of the premium, $0.005), the 2%
+  being sprint/spread.py's pre-registered index-ETF default (DEFAULT_PCT_INDEX); the unfloored estimate is reported as
+  information. Everything else in 16.1 is unchanged.
 
 Builder's reading:
   S1  The estimator, per pair of bars t, t+1 of one contract stamped in consecutive minutes of one day (each bar exists only
@@ -22,9 +26,13 @@ Builder's reading:
   S2  "Symbol" = the option's underlying (its OCC root): a single contract rarely has 5 pairs. "Inside the bars the round 10
       pull fetches" = every window file under data/alpaca/r10/opt/ on DEV days; contracts expiring on the bar's own day (0DTE:
       only the calibration provider fetches those) are left out of the pools.
-  S3  A minute with one trade (high = low = close) gives a product of 0, so its pair estimates 0; such pairs stay in the pool
-      (the median is taken over every pair, as written). The pool's median is floored at $0.005, multiplied by the
-      calibration ratio, and floored at $0.005 again (no listed half-spread is below half a $0.01 tick).
+  S3  (Addendum 16.3) A pair counts only when both bars have a trade count of at least 2: the cached bars keep Alpaca's
+      per-bar trade count "n" (tools/pull_alpaca._frame stores every field of the API bar). A bar without a usable count
+      (no "n" column, or a blank one) counts only when its high > its low (16.3's stated fallback). The same rule holds in the
+      pools and in the calibration (the same estimator). Fill (pass/fail) = max(the calibration ratio x the pool's median,
+      DEFAULT_PCT_INDEX x the premium, $0.005); the ratio is computed on unfloored estimates. The unfloored level ("raw" in
+      sprint/r10swing.LEVELS: the ratio x the median, no floor at all) is information only; the 16.1 build's $0.005 floors
+      before and after the ratio are replaced by this one.
   S4  Fallback (fewer than 5 pairs, or a fill with no day): sprint/spread.py's MODELED default for that name: 10% of premium
       for single stocks (and for ETFs outside SPY/QQQ/IWM/DIA), 2% for SPY/QQQ/IWM/DIA, floor $0.005, labeled
       "MODELED-SPREAD (fallback: fewer than 5 minute pairs)". Every U-ETF name is estimated the same way as a single stock:
@@ -56,7 +64,10 @@ from .catalyst import occ, occ_root
 from .data import parse_occ
 
 LABEL = "ESTIMATED-SPREAD"
+RAW_LABEL = "ESTIMATED-SPREAD unfloored (information)"
 FALLBACK = "MODELED-SPREAD (fallback: fewer than 5 minute pairs)"
+MIN_TRADES = 2
+FLOOR_PCT = SP.DEFAULT_PCT_INDEX                 # Addendum 16.3: the pass/fail floor is spread.py's index-ETF default
 MIN_PAIRS = 5
 MIN_CAL = 200
 CLIP = (0.5, 3.0)
@@ -78,19 +89,29 @@ def ar_half(c0, h0, l0, h1, l1):
     return np.where(ok, out, np.nan)
 
 
+def bar_counts(n, h, lo):
+    """bool per bar: at least MIN_TRADES trades by its trade count, or (no usable count) a high above its low (S3)."""
+    n, h, lo = (np.asarray(x, float) for x in (n, h, lo))
+    with np.errstate(invalid="ignore"):
+        return np.where(np.isfinite(n), n >= MIN_TRADES, h > lo)
+
+
 def pair_estimates(df, day=None):
     """DataFrame (symbol, m, mid, hs) of every consecutive-minute bar pair of each contract in one day's bars (df: symbol,
-    ts, h, l, c). m = the first bar's minute after 09:30; mid = exp(eta_t)."""
+    ts, h, l, c and the trade count n) whose two bars both have at least 2 trades (S3). m = the first bar's minute after 09:30;
+    mid = exp(eta_t)."""
     cols = ["symbol", "m", "mid", "hs"]
     if df is None or not len(df):
         return pd.DataFrame(columns=cols)
+    n = pd.to_numeric(df["n"], errors="coerce").to_numpy(float) if "n" in df.columns else np.full(len(df), np.nan)
     f = pd.DataFrame({"symbol": df["symbol"].astype(str).to_numpy(), "m": IV.minutes(df), "h": df["h"].to_numpy(float),
-                      "l": df["l"].to_numpy(float), "c": df["c"].to_numpy(float)})
+                      "l": df["l"].to_numpy(float), "c": df["c"].to_numpy(float), "n": n})
     f = f[(f["m"] >= 0) & (f["m"] < 390)].drop_duplicates(["symbol", "m"], keep="last").sort_values(["symbol", "m"], kind="stable")
     if len(f) < 2:
         return pd.DataFrame(columns=cols)
     s, m = f["symbol"].to_numpy(), f["m"].to_numpy()
-    nxt = (s[1:] == s[:-1]) & (m[1:] == m[:-1] + 1)
+    good = bar_counts(f["n"].to_numpy(float), f["h"].to_numpy(float), f["l"].to_numpy(float))
+    nxt = (s[1:] == s[:-1]) & (m[1:] == m[:-1] + 1) & good[:-1] & good[1:]
     i = np.flatnonzero(nxt)
     h, lo, c = f["h"].to_numpy(), f["l"].to_numpy(), f["c"].to_numpy()
     hs = ar_half(c[i], h[i], lo[i], h[i + 1], lo[i + 1])
@@ -150,34 +171,55 @@ class SpreadEst:
 
     estimated = True
 
-    def __init__(self, pools=None, ratio=1.0, cal=None):
+    def __init__(self, pools=None, ratio=1.0, cal=None, floored=True):
         self.pools = dict(pools or {})
         self.ratio = float(ratio)
         self.cal = cal or {"ratio": self.ratio, "label": "ratio 1 (no calibration run)"}
+        self.floored = bool(floored)
         self._default = SP.SpreadModel()
         self.used = defaultdict(int)
 
+    def unfloored(self):
+        """The same pools and ratio without 16.3's floor (information only)."""
+        return SpreadEst(self.pools, self.ratio, self.cal, floored=False)
+
+    def estimate(self, under, px, day):
+        """(the calibrated, unfloored estimate, pairs) of the fill's pool, or (None, pairs) under MIN_PAIRS."""
+        p = self.pools.get((occ_root(under), _month(day), SP._pb(px))) if day is not None else None
+        if p is None or p[1] < MIN_PAIRS:
+            return None, (p[1] if p else 0)
+        return self.ratio * p[0], p[1]
+
     def half_spread(self, under, px, minute=None, day=None):
         px = max(float(px), 0.0)
-        if day is not None:
-            p = self.pools.get((occ_root(under), _month(day), SP._pb(px)))
-            if p is not None and p[1] >= MIN_PAIRS:
-                self.used[LABEL] += 1
-                return max(self.ratio * max(p[0], FLOOR), FLOOR), LABEL
-        self.used[FALLBACK] += 1
-        return self._default.half_spread(under, px, None)[0], FALLBACK
+        est, _n = self.estimate(under, px, day)
+        if est is None:
+            self.used[FALLBACK] += 1
+            return self._default.half_spread(under, px, None)[0], FALLBACK
+        if not self.floored:
+            self.used[RAW_LABEL] += 1
+            return est, RAW_LABEL
+        fl = max(FLOOR_PCT * px, FLOOR)
+        self.used[LABEL] += 1
+        if fl > est:
+            self.used["ESTIMATED-SPREAD: the 2% floor binds"] += 1
+        return max(est, fl), LABEL
 
     def describe(self):
         n_ok = sum(1 for v in self.pools.values() if v[1] >= MIN_PAIRS)
-        return (f"{LABEL}: Abdi-Ranaldo half-spread from 1-minute trade bars, median per underlying / month / premium bucket "
-                f"({n_ok} of {len(self.pools)} pools with at least {MIN_PAIRS} minute pairs), floor ${FLOOR}, x calibration ratio "
-                f"{self.ratio:.3f} ({self.cal.get('label')}); fallback {FALLBACK}: 10% of premium (2% SPY/QQQ/IWM/DIA)")
+        return (f"{LABEL}: Abdi-Ranaldo half-spread from 1-minute trade bars (minute pairs with {MIN_TRADES}+ trades in both "
+                f"minutes), median per underlying / month / premium bucket ({n_ok} of {len(self.pools)} pools with at least "
+                f"{MIN_PAIRS} minute pairs) x calibration ratio {self.ratio:.3f} ({self.cal.get('label')}); for pass/fail floored "
+                f"at max({FLOOR_PCT:.0%} of premium, ${FLOOR}) (Addendum 16.3; the unfloored estimate is information); fallback "
+                f"{FALLBACK}: 10% of premium (2% SPY/QQQ/IWM/DIA)")
 
     def summary(self):
         n = [v[1] for v in self.pools.values()]
         med = [v[0] for v in self.pools.values() if v[1] >= MIN_PAIRS]
         return {"label": LABEL, "pools": len(self.pools), "pools_with_5_pairs": sum(1 for x in n if x >= MIN_PAIRS),
                 "pairs": int(sum(n)), "median_pool_half_spread": round(float(np.median(med)), 4) if med else None,
+                "median_pool_half_spread_calibrated": round(float(np.median(med)) * self.ratio, 4) if med else None,
+                "min_trades_per_minute": MIN_TRADES, "floor": f"max({FLOOR_PCT:.0%} of premium, ${FLOOR})",
                 "calibration": self.cal, "fills": dict(self.used)}
 
 

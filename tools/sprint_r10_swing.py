@@ -349,12 +349,14 @@ def _spread_md(L, S):
         return
     c = S["calibration"]
     L.append(f"{S['describe']}.")
-    L.append(f"- Pools: {S['pools']} (underlying x month x premium bucket), {S['pools_with_5_pairs']} with at least 5 minute pairs, "
-             f"{S['pairs']} pairs in all; median pooled half-spread ${S['median_pool_half_spread']}.")
+    L.append(f"- Pools: {S['pools']} (underlying x month x premium bucket), {S['pools_with_5_pairs']} with at least 5 minute pairs "
+             f"(both minutes with {S['min_trades_per_minute']}+ trades), {S['pairs']} pairs in all; median pooled half-spread "
+             f"${S['median_pool_half_spread']} (x the ratio: ${S['median_pool_half_spread_calibrated']}, unfloored, information). "
+             f"Pass/fail floor (Addendum 16.3): {S['floor']}.")
     L.append(f"- Calibration on the measured SPY/QQQ chains (DEV days only): ratio {c.get('ratio')} ({c.get('label')}); raw median "
              f"{c.get('raw_median')}; {c.get('chain_days')} chain days, {c.get('chain_rows')} usable chain rows, "
              f"{c.get('matched_contract_days')} matched contract-days.")
-    L.append(f"- Fills priced (every level, judged model): {S['fills']}.")
+    L.append(f"- Fills priced (every level; the judged model, and its unfloored view for the information level): {S['fills']}.")
     L.append("")
 
 
@@ -502,7 +504,7 @@ def main(argv=None):
     spread = None
     if {"VOL", "V3", "V4"} & set(parts):
         est = SE.build(root, x.chains_dir, days, log)
-        spread = {"est": est, "m10": SP.SpreadModel(pct=0.10), "m2": SP.SpreadModel(pct=0.02)}
+        spread = {"est": est, "raw": est.unfloored(), "m10": SP.SpreadModel(pct=0.10), "m2": SP.SpreadModel(pct=0.02)}
         if est.cal.get("ratio") == 1.0 and "fewer than" in str(est.cal.get("label")):
             warnings.append(f"ESTIMATED-SPREAD calibration: {est.cal['label']}; ratio 1 used (labeled).")
     edgar_in = SW.load_edgar(root)

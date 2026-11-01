@@ -285,8 +285,9 @@ def _outs(n_names=30, good=0.15, rest=-0.02):
             if k % 7 == 3 and j < 10:
                 r = -0.05
             st[nm] = {"symbol": nm, "day": x.isoformat(), "entry_day": t.isoformat(), "ret_100": r, "ret_mid": r + 0.02, "ret_50": r + 0.01,
-                      "ret_2x": r - 0.02, "ret_m10": r - 0.05, "ret_m2": r, "pnl_100": 100 * r, "pnl_mid": 100 * r + 2,
-                      "pnl_50": 100 * r + 1, "pnl_2x": 100 * r - 2, "pnl_m10": 100 * r - 5, "pnl_m2": 100 * r}
+                      "ret_2x": r - 0.02, "ret_m10": r - 0.05, "ret_m2": r, "ret_raw": r + 0.01, "pnl_100": 100 * r,
+                      "pnl_mid": 100 * r + 2, "pnl_50": 100 * r + 1, "pnl_2x": 100 * r - 2, "pnl_m10": 100 * r - 5, "pnl_m2": 100 * r,
+                      "pnl_raw": 100 * r + 1}
         keys = {"slope": {nm: -j for j, nm in enumerate(names)}, "ratio": {nm: -j for j, nm in enumerate(names)}}
         outs.append({"t": t, "x": x, "keys": keys, "eligible": {"V1": names, "V2": names, "V2-s": names},
                      "picks": {"V1": SW.top(keys["slope"]), "V2": SW.top(keys["ratio"]), "V2-s": SW.top(keys["ratio"], bottom=True)},
@@ -426,7 +427,9 @@ def test_v3_twin_row_costs_are_f_opts():
     assert row["spread_label"] == SE.FALLBACK and row["label"].startswith(SW.REAL)
     est = SE.SpreadEst({("ABC", "2025-03", SP._pb(b_in)): (0.01, 9), ("ABC", "2025-03", SP._pb(b_out)): (0.01, 9)}, ratio=2.0)
     row, _ = SW.v3_twin_row(it, bars, est)
-    assert row["pnl"] == pytest.approx(100 * ((b_out - 0.02) - (b_in + 0.02)) - 1.3, abs=0.01) and row["spread_label"] == SE.LABEL
+    h_in, h_out = max(0.02, 0.02 * b_in), max(0.02, 0.02 * b_out)                   # Addendum 16.3: max(estimate, 2%, $0.005)
+    assert row["pnl"] == pytest.approx(100 * ((b_out - h_out) - (b_in + h_in)) - 1.3, abs=0.01) and row["spread_label"] == SE.LABEL
+    assert row["pnl_raw"] == pytest.approx(100 * ((b_out - 0.02) - (b_in + 0.02)) - 1.3, abs=0.01)  # the unfloored estimate
     assert SW.v3_twin_row(dict(it, exit=date(2025, 3, 12)), bars, est)[0] is None
 
 

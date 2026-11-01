@@ -63,21 +63,78 @@ def test_ar_median_recovers_a_known_spread_under_bid_ask_bounce_and_a_moving_mid
     assert float(np.median(pr["hs"])) == pytest.approx(half, rel=0.15)
     pools = SE.pool_pairs({D1: pr})
     est = SE.SpreadEst(pools, ratio=1.0)
+    raw, lab = est.unfloored().half_spread("ABC", 2.2, 380, day=D1)
+    assert lab == SE.RAW_LABEL and raw == pytest.approx(half, rel=0.2)
     hs, lab = est.half_spread("ABC", 2.2, 380, day=D1)
-    assert lab == SE.LABEL and hs == pytest.approx(half, rel=0.2)
+    assert lab == SE.LABEL and hs == pytest.approx(max(raw, SP.DEFAULT_PCT_INDEX * 2.2))
 
 
-def test_pairs_need_consecutive_minutes_that_both_traded_and_one_trade_minutes_give_zero():
+def test_pairs_need_consecutive_minutes_that_both_traded():
     sym = "ABC250321C00050000"
     df = bounce_bars(sym, D1, [10, 11, 12, 14, 15, 20], 0.05, both_sides=True)
     pr = SE.pair_estimates(df, D1)
     assert list(pr["m"]) == [10, 11, 14]                       # 12 -> 14 and 15 -> 20 are not consecutive minutes
-    one = pd.DataFrame([{"ts": _ts(D1, m), "o": 2.0, "h": 2.0, "l": 2.0, "c": 2.0, "v": 1.0, "symbol": sym} for m in (5, 6)])
-    assert SE.pair_estimates(one, D1)["hs"].tolist() == [0.0]  # high = low = close: a product of 0 (S3)
     out = pd.concat([df, pd.DataFrame([{"ts": _ts(D1, 390), "o": 9, "h": 9, "l": 9, "c": 9, "v": 1, "symbol": sym}])])
     assert len(SE.pair_estimates(out, D1)) == 3                # a 16:00 bar is outside the session
     other = df.assign(symbol="ABC250321P00050000").iloc[[3]]   # another contract's minute 14 does not pair with 15
     assert len(SE.pair_estimates(pd.concat([df.iloc[:4], other]), D1)) == 2
+
+
+def test_single_trade_minutes_are_excluded_by_the_trade_count_or_high_equal_low():
+    """Addendum 16.3: a pair counts only when both minutes have at least 2 trades (the bar's "n")."""
+    sym = "ABC250321C00050000"
+    df = bounce_bars(sym, D1, range(10, 20), 0.05, both_sides=True)
+    df.loc[df.index[3], "n"] = 1                               # minute 13 had one trade: pairs 12-13 and 13-14 are out
+    assert list(SE.pair_estimates(df, D1)["m"]) == [10, 11, 14, 15, 16, 17, 18]
+    df.loc[df.index[5], "n"] = 2                               # 2 trades is enough
+    assert 15 in list(SE.pair_estimates(df, D1)["m"])
+    one = pd.DataFrame([{"ts": _ts(D1, m), "o": 2.0, "h": 2.0, "l": 2.0, "c": 2.0, "v": 1.0, "n": 1, "symbol": sym} for m in (5, 6)])
+    assert len(SE.pair_estimates(one, D1)) == 0                # high = low = close: no bounce, no pair
+    nocount = df.drop(columns=["n"])                           # a cache without a trade count: the high == low fallback
+    flat = nocount.copy()
+    flat.loc[flat.index[3], ["h", "l"]] = flat.loc[flat.index[3], "c"]
+    assert list(SE.pair_estimates(nocount, D1)["m"]) == list(range(10, 19))
+    assert list(SE.pair_estimates(flat, D1)["m"]) == [10, 11, 14, 15, 16, 17, 18]
+    blank = df.copy()
+    blank["n"] = np.nan                                        # a blank count falls back the same way
+    assert list(SE.pair_estimates(blank, D1)["m"]) == list(range(10, 19))
+    thin = pd.concat([bounce_bars(sym, D1, [m], 0.05, both_sides=True, trades=1) for m in range(30, 60)], ignore_index=True)
+    assert len(SE.pair_estimates(thin, D1)) == 0               # a contract trading once a minute gives no pair at all
+
+
+def test_the_2pct_floor_binds_on_a_thin_contract_and_the_unfloored_estimate_is_reported():
+    """Addendum 16.3: pass/fail cost = max(calibrated estimate, 2% of premium, $0.005); the unfloored one is information."""
+    assert SE.FLOOR_PCT == SP.DEFAULT_PCT_INDEX == 0.02
+    sym = "ABC250321C00050000"
+    pr = SE.pair_estimates(bounce_bars(sym, D1, range(0, 60), 0.004, mid0=1.5, both_sides=True), D1)
+    pools = SE.pool_pairs({D1: pr})
+    est = SE.SpreadEst(pools, ratio=1.25)
+    raw, rl = est.unfloored().half_spread("ABC", 1.5, 300, day=D1)
+    hs, lab = est.half_spread("ABC", 1.5, 300, day=D1)
+    assert raw == pytest.approx(0.004 * 1.25, rel=0.02) and rl == SE.RAW_LABEL
+    assert hs == pytest.approx(0.02 * 1.5) and lab == SE.LABEL and est.used["ESTIMATED-SPREAD: the 2% floor binds"] == 1
+    wide = SE.SpreadEst({("ABC", "2025-03", SP._pb(1.5)): (0.08, 40)}, ratio=1.25)
+    assert wide.half_spread("ABC", 1.5, 300, day=D1)[0] == pytest.approx(0.10)    # a wide estimate is not touched
+    cheap = SE.SpreadEst({("ABC", "2025-03", SP._pb(0.1)): (0.0001, 40)})
+    assert cheap.half_spread("ABC", 0.1, 300, day=D1)[0] == SE.FLOOR                # 2% of $0.10 < $0.005: the tick floor
+    rows = SW.spread_set(est)
+    assert set(rows) == {"est", "raw", "m10", "m2"} and not rows["raw"].floored and rows["est"].floored
+
+
+def test_the_calibration_ratio_is_computed_before_the_floor(tmp_path):
+    """Measured 0.10 over estimated 0.02 (0.67% of a $3 premium, under the 2% floor): the ratio is 5 before clipping, never
+    measured / the floored 0.06."""
+    root, chains = tmp_path / "alpaca", tmp_path / "chains"
+    write_cal(root, chains, CAL_DAYS, factor=5.0)
+    r, info = SE.calibrate(root, chains)
+    assert info["raw_median"] == pytest.approx(5.0, rel=0.02) and r == 3.0
+    import sprint.spread_est as mod
+    keep = mod.FLOOR_PCT
+    try:
+        mod.FLOOR_PCT = 0.50                                   # a different pass/fail floor changes nothing in the calibration
+        assert SE.calibrate(root, chains) == (r, info)
+    finally:
+        mod.FLOOR_PCT = keep
 
 
 # ---------------------------------------------------------------- the pools and the fills
@@ -91,7 +148,7 @@ def test_pools_median_floor_ratio_fallback_and_0dte_left_out():
     hs, lab = est.half_spread("ABC", 1.7, 385, day=date(2025, 3, 20))
     assert lab == SE.LABEL and hs == pytest.approx(0.08)
     tiny = SE.SpreadEst({("ABC", "2025-03", SP._pb(1.9)): (0.0, 7)}, ratio=0.5)
-    assert tiny.half_spread("ABC", 1.7, None, day=D1) == (SE.FLOOR, SE.LABEL)                 # floored before and after the ratio
+    assert tiny.half_spread("ABC", 1.7, None, day=D1) == (pytest.approx(0.034), SE.LABEL)     # 16.3: 2% of the premium
     four = SE.SpreadEst({("ABC", "2025-03", SP._pb(1.9)): (0.05, 4)})
     assert four.half_spread("ABC", 1.7, None, day=D1) == (pytest.approx(0.17), SE.FALLBACK)  # fewer than 5 pairs: 10% default
     assert est.half_spread("SPY", 1.7, None, day=D1) == (pytest.approx(0.034), SE.FALLBACK)  # SPY's default is 2%

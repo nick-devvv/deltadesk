@@ -55,10 +55,11 @@ Builder's reading (the most literal reading where the text is ambiguous or impos
       counted as such (G2's rule).
   R6  The half-spread (Addendum 16.1, replacing this builder's first reading) = the ESTIMATED-SPREAD of the fill's
       underlying, calendar month and premium bucket (sprint/spread_est.py, its readings S1-S6; fallback spread.py's MODELED
-      default, labeled). Fill = print + s x k x half-spread; s = +1 buying, -1 selling (sells floored at 0). Levels (LEVELS):
-      "mid" k = 0, "50" k = 0.5, "100" k = 1 (judged), "2x" k = 2 (stress); sensitivities at k = 1 with a flat half-spread:
-      "m10" 10% of premium (the old MODELED default) and "m2" 2% (F-opt's), $0.005 floor. Each row carries the judged
-      model's label(s).
+      default, labeled), floored for pass/fail at max(2% of premium, $0.005) (Addendum 16.3). Fill = print + s x k x half-
+      spread; s = +1 buying, -1 selling (sells floored at 0). Levels (LEVELS): "mid" k = 0, "50" k = 0.5, "100" k = 1
+      (judged), "2x" k = 2 (stress), "raw" k = 1 on the unfloored estimate (information); sensitivities at k = 1 with a flat
+      half-spread: "m10" 10% of premium (the old MODELED default) and "m2" 2% (F-opt's), $0.005 floor. Each row carries the
+      judged model's label(s).
   R7  Return per straddle = P/L / debit (both legs' fills x 100 + entry fees). PF = sum of positive returns / |sum of negative
       returns| (equal weight per position, as G2). Two-month blocks by exit day; "positive" = mean return > 0.
   R8  Benchmark: for each draw (default_rng(seed), seeds 31-230), on each rebalance day in order, 10 names drawn without
@@ -140,11 +141,11 @@ SWING_TRIALS = 7
 ROUND10_TOTAL = 7767
 assert sum(TRIALS.values()) == SWING_TRIALS
 TOP_N = 10
-LEVELS = (("mid", "est", 0.0), ("50", "est", 0.5), ("100", "est", 1.0), ("2x", "est", 2.0), ("m10", "m10", 1.0),
-          ("m2", "m2", 1.0))                     # Addendum 16.1: judged at "100"; the others are sensitivities
-LEVEL_NAMES = {"mid": "mid", "50": "50% of ESTIMATED-SPREAD", "100": "100% of ESTIMATED-SPREAD (judged)",
-               "2x": "200% of ESTIMATED-SPREAD (stress)", "m10": "MODELED 10% of premium (the old default)",
-               "m2": "MODELED 2% of premium (F-opt's)"}
+LEVELS = (("mid", "est", 0.0), ("50", "est", 0.5), ("100", "est", 1.0), ("2x", "est", 2.0), ("raw", "raw", 1.0),
+          ("m10", "m10", 1.0), ("m2", "m2", 1.0))  # Addendum 16.1/16.3: judged at "100"; the others are sensitivities
+LEVEL_NAMES = {"mid": "mid", "50": "50% of ESTIMATED-SPREAD", "100": "100% of ESTIMATED-SPREAD (judged; 2% floor)",
+               "2x": "200% of ESTIMATED-SPREAD (stress)", "raw": "100% of the unfloored estimate (information)",
+               "m10": "MODELED 10% of premium (the old default)", "m2": "MODELED 2% of premium (F-opt's)"}
 FEE, MULT = 0.65, 100
 RANDOM_SEEDS = tuple(range(31, 231))
 BOOT_SEED, BOOT_DRAWS = 29, 2000
@@ -425,10 +426,12 @@ def intrinsic(sym, S):
 
 
 def spread_set(spread):
-    """{"est": the judged model, "m10": MODELED 10%, "m2": MODELED 2%}. A dict passes through; a single model becomes "est"."""
+    """{"est": the judged model, "raw": its unfloored estimate, "m10": MODELED 10%, "m2": MODELED 2%}. A dict passes through
+    ("raw" defaults to "est"); a single model becomes "est" (and "raw" its unfloored() view when it has one)."""
     if isinstance(spread, dict):
-        return spread
-    return {"est": spread, "m10": SP.SpreadModel(pct=0.10), "m2": SP.SpreadModel(pct=0.02)}
+        return spread if "raw" in spread else dict(spread, raw=spread["est"])
+    raw = spread.unfloored() if hasattr(spread, "unfloored") else spread
+    return {"est": spread, "raw": raw, "m10": SP.SpreadModel(pct=0.10), "m2": SP.SpreadModel(pct=0.02)}
 
 
 def price_position(pos, exit_px, settle_S, name, spread, day_in=None, day_out=None):
