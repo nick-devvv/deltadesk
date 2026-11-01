@@ -65,3 +65,10 @@ Numbers carry their sign in the text (+$6.00, −$38.20), so the meaning never d
 - **Plan numbers.** Max buy, then Stop as an underlying price with the premium ceiling in small text under it, then T1 as the level price with the model premium under it. A reward/risk line follows (stock, option) with the entry mode.
 - **Ledger cards.** Four cards (Main paper outlined in the brand line, then Research, Old rules, You). Each has one big 30-day number, a short definition-list of today and sample stats, and a "too few trades" note under 30 trades.
 - **Decisions table.** Setups use plain names ("VWAP + MACD", "ORB retest"), and each row shows Taken / Skipped / Limit / Conflict with the desk's own reason.
+
+## v4 UI refresh (2026-11-01)
+- **Light and dark.** Every page color is a token on `:root`: light by default, dark under `prefers-color-scheme: dark` unless the sun/moon button picked light, and dark again under `:root[data-theme="dark"]`. The button stores the choice per device (`localStorage` "theme"). Charts (`--c-*` tokens), the globe and the TradingView widget re-theme on change. Dark keeps the night-terminal palette above; light uses the same roles on a warm off-white ground.
+- **Today is the landing page.** Alerts, eight tiles, the computed session checklist, fresh start, then every book as compact ledger cards with Details and the full table under each book. The old Research page lives there.
+- **Evidence chips** (PAPER blue, BACKTEST violet, MODELED amber, LIVE outlined) sit next to every number group. The word carries the meaning; the color only helps.
+- **Numbers** use one formatter: thousands separators, a real minus sign joined to the number, and the sign always in the text.
+- **Phone**: nothing wider than the screen at 360 px; wide tables scroll inside their own card. Below 400 px the wordmark hides and only the logo shows.

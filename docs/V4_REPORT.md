@@ -240,3 +240,31 @@ Nick asked for a clean way to judge the strategies without one ever-growing tota
 - API: `GET /api/v4/tracking?start=YYYY-MM-DD&account=N` for a one-off view.
 - Every number is PAPER (simulated fills on live quotes), closed trades only. Under 30 trades is not evidence.
 - The desk sends no orders to Alpaca. Its paper trades live in the desk's own journal, so resetting the Alpaca paper account changes nothing here (and Alpaca's reset makes new API keys).
+
+## 12. UI refresh (added 2026-11-01)
+
+Nick asked for a clean page that still shows everything from before. Only `index.html` changed (plus a new test file and these notes). No API change, no new script or library, and no order button: the page still sends no orders anywhere.
+
+**What moved where**
+- **New landing page: Today** (first link, and what opens when the link has no `#page`). From the top:
+  1. **Alerts**, only when something needs a look: engine errors or stale ticks, Schwab login, delayed prices, v4 kill switch or blocked entries, a book at 50% or 100% of its daily paper loss limit, sprint rule errors, risk blocks, decision errors, health reasons, and any panel that failed to load.
+  2. **Eight tiles**: desk P/L today and since the fresh start (PAPER), open positions (strategies, yours, v3), v4 decisions today, errors and blocks, engine and data health, your P/L today (LIVE, as you logged it), and the session.
+  3. **Session checklist**, worked out from the desk's own data: live data, engine ticking, v4 entries allowed, loss limits, no errors, 0DTE options flat by 15:25, everything flat by 15:55, trades reviewed, end-of-day journal. Only the items that need doing stay in view.
+  4. **Fresh start** per book, with the full per-strategy table one tap away.
+  5. **Books and ledgers**: one compact card per ledger (P/L since the fresh start, trades, win rate, per trade, today, profit factor, max drawdown, open). Tap **Details** for average win and loss, the 95% range, vs random, SPY vs QQQ, the options shadow and, for the four sprint ledgers (fb_or, otm_put, otm_bounce, otm_h), the source backtest run with its own label (BACKTEST in-sample or out-of-sample, MODELED spread). Each book shows its daily loss limit as a bar, and its **Full table** (the old Research table) sits under it.
+  6. **Open positions** (yours, v4 paper, v3 table) and the SPY/QQQ plan line; **Decisions today** with counts and the latest 60; **Switches and risk** (the v4 kill switch, the paper switch, each sprint ledger's switch, FOMC, retired ledgers, the hard-coded limits); **Health** (engine, data, readiness, Chart, background workers); **News drift**; the **retired ledgers archive**, still collapsed.
+- **The Research page is now part of Today.** Old `#lab` links open Today at the books.
+- **Paper** is now called **v3 Paper** (the retired v3 main ledger, its pause and kill switch).
+- Every section says what its numbers are: **PAPER** (simulated fills), **BACKTEST**, **MODELED** or **LIVE** (your own trades).
+- **Light and dark mode** follow the phone; the sun/moon button switches and remembers it on that device. The charts and the globe switch too.
+- **Numbers**: one format everywhere (+$1,234.56, −$12.30, +0.11%), with the sign always in the text, so colour is never the only signal.
+- Phone layout checked at 360 and 390 px with no sideways scroll; desktop at 1280 px.
+
+**Ideas taken from OpenTraderWorld** (G-OTW/OpenTraderWorld, FSL-1.1-MIT; ideas only, no code): its session checklists inspired the computed Session checklist, and the daily-loss warning is built from the v4 risk layer's own numbers. Intended-vs-filled price gaps were left out: paper fills are simulated from the quote, so the gap would only restate the cost model.
+
+**Tests**: `tests/test_v4_ui_page.py` checks every endpoint, panel id, label and switch from before, no order control, no new external script, light/dark tokens and number signs. Where Playwright is installed, it also renders Today at 360 px in light and dark against a small fake desk. Elsewhere that one test is skipped.
+
+**Update the desk**: the usual line, nothing else.
+```
+Update the desk: run ~/desk/deploy/update.sh and show me the whole output.
+```
