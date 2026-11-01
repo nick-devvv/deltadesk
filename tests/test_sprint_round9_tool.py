@@ -76,7 +76,7 @@ def test_the_tool_writes_the_report_json_and_trade_files(world):
         assert (out / f"trades_round9_{part}_{TODAY}.csv.gz").exists(), part
     res = json.loads((out / f"round9_{TODAY}.json").read_text())["result"]
     assert set(res["F"]) >= {"rsi2|U-ETF", "rsi2|U-STK", "tom|U-ETF", "tom|U-STK", "fopt"}
-    assert res["trials"]["round9"] == 203 and res["trials"]["total_for_dsr"] == res["trials"]["prior_in_run_logs"] + 203
+    assert res["trials"]["round9"] == 206 and res["trials"]["total_for_dsr"] == res["trials"]["prior_in_run_logs"] + 206
     assert len(res["H"]["strategies"]) == 12 and set(res["S"]["evaluate"]) == {f"{s}|{c}" for s in ("scalp_trend", "scalp_fade")
                                                                                for c in ("d45-55t50", "d20-30t25")}
     assert res["I"]["rule"] == "w5-10d03-12t07" and "FIN-H" in res["book"]["kinds"]

@@ -1,7 +1,7 @@
 """Round 9 readouts (sprint/round9.py): Part H runs the factory procedure unchanged on share trades (a planted 2016-2019 edge
 is found and checked on the holdouts; 2020+ data never changes the rule), share entry features are stamped at the decision
 bar from cached bars, the account view's arithmetic, the book's "adds steadiness" rule (correlation with FIN-H below 0.3 over
-the sessions both could trade), the trial count (203) and the deflated Sharpe's N. Synthetic data only."""
+the sessions both could trade), the trial count (206 after Amendment 14) and the deflated Sharpe's N. Synthetic data only."""
 import math
 from datetime import date
 
@@ -13,8 +13,8 @@ from sprint import book, data, factory, features, round9 as R9
 
 
 # ---------------------------------------------------------------- trials
-def test_trials_are_203_and_the_dsr_uses_run_logs_plus_203():
-    assert sum(R9.TRIALS.values()) == 203 == R9.ROUND9
+def test_trials_are_206_and_the_dsr_uses_run_logs_plus_206():
+    assert sum(R9.TRIALS.values()) == 206 == R9.ROUND9
     assert R9.TRIALS["S (2 signals x 2 contracts x 6 cells + 2 underlying checks + 2 sized variants)"] == 28
     t = R9.trials(1234)
     assert t["total_for_dsr"] == 1437 and "12 strategies" in t["h_note"] and "written count is 11" in t["h_note"]
