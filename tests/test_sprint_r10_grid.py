@@ -427,6 +427,10 @@ def test_no_look_ahead_signals_features_and_picks(cache):
             assert f1 == f2, j
             assert G.agrees(c1, side, j) == G.agrees(c2, side, j)
             assert G.af_signal(c1, j) == G.af_signal(c2, j)
+            a1, a2 = G.af_state(c1), G.af_state(c2)                       # 16.2's state: EMAs, counters, ROC5, ATR5 up to j
+            assert all(np.array_equal(a1[k][:j + 1], a2[k][:j + 1], equal_nan=True) for k in a1)
+            atr = G.af_atr5d(s1, day)
+            assert G.af_strikes(float(c1.c[j]), atr, side) == G.af_strikes(float(c2.c[j]), atr, side)
     st1, st2 = G.r1_setup(c1), G.r1_setup(c2)
     if st1 and st1.get("side") and st1["idx"] <= cut:
         assert (st1["side"], st1["idx"], st1["qualifies"]) == (st2["side"], st2["idx"], st2["qualifies"])
@@ -456,6 +460,52 @@ def test_restart_safety_chunks_are_reused_and_reproduce_identical_outputs(cache,
     assert G.load_chunk(f3[0], bad) is None
 
 
+def _bars_df(day, sym, prices, every=1):
+    import pandas as pd
+    rows = []
+    for i in range(0, 390, every):
+        p = prices
+        ts = pd.Timestamp(f"{day} 09:30", tz="America/New_York") + pd.Timedelta(minutes=i)
+        rows.append({"ts": ts, "o": p, "h": p + 0.01, "l": p - 0.01, "c": p, "v": 5.0, "n": 1, "vw": p, "symbol": sym})
+    return pd.DataFrame(rows)
+
+
+def test_real_tapes_merge_the_round10_export_and_the_existing_cache_wins_ties(tmp_path):
+    import pandas as pd
+    import pull_alpaca as PA
+    root = tmp_path / "alpaca"
+    d = DEV_DAYS[3]
+    nx = d + timedelta(days=1)
+    only = f"SPY{d:%y%m%d}P00470000"                                # a far strike only the round 10 export has
+    tie = f"SPY{d:%y%m%d}C00500000"                                 # in both, the same print count: the existing cache wins
+    more = f"SPY{d:%y%m%d}C00501000"                                # in both, more prints in the export: the export wins
+    PA._write_gz(root / "options" / "SPY" / d.isoformat() / "bars.csv.gz",
+                 pd.concat([_bars_df(d, tie, 2.00), _bars_df(d, more, 1.50, every=2)], ignore_index=True))
+    PA._write_gz(root / "options_r10" / "SPY" / d.isoformat() / "bars.csv.gz",
+                 pd.concat([_bars_df(d, only, 0.40), _bars_df(d, tie, 9.99), _bars_df(d, more, 1.60)], ignore_index=True))
+    nxt_only = f"SPY{nx:%y%m%d}C00520000"
+    PA._write_gz(root / "options_next" / "SPY" / d.isoformat() / "bars.csv.gz", _bars_df(d, f"SPY{nx:%y%m%d}C00500000", 3.0))
+    PA._write_gz(root / "options_r10_next" / "SPY" / d.isoformat() / "bars.csv.gz",
+                 pd.concat([_bars_df(d, nxt_only, 0.5), _bars_df(d, f"SPY{nx + timedelta(days=7):%y%m%d}C00500000", 5.0)],
+                           ignore_index=True))
+    got = G.read_option_day_r10("SPY", d, root)
+    assert set(got) == {only, tie, more}
+    assert got[only].o[100] == 0.40 and got[tie].o[100] == 2.00 and got[more].o[101] == 1.60
+    old = data.read_option_day("SPY", d, root)                     # sprint/data.py is unchanged: the existing cache only
+    assert set(old) == {tie, more} and old[more].o[100] == 1.50 and math.isnan(old[more].o[101])
+    nxt = G.read_option_day_r10("SPY", d, root, want_trades=False, expiry="next")
+    assert set(nxt) == {f"SPY{nx:%y%m%d}C00500000", nxt_only}      # the nearest expiry only, from both folders
+    d2 = DEV_DAYS[4]
+    PA._write_gz(root / "options_r10" / "SPY" / d2.isoformat() / "bars.csv.gz", _bars_df(d2, f"SPY{d2:%y%m%d}C00500000", 1.0))
+    assert G.option_days_r10("SPY", root) == {d, d2} and data.option_days("SPY", root) == {d}
+    assert G.option_days_r10("SPY", root, "next") == {d}
+    ser = data.Series("SPY", SS.stock_day(d, 500.0, 3))
+    ctx = data.DayContext(ser, d, {}, SP.SpreadModel())
+    tp = G.Tapes10(ctx, "real", root, G.option_days_r10("SPY", root), G.option_days_r10("SPY", root, "next"))
+    assert only in tp.real0 and tp.real0[tie].o[0] == 2.00
+    assert tp.pool("n1d40-55t45", "C", 500.0) is None and nxt_only in ctx.tapes_next
+
+
 def test_locked_periods_are_refused_and_no_new_option_pull_is_needed(cache):
     for d in (date(2024, 2, 1), date(2024, 7, 31), date(2026, 7, 1), date(2026, 10, 30)):
         with pytest.raises(periods.LockedPeriod):
@@ -477,9 +527,15 @@ def test_locked_periods_are_refused_and_no_new_option_pull_is_needed(cache):
     want = [f"SPY{d0:%y%m%d}{sd}{k * 1000:08d}" for k in range(int(math.floor(lo - reach)), int(math.ceil(hi + reach)) + 1)
             for sd in ("C", "P") if f"{sd}{k * 1000:08d}" not in have]
     assert G.needed_option_contracts("SPY", d0, df) == want
-    low = df.copy()
+    big = df.copy()
+    late = big["ts"].dt.hour * 60 + big["ts"].dt.minute >= 720
     for c in ("o", "h", "l", "c"):
-        low[c] = low[c] / 5.0                                   # a $100 underlying: 15.3's $4.50 reach exceeds 3%
-    need = G.needed_option_contracts("ABC", d0, low, expiry=d0 + timedelta(days=1))
+        big.loc[late, c] = big.loc[late, c] * 0.94              # a 6% drop after noon: picks near the low reach past the band
+    need = G.needed_option_contracts("ABC", d0, big, expiry=d0 + timedelta(days=1))
+    m = big["ts"].dt.hour * 60 + big["ts"].dt.minute
+    rb = big[(m >= 570) & (m < 960)]
     assert need and all(s.startswith(f"ABC{d0 + timedelta(days=1):%y%m%d}") for s in need)
+    reach_big = max(G.NEED_REACH_MIN, G.NEED_REACH_PCT * float(rb["h"].max()))
+    assert min(int(s[-8:]) / 1000 for s in need) == math.floor(float(rb["l"].min()) - reach_big)
+    assert G.NEED_REACH_MIN == 2.0                              # 16.2's strike is within 0.3%: no $4.50 reach any more
     assert G.chunk_years("DEV") == [2024, 2025, 2026] and G.chunk_years("HIST")[0] == 2016

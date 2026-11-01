@@ -50,11 +50,14 @@ ADD-ONS (each on an entry's frozen cell; the same entry, contract and trend filt
     all out 15:25. The same bars as R3 (expectancy above the frozen cell's, 1 contract each).
   The thresholds are reached on bar highs; a moved stop acts from the next bar (sim.py's end-of-bar updates).
 
-ADDENDUM 15.3 (alpaca-options-framework, SPY decides; QQQ information), exactly 15.3's list, with and without the day gates:
-  decisions on finished 1-minute bars; 3 consecutive green bars (red for puts); 5-bar ROC = close / close 5 bars back - 1
-  >= +0.03% (<= -0.03%); ATR5 >= $0.20; a 3-bar cooldown after a trade closes; one position at a time.
-  Contract: 0DTE, strike = the $1 grid strike nearest S +/- min(0.60 x the 5-day ATR, $4.50); premium $0.20-$10.00; never in
-  the money. Exits on the option's 1-minute bars (desk mechanics, as the grid) plus SPY: stop at 50% of the entry price,
+ADDENDUM 15.3 AS CORRECTED BY ADDENDUM 16.2 (the alpaca-options-framework's live path; SPY decides, QQQ information; 16.2
+  replaces 15.3's list, which is no longer run), with and without the day gates:
+  decisions on finished 1-minute bars 09:45-12:00. A call needs close > session VWAP, EMA(5) > EMA(20) of 1-minute closes,
+  5-bar ROC >= +0.03% and at least 3 consecutive green bars; a put mirrors each. ATR5 (the mean TRUE range of the last 5
+  1-minute bars) >= $0.20. A 3-bar cooldown after a trade closes; one position at a time; premium $0.20-$10.00.
+  Strike: the 0.60 x 5-day-ATR target (capped at $4.50, $1 grid) only sets the watched window (target +/- 5 strikes); the
+  contract is the nearest out-of-the-money strike in that window within 0.3% of SPY's entry price; none = no trade.
+  Exits (unchanged; no momentum-flip exit) on the option's 1-minute bars (desk mechanics, as the grid) plus SPY: stop at 50% of the entry price,
   target +50%, a trail armed at +20% exiting at 88% of the peak, an SPY stop max(0.75 x ATR5, $0.10) beyond the entry
   SPY price on finished 1-minute closes, all out 15:25. Day gates at the $150-risk sizing: no new entry after a day P/L of
   -$300 or +$125 or 3 wins in a row. Windows: HIST 2016-01..2024-01 MODELED and DEV REAL, B3's bars. Information: by hour,
@@ -95,16 +98,22 @@ BUILDER'S READING (literal readings where the text is open; nothing here comes f
      labeled "round 10 DEV calibration"; HIST results on them are NOT VALIDATED. A key with < 30 rows refuses its HIST cells.
   8. R3: the frozen cell keeps its entry, contract, trend filter and stop until +30%; "entry price" = the debit. R4:
      "break-even" = sim.py's breakeven stop (the traded price whose proceeds after costs equal the cost); +50/+100/+150% are
-     % of the debit on bar highs. R2 on 15.3 swaps 15.3's whole contract section (strike offset, premium band, never-ITM)
-     for d55-70t60, gated as published; the ungated R2 is information.
-  9. 15.3: "entries 09:45-12:00" is the published bot's wall-clock entry window, so decision bars 14..149 (bars finishing
-     09:45..12:00) with the fill no later than the 12:00 bar. Where 15.3's words are open, the published code (read as data)
-     settles them: ATR5 = the mean high-low of the last 5 1-minute bars; the 5-day ATR = the mean high-low of the 5 prior
-     daily bars; the strike = Python round(S +/- offset) on the $1 grid; ITM = call strike <= S (put >= S); sizing =
-     max(1, floor($150 / (0.5 x entry x 100))); the cooldown = the next decision at least 2 bars after the exit bar (entry
-     3 bars later); SPY stop vs the decision bar's close; trail peak from bar highs since entry. NOT IMPLEMENTED although
-     in the published momentum.py / signals.py: close vs VWAP, EMA5 vs EMA20, the 0.3% strike "activation zone" and the
-     momentum-flip exit. 15.3's pre-registered list omits them, so adding them would change the frozen rules.
+     % of the debit on bar highs. R2 on the framework (16.2) swaps the strike rule (the watched window and the 0.3%
+     out-of-the-money activation zone) for d55-70t60; 16.2 lists the premium band under Entry, so it stays ($0.20-$10.00 on the
+     d55-70t60 price). Judged gated, as published; the ungated R2 is information.
+  9. The framework (16.2; the published code read as data where the words are open): "entries 09:45-12:00" is the bot's
+     wall-clock entry window, so decision bars 14..149 (bars finishing 09:45..12:00) with the fill no later than the 12:00
+     bar. EMA(5) / EMA(20): momentum.py's EMA (seeded with its first price), preseeded with the prior session's last 30
+     regular-hours closes (the live bot's preseed) and then every regular-hours bar of the day; without a prior session it
+     seeds on the day's first close. Consecutive bars: momentum.py's counters (a doji leaves them; reset per session). ROC5
+     and ATR5 over the bars received (a minute without a bar is skipped, as the bot never receives it); ATR5's true range uses
+     the previous bar's close. VWAP = the session VWAP of sprint/data (bar HLC3 x volume from 09:30, the bot's formula). The
+     5-day ATR = the mean high-low of the 5 prior daily bars; the target = Python round(S +/- offset) on the $1 grid; S = the
+     decision bar's close (the bot's spy_price); "out of the money" = call K > S, put K < S; "within 0.3%" = |K - S| / S <=
+     0.003; nearest = the smallest |K - S|; the premium band is checked on that one contract (no fallback to a farther
+     strike). Sizing max(1, floor($150 / (0.5 x entry x 100))); the cooldown = the next decision at least 2 bars after the exit
+     bar (entry 3 bars later); the SPY stop is max($0.10, 0.75 x ATR5 at the decision) beyond the decision bar's close; the
+     trail peak from bar highs since entry. The momentum-flip exit is not used (main.py never calls check_exit).
  10. R1: "from 09:45 to 12:00" = signal bars 15..149 (the desk's ORB/entries convention); a 5-minute bar counts once it
      finishes at or after the entry bar; "inside" includes the edges; the claim uses the session's last regular-hours close.
      R1 has no written pass bar: the standing bars for a rule with no fitted parameter apply (shares: Part A's 7 items;
@@ -115,11 +124,15 @@ BUILDER'S READING (literal readings where the text is open; nothing here comes f
      round 8's option twins); 15.3 and R1 name their own (SPY decides 15.3, QQQ information; R1 SPY + QQQ).
  13. Costs: Amendment 15 says "with sprint/optpass.py", so the grid keeps optpass's pre-registered MODELED-SPREAD on both
      periods (round 8's convention; HIST may never use 2026 chains, and DEV stays on the same model so the holdouts compare).
- 14. Not built here: Amendment 16's compounding view (information, "for every rule that passes") is not one of this build's
-     parts; every passing rule's holdout trades are in the trade files for it.
+ 14. Amendment 16's compounding view (information) lives in sprint/compound.py (round10/noise); tools/sprint_r10_grid.py
+     calls it for every rule here that passes, on its holdout windows (the grid's frozen cells and R2-R4: holdout 1 MODELED and
+     holdout 2 REAL; 15.3 and R1, which have no fitted parameter: HIST 2016-2023 MODELED and DEV REAL), each window apart,
+     with risk = the debit per trade (x 3 for R3) for options and the $10,000 notional for R1's shares.
 DATA: the existing DEV option pulls (0DTE and next expiry, every $1 strike within 3% of the open widened to the day's range)
-  hold every round-10 contract on ordinary days; needed_option_contracts() lists, per DEV day, the strikes a pick near a
-  big-move day's high or low could reach beyond that band (d20-30t25's far edge, 15.3's up-to-$4.50 offset), for the round
+  hold every round-10 contract on ordinary days (16.2's strike is within 0.3% of the price); needed_option_contracts() lists,
+  per DEV day, the strikes a pick near a big-move day's high or low could reach beyond that band (d20-30t25's far edge). The
+  round 10 pull exports them to options_r10/ and options_r10_next/, and the real tapes here merge both folders
+  (read_option_day_r10: most prints wins, the existing cache wins a tie); sprint/data.py is unchanged. For the round
   10 pull tool. Without them such a pick finds no strike in its band and is skipped (counted in the report).
 """
 import gzip
@@ -595,9 +608,101 @@ class Exits:
         return (last[0], RS[last[3]]) + self._legs_pnl(legs, 3)
 
 
-# ---------------------------------------------------------------- tapes (optpass.DayTapes, refusing a missing key politely)
+# ---------------------------------------------------------------- real tapes: the existing cache plus the round 10 pull's export
+# The round 10 pull (tools/sprint_pull10.py) exports the extra contracts needed_option_contracts() lists into
+# data/alpaca/options_r10/<U>/<day>/bars.csv.gz (0DTE) and options_r10_next/<U>/<day>/bars.csv.gz (next expiry), the same
+# columns as options/ and options_next/. Round 10 reads both: a symbol found in several files keeps the tape with the most
+# prints, and on a tie the existing cache (listed first) wins (the rule of sprint/r10credit.read_tapes). sprint/data.py's
+# read_option_day is unchanged, so earlier rounds read exactly what they read before.
+OPTION_SUBS = {"0dte": ("options", "options_r10"), "next": ("options_next", "options_r10_next")}
+
+
+def _read_option_file(folder, day, want_trades=True, next_only=False):
+    """data.read_option_day's parsing for one folder: {symbol: OptionTape} of the day's contracts that expire on `day` (0DTE)
+    or, next_only, after it (every later expiry kept; the caller keeps the nearest)."""
+    f = Path(folder) / "bars.csv.gz"
+    if not f.exists():
+        return {}
+    import pandas as pd
+    from .fills import OptionTape
+    df = pd.read_csv(f, compression="gzip")
+    if not len(df):
+        return {}
+    mi = data._minutes(df["ts"])
+    keep = (mi >= 0) & (mi < data.N)
+    df, mi = df[keep], mi[keep]
+    trades = {}
+    tf = Path(folder) / "trades.csv.gz"
+    if want_trades and tf.exists():
+        t = pd.read_csv(tf, compression="gzip")
+        if len(t):
+            tm = data._minutes(t["ts"])
+            t = t.assign(_m=tm, _ns=pd.to_datetime(t["ts"], utc=True, format="ISO8601").astype("int64"))
+            t = t.sort_values(["symbol", "_ns"], kind="stable")
+            for s, g in t.groupby("symbol", sort=False):
+                ok = (g["_m"] >= 0) & (g["_m"] < data.N)
+                trades[s] = (g["_m"].to_numpy()[ok.to_numpy()], g["p"].to_numpy(float)[ok.to_numpy()])
+    out = {}
+    syms = df["symbol"].to_numpy()
+    vals = df[["o", "h", "l", "c", "v"]].to_numpy(float)
+    for s in pd.unique(syms):
+        meta = data.parse_occ(s)
+        if not meta or ((meta["expiry"] <= day) if next_only else (meta["expiry"] != day)):
+            continue
+        sel = syms == s
+        grid = np.full((data.N, 5), np.nan)
+        grid[mi[sel]] = vals[sel]
+        out[s] = OptionTape(s, meta["right"], meta["strike"], *(grid[:, k] for k in range(5)), trades=trades.get(s))
+        out[s].expiry = meta["expiry"]
+    return out
+
+
+def read_option_day_r10(under, day, root=None, want_trades=True, expiry="0dte", subs=None):
+    """data.read_option_day over the existing cache and the round 10 export (OPTION_SUBS): the merged {symbol: OptionTape}.
+    A symbol in several folders keeps the tape with the most prints; on a tie the folder listed first wins. expiry "next":
+    only the nearest expiry after `day` among the merged contracts is kept (data.read_option_day's rule)."""
+    check_day(day)
+    subs = OPTION_SUBS[expiry] if subs is None else subs
+    out = {}
+    for sub in subs:
+        got = _read_option_file(Path(root or data.ROOT) / sub / under / day.isoformat(), day, want_trades, expiry == "next")
+        for s, t in got.items():
+            if s not in out or int(np.sum(~np.isnan(t.o))) > int(np.sum(~np.isnan(out[s].o))):
+                out[s] = t
+    if expiry == "next" and out:
+        nearest = min(t.expiry for t in out.values())
+        out = {s: t for s, t in out.items() if t.expiry == nearest}
+    return out
+
+
+def option_days_r10(under, root=None, expiry="0dte", subs=None):
+    """data.option_days over the existing cache and the round 10 export: the union of the days with a bars file."""
+    out = set()
+    for sub in (OPTION_SUBS[expiry] if subs is None else subs):
+        folder = Path(root or data.ROOT) / sub / under
+        if folder.exists():
+            out |= {date.fromisoformat(p.name) for p in folder.iterdir() if p.is_dir() and (p / "bars.csv.gz").exists()}
+    return out
+
+
+# ---------------------------------------------------------------- tapes (optpass.DayTapes on the merged real tapes; a missing key refused politely)
 class Tapes10(DayTapes):
+    """optpass.DayTapes with round 10's real tapes (read_option_day_r10: options + options_r10, options_next +
+    options_r10_next); MODELED tapes exactly as DayTapes."""
+
+    def __init__(self, ctx, mode, root=None, odays=None, ndays=None, calib=None, ivp=None):
+        self.ctx, self.mode, self.calib, self.ivp = ctx, mode, calib, ivp
+        self.real0 = self.real1 = None
+        if mode == "real":
+            self.real0 = read_option_day_r10(ctx.sym, ctx.day, root) if (odays is None or ctx.day in odays) else {}
+            self.root, self.ndays = root, ndays
+        self.md0 = self.md1 = None
+        self.mult = {}
+
     def pool(self, rule, side, S):
+        if self.mode == "real" and contracts.is_next(rule) and self.real1 is None:
+            ok = self.ndays is None or self.ctx.day in self.ndays
+            self.real1 = read_option_day_r10(self.ctx.sym, self.ctx.day, self.root, want_trades=False, expiry="next") if ok else {}
         try:
             return super().pool(rule, side, S)
         except ValueError as exc:
@@ -893,10 +998,11 @@ def extend_calibration(run4, rows, proxy):
     return out
 
 
-# ---------------------------------------------------------------- Addendum 15.3: alpaca-options-framework
+# ---------------------------------------------------------------- Addendum 15.3 as corrected by Addendum 16.2 (the framework)
 AF_FIRST, AF_LAST, AF_LAST_FILL = 14, 149, 150
 AF_ROC, AF_ATR5_MIN, AF_CONSEC = 0.0003, 0.20, 3
-AF_ATR_MULT, AF_MAX_OFFSET = 0.60, 4.50
+AF_EMA_FAST, AF_EMA_SLOW, AF_PRESEED = 5, 20, 30
+AF_ATR_MULT, AF_MAX_OFFSET, AF_ALTS, AF_ZONE = 0.60, 4.50, 5, 0.003
 AF_PMIN, AF_PMAX = 0.20, 10.00
 AF_STOP, AF_TP, AF_ARM, AF_TRAIL = 0.50, 1.50, 1.20, 0.88
 AF_SPY_MULT, AF_SPY_FLOOR = 0.75, 0.10
@@ -919,38 +1025,95 @@ def af_atr5d(series, day):
     return cache[day]
 
 
+def _af_ema(prev, price, period):
+    """The framework's EMA step (momentum.py): seeded with the first price."""
+    k = 2.0 / (period + 1)
+    return price if prev is None else price * k + prev * (1 - k)
+
+
+def af_state(ctx):
+    """The framework's momentum state at the end of each regular-hours bar of the day (cached on ctx), arrays of 390:
+    ema5 / ema20 (seeded with the prior session's last 30 regular-hours closes, the live bot's preseed, then every bar of
+    the day), green / red (consecutive-bar counters, reset per session: a green bar adds to green and zeroes red, a red bar the
+    reverse, a doji leaves both), roc5 (close / the close 5 received bars back - 1), atr5 (the mean TRUE range of the last 5
+    received bars; true range with the previous received bar's close, high - low for the session's first bar). A minute
+    without a bar is never received: its values stay NaN / 0 and no decision is made on it."""
+    st = getattr(ctx, "_af_state", None)
+    if st is not None:
+        return st
+    n = data.N
+    out = {k: np.full(n, np.nan) for k in ("ema5", "ema20", "roc5", "atr5")}
+    out["green"], out["red"] = np.zeros(n, int), np.zeros(n, int)
+    e5 = e20 = None
+    prev = ctx.series.prior_days(ctx.day, 1)
+    if prev:
+        pc = ctx.series.rth[prev[0]][:, 3]
+        for x in pc[~np.isnan(pc)][-AF_PRESEED:]:
+            e5, e20 = _af_ema(e5, float(x), AF_EMA_FAST), _af_ema(e20, float(x), AF_EMA_SLOW)
+    o, h, l, c = (np.asarray(a, float) for a in (ctx.o, ctx.h, ctx.l, ctx.c))
+    closes, trs = [], []
+    g = r = 0
+    for i in range(n):
+        if math.isnan(c[i]) or math.isnan(o[i]):
+            continue
+        ci = float(c[i])
+        e5, e20 = _af_ema(e5, ci, AF_EMA_FAST), _af_ema(e20, ci, AF_EMA_SLOW)
+        if ci > o[i]:
+            g, r = g + 1, 0
+        elif ci < o[i]:
+            g, r = 0, r + 1
+        hl = float(h[i] - l[i])
+        trs.append(hl if not closes else max(hl, abs(float(h[i]) - closes[-1]), abs(float(l[i]) - closes[-1])))
+        closes.append(ci)
+        out["ema5"][i], out["ema20"][i], out["green"][i], out["red"][i] = e5, e20, g, r
+        if len(closes) >= 6 and closes[-6] != 0:
+            out["roc5"][i] = (ci - closes[-6]) / closes[-6]
+        if len(trs) >= 5:
+            out["atr5"][i] = sum(trs[-5:]) / 5
+    ctx._af_state = out
+    return out
+
+
 def af_signal(ctx, j):
-    """"C" / "P" / None at decision bar j (15.3's entry conditions)."""
-    if j < 5:
+    """"C" / "P" / None at decision bar j (Addendum 16.2's direction and volatility conditions). A call needs close > session
+    VWAP, EMA(5) > EMA(20), ROC5 >= +0.03%, at least 3 consecutive green bars and ATR5 >= $0.20; a put mirrors them."""
+    st = af_state(ctx)
+    c, vw, a5 = ctx.c[j], ctx.vwap[j], st["atr5"][j]
+    if math.isnan(c) or math.isnan(vw) or math.isnan(a5) or math.isnan(st["roc5"][j]) or a5 < AF_ATR5_MIN:
         return None
-    w = slice(j - AF_CONSEC + 1, j + 1)
-    o, c = ctx.o[w], ctx.c[w]
-    hl = ctx.h[j - 4:j + 1] - ctx.l[j - 4:j + 1]
-    if np.isnan(o).any() or np.isnan(c).any() or np.isnan(hl).any() or math.isnan(ctx.c[j - 5]):
-        return None
-    if float(hl.mean()) < AF_ATR5_MIN:
-        return None
-    roc = float(ctx.c[j]) / float(ctx.c[j - 5]) - 1
-    if (c > o).all() and roc >= AF_ROC:
+    e5, e20, roc = st["ema5"][j], st["ema20"][j], st["roc5"][j]
+    if c > vw and e5 > e20 and roc >= AF_ROC and st["green"][j] >= AF_CONSEC:
         return "C"
-    if (c < o).all() and roc <= -AF_ROC:
+    if c < vw and e5 < e20 and roc <= -AF_ROC and st["red"][j] >= AF_CONSEC:
         return "P"
     return None
 
 
 def af_strike(S, atr5d, side):
+    """The target strike: Python round(S +/- min(0.60 x the 5-day ATR, $4.50)) on the $1 grid (strikes.py)."""
     off = min(AF_ATR_MULT * atr5d, AF_MAX_OFFSET)
     return round(round((S + off if side == "C" else S - off) / 1.0) * 1.0, 2)
 
 
+def af_strikes(S, atr5d, side):
+    """(target, the qualifying strikes nearest first): the target +/- 5 strikes are watched; a strike qualifies when it is out
+    of the money (call K > S, put K < S) and within 0.3% of S (the activation zone, |K - S| / S <= 0.003)."""
+    target = af_strike(S, atr5d, side)
+    win = [round(target + k * 1.0, 2) for k in range(-AF_ALTS, AF_ALTS + 1)]
+    ok = [K for K in win if ((K > S) if side == "C" else (K < S)) and abs(K - S) / S <= AF_ZONE]
+    return target, sorted(ok, key=lambda K: (abs(K - S), K))
+
+
 def af_contract(ctx, tapes, side, j, atr5d):
-    """15.3's contract at decision bar j: (tape, info) or (None, reason)."""
+    """16.2's contract at decision bar j: the nearest out-of-the-money strike of the watched window within 0.3% of S (the
+    decision bar's close), with a premium of $0.20-$10.00: (tape, info) or (None, reason). No fallback to a farther strike."""
     S = float(ctx.c[j])
     if atr5d is None:
         return None, "no 5-day ATR"
-    K = af_strike(S, atr5d, side)
-    if (K <= S) if side == "C" else (K >= S):
-        return None, "strike in the money"
+    _target, ks = af_strikes(S, atr5d, side)
+    if not ks:
+        return None, "no out-of-the-money strike within 0.3% in the watched window"
+    K = ks[0]
     if tapes.mode == "real":
         sym = f"{ctx.sym}{ctx.day:%y%m%d}{side}{int(round(K * 1000)):08d}"
         tape = (tapes.real0 or {}).get(sym)
@@ -1029,7 +1192,8 @@ def af_signals(ctx):
 
 
 def af_day(ctx, tapes, spread, variant, gated, contract=AF_RULE, twin_seed=None, picks=None, calib_rows=None, sigs=None):
-    """One symbol-day of 15.3's bot: [trade rows]. contract AF_RULE (15.3's) or "d55-70t60" (R2). sigs: af_signals(ctx)."""
+    """One symbol-day of the framework's bot (15.3 as corrected by 16.2): [trade rows]. contract AF_RULE (16.2's activation-zone
+    strike) or "d55-70t60" (R2: the strike rule swapped, the premium band kept as an entry condition). sigs: af_signals(ctx)."""
     allout_idx = EARLY_ALLOUT if ctx.early else ALLOUT["15:25"]
     atr5d = af_atr5d(ctx.series, ctx.day)
     sigs = af_signals(ctx) if sigs is None else sigs
@@ -1055,14 +1219,13 @@ def af_day(ctx, tapes, spread, variant, gated, contract=AF_RULE, twin_seed=None,
                 tape, info = (None, r) if r else contracts.pick(ctx, side, j, contract)
                 if picks is not None:
                     picks[pk] = (tape, info)
-        if tape is None:
+        if tape is None or not AF_PMIN <= info["px"] <= AF_PMAX:          # 16.2: the premium band is an entry condition
             continue
         f = fill_at(ctx, j, tape, spread, allout_idx, last=AF_LAST_FILL)
         if f is None:
             continue
         e, b_in, hs_in, costs = f
-        hl = ctx.h[j - 4:j + 1] - ctx.l[j - 4:j + 1]
-        buf = max(AF_SPY_FLOOR, AF_SPY_MULT * float(hl.mean()))
+        buf = max(AF_SPY_FLOOR, AF_SPY_MULT * float(af_state(ctx)["atr5"][j]))
         S = float(ctx.c[j])
         res = af_exit(ctx, tape, e, allout_idx, b_in, hs_in, costs, side, S - buf if side == "C" else S + buf)
         if res is None:
@@ -1221,19 +1384,19 @@ def r1_day(ctx, tapes, spread, src, picks, twin_seed=TWIN_SEED):
 
 # ---------------------------------------------------------------- data needs (wired into the round 10 pull by the integrator)
 NEED_REACH_PCT = 0.02          # >= the 0DTE |delta| 0.20 distance at a 60% IV from 09:45, and n1 |delta| 0.40 over 3 days
-NEED_REACH_MIN = AF_MAX_OFFSET + 1.0
+NEED_REACH_MIN = 2.0           # $2: two $1 strikes past the range for a low-priced underlying (16.2's strike is within 0.3%)
 
 
 def needed_option_contracts(under, day, day_bars, band=0.03, expiry=None):
     """OCC symbols a round-10 pick on `day` could need that the existing pull (pull_alpaca.symbols_for_day with `band`: every
     $1 strike within band of the open widened to the day's range) does NOT fetch. day_bars: the day's stock 1-minute bars
     (ts, o, h, l, c; regular hours used). expiry: the contracts' expiry (default `day`, 0DTE; the next listed expiry for
-    n1d40-55t45). Reach: every strike within max($5.50, 2% of the price) of the day's regular-hours range: 15.3's strike is at
-    most $4.50 (+ rounding) from the decision price; a 0DTE |delta| 0.20 strike (d20-30t25's far edge) sits 0.84 sd of the
-    rest-of-day move from the price, under 2% for an IV up to about 85% from 09:45, and n1d40-55t45 (|delta| >= 0.40) stays
-    within 2% over a 3-day weekend at that IV. On a day whose range stays within about 1% of the open the list is empty (the
-    +/-3% band holds every round-10 contract); on a big-move day it lists the few strikes beyond the day's extremes that a
-    d20-30t25 or 15.3 pick near the high or low could need (without them such a pick finds no strike in its band and is
+    n1d40-55t45). Reach: every strike within max($2, 2% of the price) of the day's regular-hours range: a 0DTE |delta| 0.20
+    strike (d20-30t25's far edge) sits 0.84 sd of the rest-of-day move from the price, under 2% for an IV up to about 85% from
+    09:45; n1d40-55t45 (|delta| >= 0.40) stays within 2% over a 3-day weekend at that IV; d55-70t60 is nearer; the framework's
+    strike (Addendum 16.2) is within 0.3% of the price. On a day whose range stays within about 1% of the open the list is
+    empty (the +/-3% band holds every round-10 contract); on a big-move day it lists the few strikes beyond the day's extremes
+    that a d20-30t25 pick near the high or low could need (without them such a pick finds no strike in its band and is
     skipped, counted). The round 10 pull tool calls it per DEV day and fetches what it returns."""
     import pull_alpaca as PA
     expiry = expiry or day
@@ -1306,8 +1469,8 @@ def compute_chunk(series, period, year, root=None, calib=None, aux=None, spread=
     skips, calib_rows = Counter(), ([] if period == "DEV" else None)
     r1 = {"claim": [], "shares": [], "options": []}
     af = []
-    odays = data.option_days(sym, root) if mode == "real" else None
-    ndays = data.option_days(sym, root, "next") if mode == "real" else None
+    odays = option_days_r10(sym, root) if mode == "real" else None
+    ndays = option_days_r10(sym, root, "next") if mode == "real" else None
     t0 = time.time()
     for n, d in enumerate(days):
         ctx = data.DayContext(series, d, {}, spread, aux=aux)
@@ -1704,7 +1867,7 @@ TRIALS = {"Amendment 15 grid (7 entries x 1,080 cells; stop 'none' from Amendmen
           "R2 in-the-money d55-70t60 (7 frozen cells + 15.3)": 8,
           "R3 scale-out (7 frozen cells)": 7,
           "R4 ratchet (7 frozen cells)": 7,
-          "Addendum 15.3 (with and without the day gates)": 2}
+          "Addendum 15.3 as corrected by 16.2 (with and without the day gates)": 2}
 THIS_BUILD = 7587
 ROUND10 = 7767
 assert sum(TRIALS.values()) == THIS_BUILD and len(ENTRIES) * NCELL == 7560
@@ -1891,7 +2054,9 @@ def _addons_md(L, res):
 
 
 def _af_md(L, af):
-    L += ["## Addendum 15.3: the alpaca-options-framework rules (SPY decides; QQQ information)", ""]
+    L += ["## Addendum 15.3 as corrected by Addendum 16.2: the alpaca-options-framework's live path (SPY decides; QQQ information)",
+          "", "VWAP and EMA(5)/EMA(20) direction, ROC5, 3 consecutive bars, ATR5 (true range) >= $0.20; the nearest out-of-the-money "
+          "strike within 0.3% of SPY in the watched window; 15.3's list-only version is not run.", ""]
     if not af:
         L += ["NOT RUN.", ""]
         return
@@ -2192,9 +2357,60 @@ def analyze(files, frozen_path, n_prior=0, log=None):
     return res, trades, cells_table
 
 
+# ---------------------------------------------------------------- the compounding view's inputs (Amendment 16; sprint/compound.py)
+HOLDOUT_WINDOWS = (("holdout 1", H1[0], H1[1], "MODELED"), ("holdout 2", H2[0], H2[1], "REAL"))
+PERIOD_WINDOWS = (("HIST", HIST_A, HIST_B, "MODELED"), ("DEV", DEV_A, DEV_B, "REAL"))
+
+
+def passing_rules(res, trades):
+    """Every rule of this build that passed its pre-registered bars, for the compounding view: [(name, rows, risk key,
+    windows)]. rows carry day and pnl at the pre-registered size; the risk key names each row's risk unit ("debit": the
+    option's cost per trade, x 3 for R3; "notional": R1's $10,000 in shares). Windows: the holdouts for a chosen rule (the grid's
+    frozen cells, R2-R4, R2 on 15.3), the HIST and DEV periods for a rule with no fitted parameter (15.3, R1)."""
+    out = []
+    trk = trades.get("tracked") or []
+    for e in ENTRIES:
+        g = (res.get("grid") or {}).get(e) or {}
+        if g.get("survives"):
+            out.append((f"grid {e} {g['chosen']}", [r for r in trk if r["entry"] == e and r["variant"] == "frozen" and r["kind"] == "real"],
+                        "debit", HOLDOUT_WINDOWS))
+        for lab, name in ADDON_LABELS.items():
+            if ((g.get("addons") or {}).get(name) or {}).get("pass"):
+                out.append((f"{e} {name}", [r for r in trk if r["entry"] == e and r["variant"] == lab and r["kind"] == "real"],
+                            "debit", HOLDOUT_WINDOWS))
+    af = res.get("af") or {}
+    for v in ("af153", "af153_nogate"):
+        if (((af.get("variants") or {}).get(f"{v} SPY") or {}).get("bar") or {}).get("pass"):
+            out.append((f"15.3/16.2 {v} SPY", [r for r in trades.get("af") or [] if r["variant"] == v and r["symbol"] == "SPY"],
+                        "debit", PERIOD_WINDOWS))
+    if (af.get("r2") or {}).get("pass"):
+        out.append(("R2 on 15.3/16.2 SPY", [r for r in trades.get("af") or [] if r["variant"] == "af153_r2" and r["symbol"] == "SPY"],
+                    "debit", HOLDOUT_WINDOWS))
+    r1 = res.get("r1") or {}
+    if ((r1.get("shares") or {}).get("bar") or {}).get("pass"):
+        out.append(("R1 shares", [r for r in trades.get("r1_shares") or [] if r.get("qualifies")], "notional", PERIOD_WINDOWS))
+    for rule, o in (r1.get("options") or {}).items():
+        if (o.get("bar") or {}).get("pass"):
+            out.append((f"R1 {rule}", [r for r in trades.get("r1_options") or [] if r["variant"] == f"r1_{rule}_qual"], "debit",
+                        PERIOD_WINDOWS))
+    return out
+
+
+def compounding_inputs(rows, risk_key, a, b):
+    """compound.simulate's rows for one window: {"day", "pnl", "risk"} (risk > 0 only)."""
+    out = []
+    for r in rows:
+        d = str(r["day"])[:10]
+        if a <= d <= b:
+            risk = float(r[risk_key])
+            if risk > 0:
+                out.append({"day": d, "pnl": float(r["pnl"]), "risk": risk})
+    return out
+
+
 # ---------------------------------------------------------------- 15.3 and R1 readouts
-AF_LABELS = {"af153": "15.3 as published, with the day gates", "af153_nogate": "15.3 without the day gates",
-             "af153_r2": "R2: 15.3 on d55-70t60, gates on", "af153_r2_nogate": "R2 on 15.3 without the gates (information)"}
+AF_LABELS = {"af153": "15.3 / 16.2 with the day gates", "af153_nogate": "15.3 / 16.2 without the day gates",
+             "af153_r2": "R2: 15.3 / 16.2 on d55-70t60, gates on", "af153_r2_nogate": "R2 on 15.3 / 16.2 without the gates (information)"}
 AF_STAT_WINDOWS = (("HIST 2016-2023 (MODELED)", HIST_A, "2023-12-31"), ("Jan 2024 (MODELED)", "2024-01-01", HIST_B),
                    ("DEV (REAL)", DEV_A, DEV_B))
 

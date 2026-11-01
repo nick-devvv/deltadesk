@@ -18,8 +18,11 @@ then HIST. Each chunk is saved to data/sprint/r10grid_cache/<period>_<symbol>_<y
 and inputs are the same, so an interrupted run resumes where it stopped and a finished one reproduces identical outputs.
 Stage 2 (sprint/r10grid.analyze): every cell replayed; the per-entry choice on 2016-2019 only, frozen into
 data/sprint/r10grid_frozen.json BEFORE any holdout readout (a re-run must reproduce the same choice or it stops); holdout 1
-(MODELED) and holdout 2 (REAL, random-side twin seed 31); R2, R3, R4; 15.3 (with and without the day gates); R1; the
-regime tables; the trials (7,587 this build; the deflated Sharpe uses the run logs' count + 7,767). Writes
+(MODELED) and holdout 2 (REAL, random-side twin seed 31); R2, R3, R4; 15.3 as corrected by Addendum 16.2 (with and without
+the day gates); R1; the regime tables; the trials (7,587 this build; the deflated Sharpe uses the run logs' count + 7,767).
+Then the compounding view (Amendment 16, information): sprint/compound.simulate (round10/noise's module; skipped with a
+warning until the branches are merged) for every rule that passed, on each of its holdout windows (sprint/r10grid.passing_rules).
+Writes
 data/sprint/r10grid_<date>.md and .json, r10grid_cells_<date>.csv.gz (every cell in every window), trades_r10grid_<date>.csv.gz
 (the frozen cells and add-ons, real and twin, with the entry and regime features), trades_r10_af153_<date>.csv.gz,
 trades_r10_r1_shares_<date>.csv.gz and trades_r10_r1_options_<date>.csv.gz. Refuses any row dated inside L1 or L2.
@@ -88,6 +91,37 @@ def calib_note(calib, run4_path):
                                "(failed-break, plain exit).")
 
 
+def compounding(res, trades, warnings):
+    """Amendment 16's compounding view (information, not trials) for every rule here that passed: sprint/compound.simulate on
+    each of its windows apart, every session of the window resampled. Returns (result by rule and window, markdown lines)."""
+    from sprint import book
+    try:
+        from sprint import compound
+    except ImportError:
+        warnings.append("sprint/compound.py (Amendment 16's compounding view, round10/noise) is not on this branch yet: the "
+                        "compounding view is skipped until the branches are merged.")
+        return None, ["## Compounding view (Amendment 16; information, not trials)", "",
+                      "NOT RUN: sprint/compound.py is not on this branch yet.", ""]
+    out = {}
+    L = ["## Compounding view (Amendment 16; information, not trials)", "",
+         "A $3,000 account risking 1%, 2% or 5% a trade (risk = the option's debit per trade, x 3 for R3; R1's shares: the "
+         "$10,000 notional), 2,000 bootstrap paths of each window's sessions. A simulation built from BACKTEST results.", ""]
+    jobs = G.passing_rules(res, trades)
+    if not jobs:
+        L += ["No rule of this build passed its bars, so there is no compounding view.", ""]
+    for name, rows, risk_key, windows in jobs:
+        out[name] = {}
+        for wl, a, b, prices in windows:
+            recs = G.compounding_inputs(rows, risk_key, a, b)
+            if not recs:
+                out[name][wl] = None
+                continue
+            v = compound.simulate(recs, book.sessions_between(a, b), label=f"{compound.LABEL}; {prices}")
+            out[name][wl] = v
+            L += compound.render_md(v, f"{name}, {wl} {a}..{b} ({prices})")
+    return out, L
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="SPRINT_PLAN Amendment 15 / 16, Addenda 15.3 and 15.5: round 10's grid (research only)")
     ap.add_argument("--data", default=None, help="cache root (default data/alpaca)")
@@ -154,6 +188,7 @@ def main(argv=None):
         if why:
             raise periods.LockedPeriod(why)
     log(f"stage 2 done in {time.time() - t1:.0f}s")
+    res["compounding"], comp_md = compounding(res, trades, warnings)
     files_out = {"cells": write_rows(out / f"r10grid_cells_{today}.csv.gz", cells),
                  "grid_trades": write_rows(out / f"trades_r10grid_{today}.csv.gz", trades["tracked"]),
                  "af153": write_rows(out / f"trades_r10_af153_{today}.csv.gz", trades["af"]),
@@ -162,7 +197,7 @@ def main(argv=None):
     meta = {"today": today, "warnings": warnings, "calib_note": calib_note(calib, cp), "frozen_path": str(frozen_path),
             "frozen_sha": res["frozen"]["sha256"], "chunks": [str(f) for f in files], "files": files_out,
             "files_note": "; ".join(f"{k} `{v}`" for k, v in files_out.items()) + f"; stage-1 chunks `{cache}` ({len(files)})"}
-    md = G.render(res, meta)
+    md = G.render(res, meta) + "\n" + "\n".join(comp_md) + "\n"
     mp, jp = out / f"r10grid_{today}.md", out / f"r10grid_{today}.json"
     mp.write_text(md)
     jp.write_text(json.dumps(factory.clean({"meta": meta, "result": res}), indent=1, default=str))

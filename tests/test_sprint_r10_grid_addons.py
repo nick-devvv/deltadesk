@@ -4,6 +4,9 @@ information-only regime features (sprint/features.py REGIME10), the round 10 cal
 to end (frozen choice, add-on verdicts, trial count, restart reproduces identical outputs, locked rows refused). Synthetic only."""
 import gzip
 import json
+import math
+import sys
+import types
 from datetime import date
 
 import numpy as np
@@ -34,40 +37,102 @@ def _tape(prices, right="C", strike=503.0, lows=None, highs=None, skip=()):
     return OptionTape(f"SPY{DAY:%y%m%d}{right}{int(strike * 1000):08d}", right, strike, o, h, l, o.copy(), np.where(np.isnan(o), np.nan, 9.0))
 
 
-def _signal_bars(start, base=500.0):
-    """Stock bars giving a 15.3 call signal at start + 4: five bars with a 0.30 range, the last three green, ROC 0.06%."""
-    bars = {}
-    for k in range(5):
-        i = start + k
-        if k < 2:
-            bars[i] = (base, base + 0.15, base - 0.15, base)
-        else:
-            o = base + 0.1 * (k - 2)
-            bars[i] = (o, o + 0.2, o - 0.1, o + 0.1)
+def _trend_bars(start, n, up=True, base=500.0, step=0.1, wick=0.1):
+    """n trending bars from `start`: each opens at the prior close and closes `step` beyond it (green up, red down)."""
+    bars, px = {}, base
+    for i in range(start, start + n):
+        o, c = px, round(px + (step if up else -step), 2)
+        bars[i] = (o, max(o, c) + wick, min(o, c) - wick, c)
+        px = c
     return bars
 
 
-# ---------------------------------------------------------------- 15.3
-def test_af_signal_strike_size_and_never_itm():
-    ctx, _ = SS.make_ctx(DAY, {0: 500.0}, {0: 1.0}, prior_days=6, prior_range=2.0, stock_bars=_signal_bars(18))
-    sig = {j: G.af_signal(ctx, j) for j in range(14, 40)}
-    assert sig[22] == "C" and all(v is None for j, v in sig.items() if j != 22)
-    assert G.af_atr5d(ctx.series, DAY) == pytest.approx(4.0)               # mean high-low of the 5 prior daily bars
+def _af_ctx(bars, prior_range=2.0):
+    ctx, _ = SS.make_ctx(DAY, {0: 500.0}, {0: 1.0}, prior_days=6, prior_range=prior_range, stock_bars=bars)
+    return ctx
+
+
+# ---------------------------------------------------------------- the framework's live path (Addendum 16.2)
+@pytest.mark.parametrize("up", [True, False])
+def test_af_entry_needs_vwap_ema_roc_three_bars_and_true_range_atr(up):
+    ctx = _af_ctx(_trend_bars(14, 20, up))
+    side = "C" if up else "P"
+    j = 22
+    assert G.af_signal(ctx, j) == side and G.af_signal(ctx, 13) is None
+    st = G.af_state(ctx)
+    c, vw = float(ctx.c[j]), float(ctx.vwap[j])
+    assert (c > vw if up else c < vw) and ((st["ema5"][j] > st["ema20"][j]) if up else (st["ema5"][j] < st["ema20"][j]))
+    assert st["green" if up else "red"][j] == 9 and abs(st["roc5"][j]) >= G.AF_ROC
+    for key, bad in (("green" if up else "red", 2), ("roc5", 0.0002 if up else -0.0002), ("atr5", 0.19),
+                     ("ema5", st["ema20"][j] + (-0.01 if up else 0.01))):
+        keep = st[key][j]
+        st[key][j] = bad
+        assert G.af_signal(ctx, j) is None, key                              # each condition is required
+        st[key][j] = keep
+    keep = ctx.vwap[j]
+    ctx.vwap[j] = c + (0.01 if up else -0.01)                                # the close on the wrong side of VWAP
+    assert G.af_signal(ctx, j) is None
+    ctx.vwap[j] = keep
+    assert G.af_signal(ctx, j) == side
+
+
+def test_af_state_preseed_counters_and_true_range():
+    bars = {14: (500.0, 500.05, 499.95, 500.02), 15: (500.02, 500.06, 499.99, 500.02), 16: (500.02, 500.08, 500.0, 500.06),
+            17: (500.06, 500.1, 500.03, 500.09), 18: (500.6, 500.64, 500.58, 500.62), 19: (500.62, 500.65, 500.5, 500.55)}
+    ctx = _af_ctx(bars)
+    st = G.af_state(ctx)
+    assert [int(st["green"][i]) for i in (14, 15, 16, 17, 18, 19)] == [1, 1, 2, 3, 4, 0]     # a doji (15) leaves the count
+    assert int(st["red"][19]) == 1
+    e5 = e20 = None
+    for x in [500.0] * 30 + [float(ctx.c[i]) for i in range(0, 20)]:          # preseed: the prior session's last 30 closes
+        e5, e20 = G._af_ema(e5, x, 5), G._af_ema(e20, x, 20)
+    assert st["ema5"][19] == e5 and st["ema20"][19] == e20
+    tr18 = max(500.64 - 500.58, abs(500.64 - 500.09), abs(500.58 - 500.09))  # the gap counts: 0.55, not the 0.06 range
+    assert tr18 == pytest.approx(0.55)
+    trs = [max(ctx.h[i] - ctx.l[i], abs(ctx.h[i] - ctx.c[i - 1]), abs(ctx.l[i] - ctx.c[i - 1])) for i in range(15, 20)]
+    assert st["atr5"][19] == pytest.approx(sum(trs) / 5) and st["atr5"][19] > 0.12
+    assert st["roc5"][19] == pytest.approx((500.55 - float(ctx.c[14])) / float(ctx.c[14]))
+    first = _af_ctx({})
+    s2 = G.af_state(first)
+    assert s2["ema5"][0] == pytest.approx(500.0) and np.isnan(s2["roc5"][4]) and not np.isnan(s2["roc5"][5])
+
+
+def test_af_strike_is_the_nearest_otm_strike_within_0_3pct_in_the_window():
     assert G.af_strike(500.3, 4.0, "C") == 503.0 and G.af_strike(500.3, 4.0, "P") == 498.0      # 0.6 x 4.0 = 2.4
     assert G.af_strike(500.3, 10.0, "C") == 505.0                          # capped at $4.50: round(504.8)
     assert G.af_strike(500.5, 0.0, "C") == 500.0 and G.af_strike(499.5, 0.0, "C") == 500.0      # Python's round: .5 to even
+    assert G.af_strikes(500.3, 4.0, "C") == (503.0, [501.0])               # 501 is 0.14% away; 502 is 0.34%
+    assert G.af_strikes(500.3, 4.0, "P") == (498.0, [500.0, 499.0])         # nearest first
+    assert G.af_strikes(500.0, 4.0, "C")[1] == [501.0] and G.af_strikes(500.0, 4.0, "P")[1] == [499.0]   # at the money: not OTM
+    assert G.af_strikes(100.5, 1.0, "C")[1] == [] and G.af_strikes(100.9, 1.0, "C")[1] == [101.0]
+    assert G.af_strikes(500.3, 30.0, "C") == (505.0, [501.0])               # the window (500..510) holds it
     assert G.af_size(1.0) == 3 and G.af_size(3.01) == 1 and G.af_size(0.25) == 12   # max(1, floor(150 / (0.5 x debit x 100)))
+    ctx = _af_ctx(_trend_bars(14, 20))
+    S = float(ctx.c[22])
+    K = float(math.floor(S) + 1)
 
     class T:
         mode, real0 = "real", {}
     t = T()
-    t.real0 = {f"SPY{DAY:%y%m%d}C00503000": _tape({0: 0.9})}
+    t.real0 = {f"SPY{DAY:%y%m%d}C{int(K * 1000):08d}": _tape({0: 0.9}, strike=K)}
     tape, info = G.af_contract(ctx, t, "C", 22, 4.0)
-    assert tape is not None and info["strike"] == 503.0 and info["px"] == 0.9
-    assert G.af_contract(ctx, t, "C", 22, 0.1)[1] == "strike in the money"    # round(500.36) = 500 <= S
-    t.real0 = {f"SPY{DAY:%y%m%d}C00503000": _tape({0: 0.15})}
+    assert tape is not None and info["strike"] == K and info["px"] == 0.9
+    t.real0 = {f"SPY{DAY:%y%m%d}C{int((K + 1) * 1000):08d}": _tape({0: 0.9}, strike=K + 1)}
+    assert G.af_contract(ctx, t, "C", 22, 4.0)[1] == "no 0DTE contract at the strike"   # never a farther strike
+    t.real0 = {f"SPY{DAY:%y%m%d}C{int(K * 1000):08d}": _tape({0: 0.15}, strike=K)}
     assert G.af_contract(ctx, t, "C", 22, 4.0)[1] == "premium outside $0.20-$10.00"
     assert G.af_contract(ctx, t, "C", 22, None)[1] == "no 5-day ATR"
+    assert G.af_atr5d(ctx.series, DAY) == pytest.approx(4.0)               # the mean high-low of the 5 prior daily bars
+
+
+def test_af_r2_keeps_the_premium_band(monkeypatch):
+    ctx = _af_ctx({})
+    monkeypatch.setattr(G, "af_exit", lambda c, t, e, A, b, h, co, s, ss: (e + 5, "X", 5.0, 4.0))
+    tape = _tape({0: 1.0}, strike=500.0)
+    for px, n in ((12.0, 0), (3.0, 1)):
+        picks = {(20, "C", "d55-70t60"): (tape, {"symbol": tape.symbol, "strike": 500.0, "px": px, "iv": 0.2, "delta": 0.6})}
+        rows = G.af_day(ctx, None, SP.SpreadModel(), "r2", True, "d55-70t60", picks=picks, sigs={20: "C"})
+        assert len(rows) == n
 
 
 @pytest.mark.parametrize("case", ["hard", "target", "trail", "spy", "allout"])
@@ -284,6 +349,74 @@ def test_frozen_choice_is_refused_when_it_would_change(world, monkeypatch):
     monkeypatch.setattr(G, "MIN_DISC", 1)
     with pytest.raises(RuntimeError):
         T.main(world["args"] + ["--stage", "analyze"])
+
+
+# ---------------------------------------------------------------- the compounding hook (Amendment 16; sprint/compound.py)
+def _fake_world():
+    res = {"grid": {"orb15": {"survives": True, "chosen": "s20.t50.none.1525.d40-55t45.off",
+                              "addons": {"R2 d55-70t60": {"pass": False}, "R3 scale-out (3 contracts)": {"pass": True},
+                                         "R4 ratchet": {"pass": False}}},
+                    "pd_retest": {"survives": False, "chosen": "x", "addons": {}}},
+           "af": {"variants": {"af153 SPY": {"bar": {"pass": True}}, "af153_nogate SPY": {"bar": {"pass": False}}}, "r2": {"pass": False}},
+           "r1": {"shares": {"bar": {"pass": True}}, "options": {"d40-55t45": {"bar": {"pass": False}}}}}
+    trk = []
+    for day in ("2019-03-04", "2021-06-01", "2025-02-03"):
+        for var, kind, debit in (("frozen", "real", 120.65), ("frozen", "twin", 99.0), ("R3", "real", 361.95), ("R2", "real", 250.0)):
+            trk.append({"entry": "orb15", "variant": var, "kind": kind, "day": day, "pnl": 10.0, "debit": debit})
+    trades = {"tracked": trk,
+              "af": [{"variant": v, "symbol": s, "day": d, "pnl": -5.0, "debit": 80.65} for v in ("af153", "af153_r2")
+                     for s in ("SPY", "QQQ") for d in ("2018-05-01", "2025-03-03")],
+              "r1_shares": [{"day": "2017-02-01", "pnl": 12.0, "notional": 9990.0, "qualifies": True},
+                            {"day": "2017-02-02", "pnl": 1.0, "notional": 9990.0, "qualifies": False}],
+              "r1_options": [{"variant": "r1_d40-55t45_qual", "day": "2025-01-02", "pnl": 3.0, "debit": 150.0}]}
+    return res, trades
+
+
+def test_passing_rules_pick_only_what_passed_with_its_windows_and_risk():
+    res, trades = _fake_world()
+    jobs = {name: (rows, key, wins) for name, rows, key, wins in G.passing_rules(res, trades)}
+    assert set(jobs) == {"grid orb15 s20.t50.none.1525.d40-55t45.off", "orb15 R3 scale-out (3 contracts)", "15.3/16.2 af153 SPY", "R1 shares"}
+    rows, key, wins = jobs["grid orb15 s20.t50.none.1525.d40-55t45.off"]
+    assert len(rows) == 3 and key == "debit" and [w[0] for w in wins] == ["holdout 1", "holdout 2"]
+    assert all(r["kind"] == "real" and r["variant"] == "frozen" for r in rows)
+    assert jobs["orb15 R3 scale-out (3 contracts)"][0][0]["debit"] == 361.95
+    assert [w[0] for w in jobs["15.3/16.2 af153 SPY"][2]] == ["HIST", "DEV"] and all(r["symbol"] == "SPY" for r in jobs["15.3/16.2 af153 SPY"][0])
+    assert jobs["R1 shares"][1] == "notional" and len(jobs["R1 shares"][0]) == 1
+    h1 = G.compounding_inputs(rows, "debit", *G.H1)
+    assert h1 == [{"day": "2021-06-01", "pnl": 10.0, "risk": 120.65}]
+
+
+def test_the_tool_calls_compound_for_every_passing_rule_and_window(monkeypatch):
+    import sprint
+    import sprint_r10_grid as T
+    calls = []
+    stub = types.ModuleType("sprint.compound")
+    stub.LABEL = "stub view"
+
+    def simulate(rows, sessions=None, label=None, **kw):
+        calls.append((rows, list(sessions), label))
+        return {"label": label, "input": {"trades": len(rows)}, "fractions": {}}
+    stub.simulate = simulate
+    stub.render_md = lambda v, title="": [f"- {title}"]
+    monkeypatch.setitem(sys.modules, "sprint.compound", stub)
+    monkeypatch.setattr(sprint, "compound", stub, raising=False)
+    res, trades = _fake_world()
+    warnings = []
+    out, md = T.compounding(res, trades, warnings)
+    assert not warnings and set(out) == {"grid orb15 s20.t50.none.1525.d40-55t45.off", "orb15 R3 scale-out (3 contracts)",
+                                         "15.3/16.2 af153 SPY", "R1 shares"}
+    assert out["R1 shares"]["DEV"] is None and out["R1 shares"]["HIST"]["input"]["trades"] == 1
+    for rows, sessions, label in calls:
+        assert rows and all(r["day"] in sessions for r in rows) and len(sessions) == len(set(sessions))
+        assert all(set(r) == {"day", "pnl", "risk"} and r["risk"] > 0 for r in rows)
+        assert ("REAL" in label) == (sessions[0] >= G.DEV_A)
+    h2 = [c for c in calls if c[0][0]["risk"] == 120.65 and c[1][0] == G.DEV_A][0]
+    assert h2[1] == book.sessions_between(G.DEV_A, G.DEV_B)                  # every session of the window, trade or not
+    assert any("R1 shares, HIST" in line for line in md) and md[0].startswith("## Compounding view")
+    monkeypatch.setitem(sys.modules, "sprint.compound", None)                  # not on this branch yet: skipped with a warning
+    monkeypatch.delattr(sprint, "compound", raising=False)
+    out2, md2 = T.compounding(res, trades, warnings)
+    assert out2 is None and warnings and "NOT RUN" in " ".join(md2)
 
 
 def test_tool_refuses_rows_in_locked_periods():
