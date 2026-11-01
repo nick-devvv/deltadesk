@@ -1105,6 +1105,21 @@ def summary_lines(res):
     return out
 
 
+def compounding_md(cp):
+    """The report's compounding section (Amendment 16, information): the hook's note, then one sprint/compound.py table per
+    passing rule (wired at integration)."""
+    L = ["", "## Compounding view (Amendment 16, information)", "", f"- {(cp or {}).get('note', 'not run')}"]
+    res = (cp or {}).get("result")
+    if isinstance(res, dict) and res:
+        from . import compound as _cmp
+        for rule, view in res.items():
+            if isinstance(view, dict) and "fractions" in view:
+                L += [""] + _cmp.render_md(view, title=f"Compounding view: {rule}")
+            else:
+                L.append(f"- {rule}: {(view or {}).get('note', 'n/a')}")
+    return L
+
+
 def render(res, meta):
     L = [f"# Sprint round 10: 0DTE credit spreads (C1-C4 and controls), {meta['today']}", "",
          "SPRINT_PLAN Addendum 15.4 (C1 `morning_trend_vertical`, C1-ctl, C1-ic, C2 `afternoon_condor`, C2-ctl) and Amendment 16 "
@@ -1146,7 +1161,7 @@ def render(res, meta):
     for k, v in (res.get("dsr") or {}).items():
         L.append(_row([k, _f(v, 4)]))
     cp = res.get("compounding") or {}
-    L += ["", "## Compounding view (Amendment 16, information)", "", f"- {cp.get('note', 'not run')}"]
+    L += compounding_md(cp)
     L += ["", "## Builder's reading", "", "See sprint/r10credit.py's module docstring (R1-R18): times are decisions on the bar that "
           "finished at the stated time, legs filled at their next prints; listed strikes = the $1 grid and a missing leg skips the day; "
           "C2's close = the prior session's close; the VIX proxy = SPY's 20-day sample stdev x sqrt(252); C3's gap = the 09:30 open vs "

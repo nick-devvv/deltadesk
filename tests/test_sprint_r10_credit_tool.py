@@ -150,5 +150,22 @@ def test_the_compounding_hook_hands_over_passing_rules_only():
     inp = RC.compounding_inputs(ev["DEV"], rows)
     assert set(inp) == {"C3"} and len(inp["C3"]) == len(days)
     assert set(inp["C3"][0]) == {"day", "pnl", "pnl_2x", "max_loss", "margin"} and inp["C3"][0]["max_loss"] == 405.2
-    view = TOOL.compounding_view(ev, rows)
-    assert view["result"] is None and "NOT WIRED" in view["note"] and view["inputs"] == {"C3": len(days)}
+    view = TOOL.compounding_view(ev, rows, sessions=days)
+    assert view["inputs"] == {"C3": len(days)} and set(view["result"]) == {"C3"}
+    c3 = view["result"]["C3"]
+    assert c3["input"]["trades"] == len(days) and c3["input"]["sessions"] == len(days)
+    assert set(c3["fractions"]) == {"1%", "2%", "5%"} and c3["paths"] == 2000
+    assert view == TOOL.compounding_view(ev, rows, sessions=days)  # seeded: identical on a re-run
+
+
+
+def test_the_report_renders_the_compounding_table_when_a_rule_passed():
+    days = RC.book.sessions_between("2025-07-01", "2025-12-31")
+    rows = [{"rule": "C3", "symbol": "SPY", "day": d, "pnl": 30.0 if k % 4 else -40.0, "pnl_2x": 20.0, "max_loss": 405.0,
+             "margin": 400.0, "window": "DEV"} for k, d in enumerate(days)]
+    ev = {"DEV": {"SPY": {"C3": {"pass_bar": {"pass": True}}}}}
+    cp = TOOL.compounding_view(ev, rows, sessions=days)
+    md = RC.compounding_md(cp)
+    assert "## Compounding view (Amendment 16, information)" in md
+    assert any(l.startswith("| 1% |") for l in md) and any(l.startswith("| 5% |") for l in md)
+    assert RC.compounding_md({"note": "no credit-spread rule passed", "result": None})[-1].startswith("- no credit-spread")

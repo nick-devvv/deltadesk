@@ -63,13 +63,12 @@ def write_rows(path, rows):
 
 
 # ---------------------------------------------------------------- INTEGRATOR HOOK: the compounding view
-def compounding_view(ev, trades):
+def compounding_view(ev, trades, sessions=None):
     """Amendment 16's compounding view (information, not trials): a $3,000 account over 2,000 bootstrap paths of each passing
     rule's holdout trades (resampled by session), fixed-fractional risk 1%, 2% and 5% a trade; median and 5th-percentile ending
     balance, worst drawdown, chance of halving.
-    INTEGRATOR HOOK: sprint/compound.py is built by another round 10 builder and is NOT written here. Wire its call below once
-    it lands; the inputs are ready (RC.compounding_inputs: each passing SPY DEV rule's trades with day, pnl, pnl_2x, max_loss and
-    margin; size on max_loss)."""
+    Wired to sprint/compound.py (round10/noise) at integration: each passing SPY DEV rule's trades (RC.compounding_inputs), risk
+    unit = max_loss, resampled over every DEV session."""
     inputs = RC.compounding_inputs(ev.get("DEV") or {}, trades)
     out = {"inputs": {k: len(v) for k, v in inputs.items()}, "result": None}
     if not inputs:
@@ -81,8 +80,20 @@ def compounding_view(ev, trades):
         out["note"] = (f"NOT WIRED: sprint/compound.py is not in this checkout (another round 10 builder writes it); inputs ready for "
                        f"{', '.join(inputs)}.")
         return out
-    # INTEGRATOR HOOK: call sprint/compound.py here with `inputs` (size each structure on its max_loss) and set out["result"].
-    out["note"] = f"NOT WIRED: sprint/compound.py exists; the integrator connects it here (inputs ready for {', '.join(inputs)})."
+    # Wired by the integrator: each structure's risk unit is its max_loss (the most one structure can lose); sessions = every
+    # DEV session, so no-trade days count as r = 0.
+    sess = [str(d)[:10] for d in (sessions or [])]
+    out["result"] = {}
+    for rule, rows in inputs.items():
+        rr = [{"day": r["day"], "pnl": r["pnl"], "risk": r["max_loss"]} for r in rows
+              if r.get("pnl") is not None and (r.get("max_loss") or 0) > 0]
+        if not rr:
+            out["result"][rule] = {"note": "no rows with a positive max_loss"}
+            continue
+        days = set(str(r["day"])[:10] for r in rr)
+        use = sess if sess and days <= set(sess) else None
+        out["result"][rule] = compound.simulate(rr, sessions=use, label=f"{rule} SPY DEV REAL (paper research: option selling)")
+    out["note"] = "compounding view: information, not trials (Amendment 16)."
     return out
 
 
@@ -183,7 +194,7 @@ def main(argv=None):
     dev_days = RC.book.sessions_between(RC.DEV_A, RC.DEV_B)
     var = {r: [t for t in trades if t["window"] == "DEV" and t["symbol"] == RC.DECIDES and t["rule"] == r] for r in RC.RULES}
     res["dsr"], res["sr_var"], _n = RC.dsr_table(var, n_prior, dev_days)
-    res["compounding"] = compounding_view(res["eval"], trades)
+    res["compounding"] = compounding_view(res["eval"], trades, sessions=dev_days)
     files["trades"] = write_rows(out / f"trades_r10credit_{today}.csv.gz", trades)
     meta = {"today": today, "windows": wins, "symbols": syms, "warnings": warnings, "files": files, "spread": cost.describe(),
             "files_note": "; ".join(f"{k} `{v}`" for k, v in files.items())}
