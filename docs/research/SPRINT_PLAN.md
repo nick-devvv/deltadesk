@@ -443,6 +443,87 @@ A rule that passes both becomes a frozen finalist for L1/L2 (each run once). If 
 - **Fails:** dropped.
 - Without-best-5, by symbol and by month are reported for both periods whatever the verdict.
 
+## Amendment 9, 2026-11-01: the 10-year strategy factory (written before any factory run, rule search or learner fit)
+
+Nick's request (2026-11-01): run every strategy we have code for across the full ~10 years, give separate statistics for each one, apply the same "learn when it works / skip the losing conditions" process to each, and show how the survivors do together as one book. Branch `sprint/factory`. Research only: nothing here trades or touches the desk.
+
+### Periods and data
+
+- **HIST** = 2016-01-04 to 2024-01-31: Alpaca stock bars (run 4's pull), option prices **MODELED (BS, calibrated IV)** with run 4's calibration (`data/sprint/calib_modeled.json` on Chart's computer; its sha256 is printed in the run log). History from 2015-11-01 feeds indicators only.
+- **DEV** = 2024-08-01 to 2026-06-30: **REAL** Alpaca option prices (runs 1-3's pull).
+- L1 and L2 are never pulled or run. No new pull: every file needed is already on Chart's computer.
+- Costs: desk fills, 2% half-spread with the $0.005 floor (the pre-registered MODELED-SPREAD; the DEV run is pointed at an empty chains folder so logged 2026 chains are never used), $0.65 per contract per side, 1 contract. PF 2x = the 2x-slippage P/L already stamped on every trade.
+
+### The 21 runs (SPY + QQQ + IWM pooled in each run; one position at a time per run and symbol)
+
+| # | name | entry | side | exit | contract |
+|---|---|---|---|---|---|
+| 1 | noise (reference) | `noise` | both | the noise ledger's own exit: stop `noise` (close through max/min(band, VWAP) at the half-hour checks, reversal, 20% premium ceiling every minute), no target, time b, all out 15:25 | d55-75t65 |
+| 2-4 | orb15, orb30, orb60 | `orb15/30/60` | both | **plain**: the entry window's premium ceiling (20/12/10%, costs included) held for the whole trade (time b), no target, no trail, all out 15:25 | d40-55t45 |
+| 5-7 | vwap_macd, pd_retest, flush | same names | both | plain | d40-55t45 |
+| 8 | failed_break | `failed_break` | calls | plain | d40-55t45 |
+| 9 | failed_high | `failed_high` | puts | plain | d40-55t45 |
+| 10-15 | otm_c_1000, otm_c_1030, otm_c_1100, otm_c_1200, otm_c_1300, otm_c_1400 | `time_1000/1030/1100/1200/1300/1400` | calls | fixed -95% stop, +9900% target (never reached in practice), desk mechanics, all out 15:25 | d03-12t07 |
+| 16-21 | otm_p_1000 ... otm_p_1400 | the same six times | puts | the same | d06-15t10 |
+
+- **New time entries** (added to `sprint/entries.py` TIME_ENTRIES with this amendment, the same rule as `time_1030` / `time_1100`): `time_1000` = the bar that finishes at 10:00 (index 29), `time_1200` = 149, `time_1300` = 209, `time_1400` = 269. A signal every session on that bar, none when the bar is missing or within 2 bars of the close (so no 13:00 or 14:00 signal on 1:00 PM early-close days). `time_1030` (59) and `time_1100` (89) are unchanged.
+- **Specs:** `sprint/specs/factory_hist_v1.json` (HIST, `"tapes": "modeled"`) and `sprint/specs/factory_dev_v1.json` (DEV, real tapes): the same 21 runs in the same order (a test checks this), run ids `factory_hist_v1-001..021` and `factory_dev_v1-001..021`. No pass-2 robustness in these specs (`top_k` 0): the factory does its own checks.
+- **Known before any result:**
+  - A run with both sides takes one position at a time per symbol, so an opposite-side signal while a trade is open is skipped as busy. The noise run's reversal exit therefore does not flip into the other side (setups_v1 ran the noise ledger's two sides as separate runs).
+  - The DEV numbers of most of these runs, unfiltered, were seen in runs 1-3 (orb_exits_v1 plain, setups_v1, setups_v2, otm_v1); only the 10:00, 12:00, 13:00 and 14:00 far-OTM runs are new on DEV. No rule in this amendment is chosen on DEV.
+  - **Not independent:** failed_break calls, 10:30 far-OTM puts and 11:00 far-OTM calls are hist_v1-001/003/005. Amendment 6 already looked at their 2016-2019 terciles and their 2020-2023 holdout, and run 5 at their DEV holdout. Their factory verdicts are reported but labeled "seen before (Amendment 6)": they are not new evidence.
+  - **Model validation:** run 4 checked the MODELED tapes against real prices for failed-break calls (plain exit), 10:30 puts (d06-15t10) and 11:00 calls (d03-12t07), all PASS. Every other strategy's HIST numbers are **NOT VALIDATED** against real prices (labeled so); holdout 2 on real DEV prices is the deciding test for each of them. The noise exit's every-minute 20% ceiling acts on modeled bar highs and lows (BS from the stock's high/low, one flat IV per day).
+  - **Known model bias:** one flat IV per day. On days that are already moving, real 0DTE IV rises and the model's doesn't, which flattered the far-OTM put rules in Amendment 6 (they passed the modeled holdout and failed on real prices). Expect the same for every far-OTM put rule here.
+
+### Per strategy (the same procedure for each of the 21; `tools/sprint_factory.py` + `sprint/factory.py`)
+
+Inputs: the two trade files (`data/sprint/trades_factory_hist_v1_<date>.csv.gz` and `trades_factory_dev_v1_<date>.csv.gz`, the newest of each). Every trade carries the entry features stamped by the engine (sprint/features.py); they are recomputed from cached bars only for a row that lacks them.
+
+**(a) All days.** Per period (HIST MODELED / DEV REAL) and per year: 2016 ... 2023, Jan 2024 (MODELED), Aug-Dec 2024 (REAL), 2025, Jan-Jun 2026 (REAL). 2024 is never one number: its two parts come from different price sources. Reported: trades, trades per session (NYSE sessions in the window, sprint/periods calendar), win % (pnl > 0), average win, average loss (pnl < 0), expectancy, PF, PF 2x, total, max drawdown (cumulative P/L in trade order), total without the best 5 trades, months green (months with trades whose net is > 0, out of months with trades), by symbol and by side.
+
+**(b) The rule (found on 2016-2019 only).**
+- Discovery = HIST trades dated 2016-01-04 to 2019-12-31.
+- Six features, in this order: `f_rvol`, `f_range_atr`, `f_vixy_pctl`, `f_prev_ret`, `f_gap`, `f_day_ret`.
+- Tercile cuts per feature = `numpy.quantile(values, [1/3, 2/3])` (linear interpolation) over the discovery trades that have a value. "keep top tercile" keeps trades with value >= the upper cut; "keep bottom tercile" keeps value <= the lower cut. A trade without a value is not kept.
+- 12 candidates per strategy. A candidate needs at least 60 discovery trades kept. The chosen rule = the highest discovery PF (a PF with no losing trade ranks first); ties go to more trades, then to the order above (features in order, top before bottom). No candidate with 60 trades = no rule.
+- The rule (feature, side, cut at full precision) is then frozen and applied unchanged to every later trade. Nothing dated 2020 or later can change it (a test checks this).
+- **Holdout 1** = HIST 2020-01-01 to 2024-01-31 (MODELED). Pass needs all of Amendment 6's bar:
+  - at least 60 trades;
+  - PF >= 1.25 and PF 2x > 1.0;
+  - profitable in at least 3 of the 4 years 2020-2023, a year counting only with 10+ trades;
+  - total without the best 5 trades > 0;
+  - beats random whole-day removal, p < 0.05: from the strategy's unfiltered holdout-1 trades, remove random whole sessions (a random order of the sessions, removed until at least as many trades are gone as the rule removed), 2,000 draws, seed 17; p = the share of draws whose remaining total is at or above the rule's total (the method of `tools/sprint_regime.day_skip_p`).
+- **Holdout 2** = DEV (REAL prices), Amendment 6's holdout-2 bar: at least 40 trades, PF >= 1.25, PF 2x > 1.0, and random whole-day removal p < 0.10 (2,000 draws, seed 23, as `tools/sprint_regime.py`). It counts only for a rule that passed holdout 1; its numbers are shown for every rule, labeled.
+- A rule **survives** when it passes both holdouts. Its per-year stats are reported on all years (2016-2019 labeled in-sample for the rule).
+
+**(c) The learner.** `sprint/learn.walk_forward` exactly as pre-registered in Amendment 3, over the strategy's HIST + DEV trades together, with 24 training months (monthly refit on earlier months only; out-of-sample from the 25th month with trades, 2018-01 for a strategy that trades every month). Models logit, ridge and buckets, each with Amendment 3's pass rule (at least 60 trades taken, out-of-sample expectancy above taking every trade, total above the 95th percentile of 200 random skips with seed 7, PF 2x > 1.0).
+- The factory needs each trade's take/skip decision for per-year and DEV-only numbers. It re-runs walk_forward's monthly loop with the same functions of sprint/learn.py on a precomputed feature matrix (much faster on 7,000-trade runs); a test checks that its decisions and results equal `learn.walk_forward`'s exactly.
+- Reported: each model's walk-forward result, the logit's per-year stats, and each model's DEV-only segment (its out-of-sample decisions on DEV trades, real prices).
+- A model **survives** only if it passes walk_forward's rule AND its DEV-only segment has at least 40 trades, PF >= 1.25 and PF 2x > 1.0.
+
+**(d) Verdict.** The candidates are the rule (if it survives) and every surviving learner model. The chosen variant = the highest DEV-real expectancy (ties: rule, then logit, ridge, buckets). None survives = "none". The report gives the first failed check for every variant that was dropped.
+
+**Multiple testing (information, not a pass bar):** the deflated Sharpe of each chosen variant's DEV daily P/L (every DEV session, 0 on days without a trade; sprint/report.deflated_sharpe), with N = the trials counted by the run logs plus this amendment's rule and learner trials, and the trial-Sharpe variance taken over every DEV variant the factory scores (21 unfiltered runs, 252 candidate rules, 63 learner models).
+
+### The book (all survivors together)
+
+- Sleeves: each strategy whose verdict is not "none", trading its chosen variant, 1 contract per signal. A rule sleeve takes the rule's trades in every year; a learner sleeve takes its out-of-sample picks only (none before its first out-of-sample month).
+- `sprint/book.py`: every session counts (P/L 0 on days without a trade), sleeves' daily P/L, correlation of daily P/L, same symbol and side held at the same time in two sleeves, and a second view with the $150 desk daily stop (closed trades only).
+- Windows, never mixed without a label:
+  - (i) 2018-01-02 to 2024-01-31, HIST, **MODELED**;
+  - (ii) 2024-08-01 to 2026-06-30, DEV, **REAL**;
+  - per year 2018 ... 2023, Jan 2024 (MODELED), Aug-Dec 2024, 2025, Jan-Jun 2026 (REAL);
+  - one combined line labeled **"mixed: modeled 2018-2024 + real 2024-2026"** over the sessions of (i) and (ii) together (the locked Feb-Jul 2024 is not in it).
+- Per window: total, average per year (total / (sessions / 252)), trades per session, max drawdown on the daily equity curve, worst calendar month, months green (calendar months in the window with net > 0, out of all its months), daily Sharpe (mean / std x sqrt(252)), and the same by sleeve.
+- Rule sleeves in 2018-2019 are inside their discovery years: labeled in-sample. 2020 onward is out-of-sample for every sleeve.
+- **Contrast:** the "everything unfiltered" book = all 21 runs, every trade, the same windows.
+
+### Outputs and trials
+
+- `data/sprint/factory_<date>.md` (one section per strategy, then the book) and `factory_<date>.json` (every number).
+- **Trials added by this amendment: 357** = 42 runs (21 on HIST + 21 on DEV) + 252 candidate rules (12 x 21) + 63 learner models (3 x 21). The holdout evaluations are of rules already counted.
+- No rule, cut, threshold or book setting changes after seeing factory results. Any change is a new amendment, labeled in-sample. A surviving variant is still research: it reaches paper trading only through a new versioned ledger after Nick's yes, and promotion still needs CLAUDE.md step 5 (40 forward paper trades); L1/L2 stay reserved for frozen finalists.
+
 ## Limits
 
 - Backtests only.
