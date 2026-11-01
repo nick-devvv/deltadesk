@@ -31,6 +31,8 @@ Registry version 2026-10-31. Machine-readable twin: `strategy_registry.json` (25
 - Baltussen, Da, Lammers & Martens 2021, JFE 142(1): 60+ futures, 1974-2020.
 - [falsifylab, "gap fade works, gold doesn't"](https://falsifylab.substack.com/p/gap-fade-works-gold-doesnt).
 
+| 12 | Classic intraday indicators: RSI(14), Bollinger(20,2), EMA 9/21, MACD(12,26,9) at textbook defaults | papers (negative + mixed) | B (evidence mostly against) | Nick's request (2026-11-01), with a +30% option take-profit. [Marshall, Cahan & Cahan 2008](https://ideas.repec.org/a/eee/empfin/v15y2008i2p199-210.html): 7,846 intraday rules on US equities, none profitable after data-snooping corrections. [Schulmeister 2009](https://www.wifo.ac.at/publication/111781/): 30-minute S&P 500 models 7.2% a year gross 1983-2007, weaker after 2000; daily models unprofitable since the early 1990s | SPRINT_PLAN Addendum 10.2 (D1-D4): shares on 2016-2026 real bars, then 0DTE / next-expiry option twins with TP30 or signal exits |
+
 The other entries (day-trader-skill, QuantRocket first-last, QC stocks-in-play replication, Busse and Green, Kaminski and Lo, PyBroker, vectorbt, NautilusTrader, LEAN) are B and support the tests above. The six C entries are rejected.
 
 ## Search method

@@ -695,6 +695,43 @@ Recorded before any result:
 
 **Trials added by this addendum:** B4 4 exits x 2 contracts = 8; A-opt 3. That makes 11, and round 8 totals 24 (the deflated Sharpe uses the run logs' count + 24).
 
+### Addendum 10.2, 2026-11-01: classic indicator setups with a +30% take-profit (written before any round-8 code finished or any round-8 run)
+
+Nick (2026-11-01): "look at indicators too, I believe those have good setups sometimes, and we can TP at like 30% or something every time just to maximize profit and enter at good times".
+
+Recorded before any result:
+- **Marshall, Cahan & Cahan 2008** (J. Empirical Finance 15(2)): 7,846 popular technical rules on US equity intraday data; none profitable after two bootstrap data-snooping corrections.
+- **Schulmeister 2009** (Review of Financial Economics 18(4)): 2,580 momentum/reversal models on the S&P 500. Daily models have been unprofitable since the early 1990s. 30-minute models averaged 7.2% a year gross from 1983 to 2007, weaker in 2001-2007.
+- The desk's own `vwap_macd` (an indicator setup) failed in run 7: HIST PF 0.68, DEV PF 0.89, options.
+- **The cost arithmetic.** A +30% target with the desk's -20% premium line, on near-the-money 0DTE options at the 2% half-spread plus $0.65 per side, nets about +25% on a win and -25% on a loss. So it needs about a 50% win rate just to break even.
+- Expectation: most indicator rules will not beat random entries after costs. This test is the clean 10-year check.
+
+**D: four textbook indicator rules, default settings, no tuning.**
+- Bars: 5-minute regular-hours bars built from the 1-minute bars, aligned to 09:30 (the first bar finishes 09:35).
+- Indicators run on the continuous series of regular-hours 5-minute closes, prior sessions included, so they are warmed up by the first decision.
+- Decisions at the close of a finished 5-minute bar finishing 09:45 to 15:00. Entry at the open of the next 1-minute bar. One position at a time per rule and symbol.
+- The rules:
+  - **D1 `ind_rsi`:** RSI(14, Wilder smoothing) crosses up through 30 -> long; crosses down through 70 -> short.
+  - **D2 `ind_bb`:** Bollinger Bands (20, 2 x the population sd). A close back above the lower band after the previous close was below it -> long; mirrored at the upper band -> short.
+  - **D3 `ind_ema`:** EMA(9) crosses above EMA(21) -> long; below -> short.
+  - **D4 `ind_macd`:** MACD(12, 26, 9) line crosses above its signal line -> long; below -> short.
+- **Shares first** (Part A's data, costs, $10,000 notional and exit time). Exit on the same rule's opposite signal, which also reverses into it, or at the close of index 389. Long-only reported too.
+  - Pass = Part A's 7-item bar.
+- **Option twins** (HIST MODELED, DEV REAL). Calls carry longs, puts carry shorts.
+  - Contracts: 0DTE `d40-55t45` (its modeled tapes passed run 4's check for calls) and next-expiry `n1d40-55t45`.
+  - Two exits, both with all out 15:25:
+    - (i) **TP30:** fixed target +30% of the debit, fixed stop -20%;
+    - (ii) **signal:** the opposite signal or the -20% stop.
+  - Pass: B3's bars (HIST 2016-2023: at least 60 trades, PF >= 1.25, PF 2x > 1.0, profitable in 5 of 8 years, positive without the best 5 trades; DEV: at least 40 trades, PF >= 1.25, PF 2x > 1.0).
+  - Win rate and break-even win rate are reported beside each.
+- Every D variant gets matched random entries (Part A's random-direction test on shares; same days and times with a random side for options).
+
+**Trials added by this addendum:**
+- shares: 4 rules x 2 sides = 8;
+- options: 4 rules x 2 contracts x 2 exits = 16.
+
+That makes 24, and **round 8 totals 48** (the deflated Sharpe uses the run logs' count + 48).
+
 ### Next, not in this amendment (round 9)
 
 - Single-stock catalyst days: news/earnings movers, so the wins come on company days, not market days. This needs an earnings/8-K calendar and a single-stock option pull (Feb 2024+), so it gets its own pre-registration before any pull.
