@@ -67,6 +67,7 @@ from sprint import ivdata as IV  # noqa: E402
 from sprint import data as SD  # noqa: E402
 from sprint import periods  # noqa: E402
 from sprint import r10credit as RC  # noqa: E402
+from sprint import r10grid as RG  # noqa: E402
 from sprint import r10swing as SW  # noqa: E402
 from sprint import spread_est as SE  # noqa: E402
 from sprint import universe as U  # noqa: E402
@@ -129,7 +130,51 @@ def credit_needs(ctx):
 
 
 register("r10credit", credit_needs)
-# Round 10 integrator: r10grid's provider is registered once round10/grid is merged.
+
+
+def next_expiry(root, under, day, sessions):
+    """The next listed expiry after `day` for the next-expiry contracts: the nearest expiry in options_next/ or options_r10_next/
+    for that day if a file exists, else the next session (SPY/QQQ/IWM list daily expiries in DEV)."""
+    best = None
+    for sub in ("options_next", "options_r10_next"):
+        f = Path(root) / sub / under / day.isoformat() / "bars.csv.gz"
+        if f.exists():
+            syms = pd.read_csv(f, compression="gzip", usecols=["symbol"])["symbol"].astype(str).unique()
+            exps = [m["expiry"] for m in (parse_occ(x) for x in syms) if m and m["expiry"] > day]
+            if exps:
+                best = min(exps + ([best] if best else []))
+    if best:
+        return best
+    later = [d for d in sessions if d > day]
+    return later[0] if later else None
+
+
+def grid_needs(ctx):
+    """"r10grid" provider (integration): for every DEV day in the pull's span and SPY/QQQ/IWM, the strikes beyond the existing
+    +/-3% pull that a round-10 grid pick could need (sprint/r10grid.needed_option_contracts), for the 0DTE expiry and for the
+    next listed expiry (n1d40-55t45); whole-session bars. Computed once per run (ctx.cache)."""
+    if "r10grid_needs" not in ctx.cache:
+        a, b = ctx.span
+        sessions = IV.dev_days()
+        out = []
+        for d in [d for d in sessions if a <= d <= b]:
+            if periods.overlaps(d, d):
+                continue
+            for u in RG.SYMBOLS:
+                df = SD.read_stock(u, d, d, ctx.root)
+                if df is None or not len(df):
+                    continue
+                syms = list(RG.needed_option_contracts(u, d, df))
+                nx = next_expiry(ctx.root, u, d, sessions)
+                if nx and not periods.overlaps(nx, nx):
+                    syms += list(RG.needed_option_contracts(u, d, df, expiry=nx))
+                if syms:
+                    out.append(IV.need(d, IV.W_DAY, syms, "r10grid", 2))
+        ctx.cache["r10grid_needs"] = out
+    return ctx.cache["r10grid_needs"]
+
+
+register("r10grid", grid_needs)
 
 EXPORT_UNDERS = ("SPY", "QQQ", "IWM")
 

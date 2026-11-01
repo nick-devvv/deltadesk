@@ -354,3 +354,35 @@ def test_export_writes_0dte_and_next_expiry_files_in_the_reader_layout(env):
     before = (root / "options_r10" / "SPY" / D1.isoformat() / "bars.csv.gz").read_bytes()
     P10.export_index_options(root, print)
     assert (root / "options_r10" / "SPY" / D1.isoformat() / "bars.csv.gz").read_bytes() == before   # a re-run is identical
+
+
+def test_grid_needs_asks_for_0dte_and_next_expiry_strikes_beyond_the_old_band(env):
+    from sprint import r10grid as RG
+    root, m, fa = env
+    ts = pd.date_range(f"{D1} 09:30", periods=390, freq="1min", tz="America/New_York")
+    px = pd.Series(range(390), dtype=float) * 0.06 + 500.0             # a +4.7% trend day: beyond the +/-3% band
+    df = pd.DataFrame({"ts": ts, "o": px, "h": px + 0.1, "l": px - 0.1, "c": px, "v": 1000.0})
+    PA._write_gz(root / "stocks" / "SPY" / f"{D1.strftime('%Y-%m')}.csv.gz", df)
+    ctx = P10.Ctx(root, print, [D1], span=(D1, D1))
+    out = P10.grid_needs(ctx)
+    assert len(out) == 1 and out[0].tag == "r10grid" and out[0].window == IV.W_DAY
+    exps = {parse_occ(s)["expiry"] for s in out[0].symbols}
+    assert exps == {D1, D2}                                             # 0DTE + the next session (no next-expiry file)
+    want0 = set(RG.needed_option_contracts("SPY", D1, SD_read(root, D1)))
+    assert want0 and want0 <= set(out[0].symbols)
+    assert "r10grid" in open(P10.__file__).read()
+
+
+def SD_read(root, d):
+    from sprint import data as SD
+    return SD.read_stock("SPY", d, d, root)
+
+
+def test_next_expiry_prefers_the_cached_next_expiry_file(env):
+    root, m, fa = env
+    fri = date(2025, 3, 7)
+    PA._write_gz(root / "options_next" / "SPY" / D1.isoformat() / "bars.csv.gz",
+                 pd.DataFrame([{"symbol": occ("SPY", fri, "C", 500), "ts": pd.Timestamp(f"{D1} 10:00", tz="America/New_York"),
+                                "o": 1.0, "h": 1.0, "l": 1.0, "c": 1.0, "v": 1.0}]))
+    assert P10.next_expiry(root, "SPY", D1, [D1, D2, fri]) == fri
+    assert P10.next_expiry(root, "QQQ", D1, [D1, D2, fri]) == D2
