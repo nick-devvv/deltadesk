@@ -76,7 +76,7 @@ If a step fails, show the error and stop. Don't change any code; re-running the 
 What Nick sends back: step 1's commit line, step 2's last line, step 3's lines, step 4's last lines, step 5's estimate, step 6's first log lines, and step 8's output.
 
 Checks on the way in:
-- Step 2: every sprint test passes.
+- Step 2: 588 sprint tests pass (1 skipped is fine).
 - Step 4: both pulls end without errors.
 - Step 8: `[needs]` lists rounds, contracts and requests, with `refused` empty or only L1/L2 counts; `[export]` gives days, files and rows. Any `REFUSED` request, `network kept failing` or Python error is a problem to look at. A WARNING about missing logged chains means the 16.1 calibration will use a ratio of 1 (labeled).
 
@@ -126,6 +126,7 @@ If a step fails, show the error and stop. Don't change any code; re-running the 
 What Nick sends back: step 1's commit line, step 2's last line, step 3's lines, steps 4-7's output, step 8's lines and summaries, and `~/sprint_results10.zip`.
 
 Checks on the way in:
+- Step 2: 588 sprint tests pass.
 - Step 3: `sprint_pull10 done`, `calib_modeled.json` present, DIA months `2015-11` to `2026-06`.
 - Steps 4-7: each tool ends with its summary lines and no Python error. Any `WARNING:` line is worth a look:
   - a missing input;
