@@ -1021,6 +1021,43 @@ Information: months green, max drawdown, total without the best day, and the $3,
 
 **Trials:** 3. Round 9 becomes 206.
 
+## Amendment 15, 2026-11-01: round 10, an exit and entry search on Nick's setups (written before any round-10 code or run)
+
+Nick (2026-11-01) is unsure which stops and targets suit his setups and asked to "fool around with those strategies to find out".
+
+**Setups:**
+- vwap_macd, with MACD on 1-, 2- or 5-minute bars (3 entries);
+- orb15 and orb30;
+- failed_break (calls);
+- pd_retest.
+
+That makes 7 entries, from sprint/entries.py as they stand.
+
+**The grid** (per entry, evaluated in one pass per entry with sprint/optpass.py):
+- stop: option -10%, -20%, -30% or -50%, or the setup's own level stop (its `invalid` price);
+- target: +20%, +30%, +50%, +100% or none;
+- trail: none or gb50;
+- time cap: 30 minutes, 60 minutes, or all out 15:25;
+- contract: d40-55t45, d20-30t25 or n1d40-55t45;
+- trend filter: off, or only trades whose side agrees with the close vs the open at the signal bar.
+
+That gives 5 x 5 x 2 x 3 x 3 x 2 = 900 cells per entry, and 6,300 in all.
+
+**The choice:**
+- Per entry, choose on HIST 2016-2019 (MODELED) only: the cell with the highest PF among cells with at least 100 discovery trades (ties: more trades, then the simpler cell in the order listed).
+- Freeze the choice.
+- **Holdout 1** = 2020-01..2024-01 (MODELED): Amendment 10.3's bar.
+- **Holdout 2** = DEV (REAL): at least 60 trades, PF >= 1.25, PF 2x > 1.0, and above the same cell's random-side twin (seed 31).
+
+**Reported:**
+- the full grid as heat maps;
+- the share of cells with PF > 1 in each window, which shows whether a stop or target style works broadly or only in one lucky cell;
+- the $3,000 account view.
+
+**Trials:** 6,300. The deflated Sharpe uses the run logs' count + 6,300; expect it to be strict.
+
+The build comes after round 9's Part E lands; no new data is needed.
+
 ## Limits
 
 - Backtests only.
