@@ -2,6 +2,64 @@
 
 This runs the sprint's backtests on Chart's computer, the only machine that can reach Alpaca's data API. Everything runs in its own folder, `~/sprint`, from branch `sprint/exits`. Nothing touches `~/desk`, its journal or the live desk, and nothing can place an order: the puller only reads `data.alpaca.markets` (market data), and the engine only reads files it pulled.
 
+## Run 8: round 8, steady share rules, a sharper big-day filter, indicators and levels (about 45-90 minutes, no new data)
+
+Nick asked for steadier rules that win on different days than the big-day calls, a sharper big-day filter for those calls, contracts beyond 0DTE that can be sold early, and the classic indicators, alone and with levels, with a stop and target tuned honestly. Everything was fixed before any round-8 code or run in SPRINT_PLAN "Amendment 10" and Addenda 10.1, 10.2 and 10.3 (commits `0fc8fd1`, `d75e28b`, `e2d1369`, `e2cc2d6`); the code is `e49af2b`..`fb1adcc`. This run uses branch **`sprint/round8`** (the message checks it out).
+- **Engine runs** (`tools/sprint_run.py`, 9 runs each, SPY + QQQ + IWM): B3 `newhigh_c` ("wait for proof") and B4 (FIN-H's 11:00 entry with relative volume 1.06+ on the 0DTE and the next-expiry far out-of-the-money contract, with four exits: -95%, -50%, -50% + giveback, -50% + target +100%). On **2016-01-04 to 2024-01-31** (`round8_hist_v1`, option prices **MODELED** with run 4's calibration; next-expiry modeled prices are **NOT VALIDATED**) and on **2024-08-01 to 2026-06-30** (`round8_dev_v1`, **REAL** option prices). The DEV run points `--chains-dir` at a folder that doesn't exist, so it uses the pre-registered 2% spread.
+- **Then `tools/sprint_round8.py`** runs the rest and writes `data/sprint/round8_<date>.md` and `.json`:
+  - Part A in shares on 10 years of real stock bars: the noise band in shares (`noise_sh`, plus a volatility-sized version), the last-half-hour momentum trade (`last30`, plus the 10:00 version) and the stressed-day gap fade (`gapfade_vix`), each also long-only. Share trade file `trades_round8_shares_<date>.csv.gz`.
+  - Part D in shares: RSI, Bollinger, EMA 9/21, MACD, level + RSI and trend pullback on 5-minute bars (the level rule also against 5 sets of made-up levels).
+  - The option pass, one pass per entry: the six indicator rules on 0DTE and next-expiry contracts with the 12 stop/target cells (chosen on 2016-2019 only) and the signal exit, their random-side twins, the noise band carried by options and the gap fade's option twins. On 2016-2024 MODELED and 2024-2026 REAL. Trade files `trades_round8_options_hist_<date>.csv.gz` and `..._dev_<date>.csv.gz`.
+  - Part B on run 7's trade files: confidence sizing of the far-OTM call sleeves (skip / 1 / 2 contracts), B3 and B4 against FIN-H, then the book and the trial count (192 + the run logs).
+- No pull: every file needed is on Chart's computer from runs 1-7 (stock bars 2015-11 to 2024-01 and 2024-08 to 2026-06, 0DTE option bars and next-expiry option bars 2024-08 to 2026-06, VIXY daily, `data/sprint/calib_modeled.json`, run 7's `trades_factory_hist_v1_*` and `trades_factory_dev_v1_*`).
+
+### What to expect
+
+| Step | Time (estimate) | Disk |
+| --- | --- | --- |
+| Update + sprint tests (243) | 4-8 min | |
+| Check the files | seconds | |
+| `round8_hist_v1`: 9 runs on 2,033 sessions x 3 symbols, MODELED options | 3-7 min | about 1-2 MB (trade file) |
+| `round8_dev_v1`: 9 runs on 479 sessions x 3 symbols, real options | 3-7 min | under 1 MB |
+| `tools/sprint_round8.py` (shares, the option pass on both periods, Part B, the book) | 33-70 min | about 40-70 MB (trade files + report) |
+| Zip | 1-2 min | about 40-70 MB |
+| **Total** | **45-90 minutes** | **about 80-140 MB (results + zip)** |
+
+Estimates come from timing these exact specs and the tool on synthetic data of the real size on a 2-core machine: SPY, QQQ and IWM with 2,075 HIST sessions (42 of them warm-up) and 479 DEV sessions, every minute 04:00-20:00, 0DTE and next-expiry option bars within +/-3% of the open on DEV, VIXY daily, run 4's calibration file and synthetic run-7 factory trade files. `round8_hist_v1` took 3.3 min (peak memory 1.1 GB), `round8_dev_v1` 3.2 min, and `tools/sprint_round8.py` 33 min (peak memory 2.5 GB): the HIST option pass 23 min (3.19 million option trades, a 25 MB file), the DEV option pass 7 min (0.92 million, 7 MB), and the rest (loading the bars, re-stamping run 7's trades, the share pass of 81 s with 272,000 share trades, the readouts) about 2.5 min. The ranges allow for Chart's computer being up to twice as slow and for real files being bigger. The round-8 tool needs about 2.5-3 GB of memory, so nothing else heavy should run at the same time. The whole run stays well under 3 hours, so it is one run (no 8a / 8b split).
+
+### Message for Chart, run 8 (one paste)
+
+```
+Sprint run 8: round 8, steady share rules, a sharper big-day filter, indicators and levels (research only, about 45-90 minutes, no new data). Show me every output.
+Rules: you never place trades, never click buy/sell/order buttons, never enter passwords or keys, never print a key.
+Never touch ~/desk: don't cd into it, don't edit, copy, restart or run anything there. Never pass --locked or --frozen to any command.
+If a step fails, show the error and stop. Don't change any code; re-running the same command once is fine.
+1. Update the sprint code to the round-8 branch:
+   cd ~/sprint && git fetch -q origin sprint/round8 && git checkout -q -B sprint/round8 origin/sprint/round8 && git reset -q --hard origin/sprint/round8 && git log -1 --oneline
+2. Tests:
+   cd ~/sprint && .venv/bin/python -m pytest -q tests/test_sprint_*.py 2>&1 | tail -3
+3. Check the files are there (no pull needed) and the free disk space:
+   cd ~/sprint && ls -la data/sprint/calib_modeled.json && ls -t data/sprint/trades_factory_hist_v1_*.csv.gz | head -1 && ls -t data/sprint/trades_factory_dev_v1_*.csv.gz | head -1 && ls data/alpaca/options/SPY | wc -l && ls data/alpaca/options_next/SPY | wc -l && ls data/alpaca/stocks/SPY | head -1 && ls data/alpaca/stocks/SPY | tail -1 && ls -la data/alpaca/daily/VIXY.csv.gz && df -h ~ | tail -1
+4. B3 and B4 on 2016-2024 (MODELED options), then on 2024-2026 (REAL options):
+   cd ~/sprint && mkdir -p data/sprint/logs && .venv/bin/python tools/sprint_run.py sprint/specs/round8_hist_v1.json > data/sprint/logs/run8_hist.log 2>&1 && grep -E "^sprint |tapes:|pass 1 done|^report:|^trades:" data/sprint/logs/run8_hist.log || { echo "FAILED: round8_hist_v1"; tail -30 data/sprint/logs/run8_hist.log; }
+   cd ~/sprint && .venv/bin/python tools/sprint_run.py sprint/specs/round8_dev_v1.json --chains-dir data/sprint/no_chains > data/sprint/logs/run8_dev.log 2>&1 && grep -E "^sprint |pass 1 done|^report:|^trades:" data/sprint/logs/run8_dev.log || { echo "FAILED: round8_dev_v1"; tail -30 data/sprint/logs/run8_dev.log; }
+5. Round 8: the share rules, the indicator rules, the option pass, Part B and the book:
+   cd ~/sprint && .venv/bin/python tools/sprint_round8.py > data/sprint/logs/run8_round8.log 2>&1; tail -70 data/sprint/logs/run8_round8.log
+6. Zip everything and show the summary table:
+   cd ~/sprint && .venv/bin/python -m zipfile -c ~/sprint_results8.zip $(ls -t data/sprint/round8_*.md | head -1) $(ls -t data/sprint/round8_*.json | head -1) $(ls -t data/sprint/trades_round8_shares_*.csv.gz | head -1) $(ls -t data/sprint/trades_round8_options_hist_*.csv.gz | head -1) $(ls -t data/sprint/trades_round8_options_dev_*.csv.gz | head -1) $(ls -t data/sprint/trades_round8_hist_v1_*.csv.gz | head -1) $(ls -t data/sprint/trades_round8_dev_v1_*.csv.gz | head -1) $(ls -t data/sprint/report_*_round8_hist_v1.md | head -1) $(ls -t data/sprint/report_*_round8_dev_v1.md | head -1) data/sprint/logs/run8_*.log data/sprint/runs_*.csv && ls -la ~/sprint_results8.zip
+   sed -n '/^## Summary/,/^## Part A/p' "$(ls -t data/sprint/round8_*.md | head -1)"
+   (send Nick the file ~/sprint_results8.zip)
+```
+
+What Nick sends back: step 1's commit line, step 2's last line, step 3's lines, step 4's lines, step 5's output (the summary lines and any WARNING lines), step 6's table, and `~/sprint_results8.zip`.
+
+Checks on the way in:
+- Step 2: 243 sprint tests pass.
+- Step 3: `calib_modeled.json` is there (its sha256 starts `4d50070991c1` if unchanged), both run-7 factory trade files are listed, about 470-479 days under `options/SPY` and under `options_next/SPY`, stock months `2015-11` to `2026-06`, and `VIXY.csv.gz`. If a factory trade file is missing, step 5 refuses: stop there.
+- Step 4: run ids `round8_hist_v1-001..009` (period HIST, notes MODELED; the `tapes:` line lists `d03-12t07|C` and `n1d03-12t07|C [d03-12t07|C (fallback for n1d03-12t07|C)]`: run 4 has no next-expiry key for that band, so the 0DTE band's multiplier is used and labeled) and `round8_dev_v1-001..009` (period DEV, MODELED-SPREAD 2%, not MEASURED). The run log gains 18 rows.
+- Step 5: the `option pass HIST` line lists the multipliers used (fallbacks labeled), then one summary line per Part A rule, A-opt / A3 twin, B2 sleeve, B3, B4 variant, D share rule, D option study (the chosen cell, SURVIVES or fail, the signal exit) and the book. A `WARNING:` line saying run 7's sleeve trades were re-stamped with the round-8 features is expected (run 7's files predate them); any other `WARNING:` line is a problem to look at.
+- Known before any result (Amendment 10 and its addenda): the far-OTM call family wins on the same days; long 0DTE premium loses a little most days; A3 is a grade-C source (a pass is exploratory); most indicator rules are expected not to beat random entries after costs; next-expiry HIST prices are modeled and never validated, so DEV REAL decides.
+
 ## Run 7: the 10-year strategy factory (about 35-70 minutes, no new data)
 
 Nick asked for every strategy we have code for, run across the full ~10 years, with its own numbers, the same "learn when it works / skip the losing conditions" process, and the survivors together as one book. Everything was fixed before any run in SPRINT_PLAN "Amendment 9" (commit `da61e34`). This run uses branch **`sprint/factory`** (the message checks it out; a later message for `sprint/exits` checks that branch out again).
