@@ -12,7 +12,7 @@ The references are otm_v1-040 unfiltered on the same period (for the three call 
 
 It runs in two pastes, because Amendment 11 says the models are committed before any locked data is pulled:
 1. **Exam step 1** fits FIN-L's and FIN-HS's models on files already on Chart's computer (no locked data) and writes `sprint/specs/final_v2_models.json`. Nick sends the zip to Claude.
-2. Claude commits that file, writes its sha256 into the exam spec (`tools/sprint_exam.py freeze`), commits the spec and fills in `<EXAM_SPEC_SHA>` below.
+2. Claude commits that file, writes its sha256 into the exam spec (`tools/sprint_exam.py freeze`), commits the spec and fills in `6a27dbeac269a96e306e08f17625e0cfb3f3f238caad9a86c7d88ce9648ce864` below.
 3. **Exam step 2** runs L2, then L1, once each, through the `--locked <name> --frozen <exam spec sha256>` guard.
 
 ## How the locked pull works
@@ -101,7 +101,7 @@ Checks on the way in:
 
 1. Put `final_v2_models.json` from the zip at `sprint/specs/final_v2_models.json`, check its sha256 equals step 4's `models sha256`, and commit it.
 2. Run `python3 tools/sprint_exam.py freeze`: it refuses unless the models file is committed and unchanged, then rewrites the exam spec with that sha256 and prints the spec's new sha256. It must equal step 4's `(for Claude: ...)` value.
-3. Commit `sprint/specs/final_v2_exam.json`, push `sprint/exam`, and put the spec's sha256 in place of `<EXAM_SPEC_SHA>` (both places) in the message below. From here on no code changes before both periods have run (Amendment 11: a code change after the first locked read voids the exam for the finalists it touches).
+3. Commit `sprint/specs/final_v2_exam.json`, push `sprint/exam`, and put the spec's sha256 in place of `6a27dbeac269a96e306e08f17625e0cfb3f3f238caad9a86c7d88ce9648ce864` (both places) in the message below. From here on no code changes before both periods have run (Amendment 11: a code change after the first locked read voids the exam for the finalists it touches).
 
 ## Exam step 2: the one-shot exam, L2 then L1 (about 30-60 minutes, pulls market data)
 
@@ -131,9 +131,9 @@ If a step fails, show the error and stop. Don't change any code.
    [ -n "$ALPACA_KEY" ] && [ -n "$ALPACA_SECRET" ] && echo "alpaca keys present" || echo "ALPACA KEYS MISSING: stop and tell Nick"
    cd ~/sprint && sha256sum sprint/specs/final_v2_exam.json sprint/specs/final_v2_models.json && df -h ~ | tail -1
 4. L2 (2024-02-01 to 2024-07-31), once:
-   cd ~/sprint && mkdir -p data/sprint/logs && .venv/bin/python tools/sprint_exam.py run --locked L2 --frozen <EXAM_SPEC_SHA> > data/sprint/logs/exam_L2.log 2>&1 && grep -E "^sprint_exam |^exam |^WARNING|^report:" data/sprint/logs/exam_L2.log || { echo "FAILED: exam L2"; tail -30 data/sprint/logs/exam_L2.log; }
+   cd ~/sprint && mkdir -p data/sprint/logs && .venv/bin/python tools/sprint_exam.py run --locked L2 --frozen 6a27dbeac269a96e306e08f17625e0cfb3f3f238caad9a86c7d88ce9648ce864 > data/sprint/logs/exam_L2.log 2>&1 && grep -E "^sprint_exam |^exam |^WARNING|^report:" data/sprint/logs/exam_L2.log || { echo "FAILED: exam L2"; tail -30 data/sprint/logs/exam_L2.log; }
 5. L1 (2026-07-01 to 2026-10-30), once, only if step 4 did not print FAILED:
-   cd ~/sprint && .venv/bin/python tools/sprint_exam.py run --locked L1 --frozen <EXAM_SPEC_SHA> > data/sprint/logs/exam_L1.log 2>&1 && grep -E "^sprint_exam |^exam |^WARNING|^report:" data/sprint/logs/exam_L1.log || { echo "FAILED: exam L1"; tail -30 data/sprint/logs/exam_L1.log; }
+   cd ~/sprint && .venv/bin/python tools/sprint_exam.py run --locked L1 --frozen 6a27dbeac269a96e306e08f17625e0cfb3f3f238caad9a86c7d88ce9648ce864 > data/sprint/logs/exam_L1.log 2>&1 && grep -E "^sprint_exam |^exam |^WARNING|^report:" data/sprint/logs/exam_L1.log || { echo "FAILED: exam L1"; tail -30 data/sprint/logs/exam_L1.log; }
 6. Zip everything and show both result tables:
    cd ~/sprint && .venv/bin/python -m zipfile -c ~/sprint_exam_results.zip data/sprint/exam_L2_*.md data/sprint/exam_L2_*.json data/sprint/exam_L1_*.md data/sprint/exam_L1_*.json data/sprint/trades_exam_*.csv.gz data/sprint/exam_log.jsonl data/sprint/logs/exam_*.log && ls -la ~/sprint_exam_results.zip
    for f in $(ls -tr data/sprint/exam_L2_*.md data/sprint/exam_L1_*.md); do echo "=== $f"; sed -n '/^## This period/,/^## FIN-H$/p' "$f"; done
@@ -145,7 +145,7 @@ What Nick sends back: step 1's commit line and status, step 2's last line, step 
 Checks on the way in:
 - Step 1: the commit is the frozen one Claude named, and `git status --short` prints nothing, or only `?? .venv/` (the sprint's Python environment, which the dirty-tree check ignores). Any ` M` line or a `??` file under `sprint/`, `tools/` or `tests/` makes steps 4 and 5 refuse.
 - Step 2: 270 sprint tests pass.
-- Step 3: "alpaca keys present". The exam spec's sha256 equals `<EXAM_SPEC_SHA>`, and the models file's equals exam step 1's.
+- Step 3: "alpaca keys present". The exam spec's sha256 equals `6a27dbeac269a96e306e08f17625e0cfb3f3f238caad9a86c7d88ce9648ce864`, and the models file's equals exam step 1's.
 - Steps 4 and 5:
   - a `sprint_exam run:` line saying FIRST READ, with the commit, the exam spec sha256 and the models sha256;
   - four `exam L2 ...` (then `exam L1 ...`) lines, one per finalist, each PASS or fail with its numbers. After L1 each line also gives the verdict: holds (passes both periods), mixed (one) or fails (neither);
