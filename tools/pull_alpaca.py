@@ -24,7 +24,9 @@ import http.client
 import io
 import json
 import os
+import ssl
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -57,22 +59,80 @@ def _guard(url):
     return url
 
 
-def _default_http(url, headers):
+DATA_HOSTNAME = "data.alpaca.markets"
+_local = threading.local()               # one kept-alive connection per thread
+_lock = threading.Lock()                 # the 180-a-minute limit is shared by every thread
+
+
+def _connect():
+    """A new HTTPS connection to the market-data host (tests replace this with a local server)."""
+    return http.client.HTTPSConnection(DATA_HOSTNAME, timeout=30, context=ssl.create_default_context())
+
+
+def _proxied():
+    return bool(urllib.request.getproxies().get("https"))
+
+
+def _urllib_get(url, headers):
     req = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(req, timeout=30) as r:
         return json.loads(r.read().decode())
+
+
+def _drop():
+    c = getattr(_local, "conn", None)
+    if c is not None:
+        try:
+            c.close()
+        except Exception:
+            pass
+    _local.conn, _local.used = None, 0
+
+
+def _default_http(url, headers):
+    """One GET on a kept-alive HTTPS connection (one per thread), so each request doesn't pay a new TLS handshake (slow
+    and flaky on Chart's computer). A kept-alive connection the server has closed is retried once at once on a new one;
+    any other network error, and HTTP >= 400 (as urllib.error.HTTPError), go to the caller's retry loop. With an HTTPS
+    proxy configured in the environment, the plain urllib request is used, as before. Only data.alpaca.markets."""
+    parts = urllib.parse.urlsplit(_guard(url))
+    if parts.hostname != DATA_HOSTNAME:
+        raise RuntimeError(f"REFUSED: pull_alpaca only reads {DATA_HOST}")
+    if _proxied():
+        return _urllib_get(url, headers)
+    target = parts.path + ("?" + parts.query if parts.query else "")
+    for _ in range(2):
+        if getattr(_local, "conn", None) is None:
+            _local.conn, _local.used = _connect(), 0
+        reused = _local.used > 0
+        try:
+            _local.conn.request("GET", target, headers=headers)
+            r = _local.conn.getresponse()
+            body = r.read()
+        except (http.client.HTTPException, OSError):
+            _drop()
+            if reused:
+                continue
+            raise
+        _local.used += 1
+        if r.will_close:
+            _drop()
+        if r.status >= 400:
+            raise urllib.error.HTTPError(url, r.status, r.reason, r.headers, io.BytesIO(body))
+        return json.loads(body.decode())
+    raise ConnectionError("the market-data connection closed twice in a row")
 
 
 _http = _default_http                  # tests replace this
 
 
 def _throttle():
-    now = time.time()
-    while _calls and now - _calls[0] > 60:
-        _calls.pop(0)
-    if len(_calls) >= MAX_PER_MIN:
-        time.sleep(max(0.0, 60 - (now - _calls[0])) + 0.05)
-    _calls.append(time.time())
+    with _lock:
+        now = time.time()
+        while _calls and now - _calls[0] > 60:
+            _calls.pop(0)
+        if len(_calls) >= MAX_PER_MIN:
+            time.sleep(max(0.0, 60 - (now - _calls[0])) + 0.05)
+        _calls.append(time.time())
 
 
 def get(path, params):

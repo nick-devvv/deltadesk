@@ -54,6 +54,7 @@ import time
 import urllib.error
 import urllib.parse
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime
 from pathlib import Path
 
@@ -78,6 +79,7 @@ STAGES = ("stock15", "needs", "export")
 BATCH = 100
 NET_BACKOFF = (5, 15, 30, 60, 120, 300)
 MAX_ROUNDS = 40
+WORKERS = 4                              # day-windows fetched side by side (Chart's requests are latency-bound)
 PROVIDERS = {}
 
 
@@ -584,8 +586,10 @@ def collect(ctx, names=None):
     return new, dict(refused), errors
 
 
-def pull_needs(ctx, providers=None, max_rounds=MAX_ROUNDS):
-    """Rounds of collect -> fetch until no provider needs anything new."""
+def pull_needs(ctx, providers=None, max_rounds=MAX_ROUNDS, workers=None):
+    """Rounds of collect -> fetch until no provider needs anything new. `workers` (default WORKERS) day-windows are fetched
+    side by side."""
+    workers = WORKERS if workers is None else int(workers)
     out = {"rounds": 0, "day_windows": 0, "contracts": 0, "requests_est": 0, "refused": defaultdict(int), "errors": {}}
     for rnd in range(1, max_rounds + 1):
         new, refused, errors = collect(ctx, providers)
@@ -602,14 +606,31 @@ def pull_needs(ctx, providers=None, max_rounds=MAX_ROUNDS):
         ctx.log(f"[needs] round {rnd}: {len(new)} day-windows, {n_c} contracts, about {n_r} requests "
                 f"(~{n_r / PA.MAX_PER_MIN:.0f} min at {PA.MAX_PER_MIN} a minute)")
         pr = Progress(f"needs round {rnd}", len(new), ctx.log)
-        for (d, w), (syms, _p, _t) in sorted(new.items(), key=lambda kv: (kv[1][1], kv[0][0], kv[0][1])):
+        order = sorted(new.items(), key=lambda kv: (kv[1][1], kv[0][0], kv[0][1]))
+        for d, _w in [k for k, _v in order]:
             check_window(d, d)
+
+        def one(item):
+            (d, w), (syms, _p, _t) = item
             merge_opt(ctx.root, d, w, syms, lambda s, d=d, w=w: opt_bars(s, d, w, ctx.log))
-            ctx.bars.invalidate(d, w)
+            return (d, w), syms
+
+        def done(key, syms):
+            ctx.bars.invalidate(*key)
             out["contracts"] += len(syms)
             out["requests_est"] += math.ceil(len(syms) / BATCH)
             out["day_windows"] += 1
             pr.step()
+
+        if workers <= 1:
+            for item in order:
+                done(*one(item))
+        else:
+            # different (day, window) keys write different files, so they can be fetched side by side; the 180-a-minute
+            # limit is shared (pull_alpaca's throttle is locked) and each thread keeps its own HTTPS connection
+            with ThreadPoolExecutor(max_workers=workers) as ex:
+                for fut in as_completed([ex.submit(one, item) for item in order]):
+                    done(*fut.result())
     else:
         ctx.warn(f"needs: stopped after {max_rounds} rounds with providers still asking; re-run to continue")
     out["refused"] = dict(out["refused"])
@@ -689,6 +710,7 @@ def main(argv=None):
     ap.add_argument("--from", dest="a", default=None, help="first DEV session (default 2024-08-01)")
     ap.add_argument("--to", dest="b", default=None, help="last DEV session (default 2026-06-30)")
     ap.add_argument("--chains-dir", default=str(SE.CHAINS), help="logged chains (the spread_cal provider's calibration days)")
+    ap.add_argument("--workers", type=int, default=WORKERS, help="day-windows fetched side by side (default %(default)s)")
     ap.add_argument("--status", action="store_true")
     ap.add_argument("--estimate", action="store_true")
     x = ap.parse_args(argv)
@@ -733,7 +755,7 @@ def main(argv=None):
             if st == "stock15":
                 log(f"[stock15] {pull_stock15(ctx, x.feed, days)}")
             elif st == "needs":
-                log(f"[needs] {pull_needs(ctx, provs)}")
+                log(f"[needs] {pull_needs(ctx, provs, workers=x.workers)}")
             elif st == "export":
                 export_index_options(root, log, days)
             log(f"[{st}] finished in {(time.time() - ts) / 60:.1f} min; {disk_mb(root)} MB on disk for round 10")

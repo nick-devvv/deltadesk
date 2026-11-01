@@ -386,3 +386,25 @@ def test_next_expiry_prefers_the_cached_next_expiry_file(env):
                                 "o": 1.0, "h": 1.0, "l": 1.0, "c": 1.0, "v": 1.0}]))
     assert P10.next_expiry(root, "SPY", D1, [D1, D2, fri]) == fri
     assert P10.next_expiry(root, "QQQ", D1, [D1, D2, fri]) == D2
+
+
+def test_parallel_workers_write_the_same_files_as_one_worker(env, tmp_path, monkeypatch):
+    root, m, fa = env
+    k = int(_atm(m))
+    days = [D1, D2]
+    syms = {d: [occ("SPY", d, r, k + j) for j in range(-2, 3) for r in ("C", "P")] for d in days}
+
+    def prov(ctx):
+        return [IV.need(d, w, syms[d], "par", 1) for d in days for w in (IV.W_LAST, IV.W_DAY)]
+    P10.register("par", prov)
+    outs = {}
+    for wk in (1, 4):
+        r = tmp_path / f"w{wk}" / "data" / "alpaca"
+        r.mkdir(parents=True)
+        monkeypatch.setattr(PA, "ROOT", r)
+        ctx = P10.Ctx(r, print, days, span=(D1, D2))
+        res = P10.pull_needs(ctx, workers=wk)
+        assert res["day_windows"] == 4 and res["contracts"] == 40
+        files = sorted(p.relative_to(r) for p in (r / IV.R10 / "opt").rglob("*") if p.is_file())
+        outs[wk] = {str(f): (r / f).read_bytes() for f in files}
+    assert outs[1] == outs[4] and len(outs[1]) == 8
