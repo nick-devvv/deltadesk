@@ -1395,6 +1395,15 @@ The momentum-flip exit in signals.py's `check_exit` is not called by main.py, so
 
 **What this replaces:** these rules replace 15.3's list. The list-only version is not run. Trials stay at 2 (with and without the day gates), and R2's in-the-money swap applies to this corrected rule set.
 
+### Addendum 16.3, 2026-11-01: a floor under the single-stock spread estimate (before any round 10 run or result)
+
+The 16.1 build showed a hole. A minute with a single trade has high = low = close, so the estimator reads it as a zero spread. Thin single-stock contracts are mostly such minutes, and the median of a pool can then sit near the $0.005 floor. Calibrating on SPY/QQQ can't catch that, because those contracts trade every minute. So 16.1 is tightened, still before any result:
+- **Which minute pairs count:** only pairs where both minutes have at least 2 trades (the bar's trade count). Single-trade minutes carry no bounce.
+- **The floor:** the ESTIMATED-SPREAD used for pass/fail is max(calibrated estimate, 2% of the premium, $0.005). The 2% is spread.py's pre-registered index-ETF default; a single-stock option is not assumed to be tighter than SPY's in percent terms.
+- **Also reported:** the unfloored estimate, as information.
+
+Everything else in 16.1 is unchanged. Trials are unchanged.
+
 ## Limits
 
 - Backtests only.
