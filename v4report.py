@@ -26,7 +26,7 @@ BOOKS = [
     ("premium", "Index premium selling: paper credit spreads (SPY / QQQ / XSP)", ["orb_credit", "ic_20d"]),
     ("stocks", "Stocks in play: shares, with an options shadow on the same entries", ["sip_orb5", "sip_orb5_x", "sip_orb15"]),
     ("catalyst", "Catalysts: earnings-day breakouts and the news-drift event study", ["earn_day"]),
-    ("sprint", "Sprint forward tests: PAPER (simulated fills) twins of in-sample backtests, SPY / QQQ 0DTE options, not promoted",
+    ("sprint", "Sprint forward tests: PAPER (simulated fills) twins of sprint backtests (in-sample; otm_h out-of-sample), SPY / QQQ 0DTE options, not promoted",
      ["fb_or", "otm_put", "otm_bounce", "otm_h"]),
 ]
 SPRINT_LEDGERS = ("fb_or", "otm_put", "otm_bounce", "otm_h")
