@@ -1336,6 +1336,30 @@ The pull tool must refuse L1/L2 dates, as round 9's does.
 
 The deflated Sharpe uses the run logs' count + 7,767.
 
+### Addendum 16.1, 2026-11-01: single-stock option spreads (written after the round 10 build, before any round 10 run or result)
+
+**The problem, found while building.** sprint/spread.py measures spreads only for SPY/QQQ 0DTE (the desk's logged Schwab chains). Every other option falls back to the pre-registered MODELED default: a half-spread of 10% of premium for single stocks.
+
+For a 30-day at-the-money straddle on a stock trading $50 million+ a day, 10% is likely several times the real spread. So V1, V2 and V2-s would be judged on a made-up cost. Meanwhile the V3/V4 twins use F-opt's 2%, which may be too low for smaller names.
+
+**The fix, decided before any result:**
+- **Estimate:** each single-stock option contract's half-spread from its own 1-minute trade bars, using the Abdi & Ranaldo (2017) close-high-low estimator.
+  - It runs on consecutive minutes that both have trades, inside the bars the round 10 pull fetches.
+  - Pool per symbol, per calendar month and per premium bucket (sprint/spread.py's buckets), and take the median. Floor: $0.005.
+  - With fewer than 5 minute pairs in a pool, fall back to the 10% MODELED default, labeled.
+- **Calibrate:** use the DEV days where data/chains holds measured SPY/QQQ spreads.
+  - Run the same estimator on the same contracts and the same minutes.
+  - The median ratio of measured to estimated half-spread, clipped to 0.5-3.0, scales every single-stock estimate.
+  - With fewer than 200 matched contract-days, use a ratio of 1, labeled.
+- **The result** is labeled "ESTIMATED-SPREAD".
+- **Pass/fail:**
+  - V1, V2, V2-s and the V3/V4 option twins are judged at 100% of the ESTIMATED-SPREAD.
+  - The V3/V4 twins keep every other item of F-opt's bar, with this cost in place of F-opt's 2%. "PF 2x" doubles it.
+- **Also reported:** mid, 50%, the 10% MODELED default and F-opt's 2%.
+- **Trials:** unchanged. This is a cost input, not a new rule.
+
+Any promotion still needs 40 forward paper trades with real fills, which is the real check on this estimate.
+
 ## Limits
 
 - Backtests only.
