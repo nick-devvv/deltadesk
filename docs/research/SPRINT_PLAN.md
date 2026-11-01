@@ -732,6 +732,50 @@ Recorded before any result:
 
 That makes 24, and **round 8 totals 48** (the deflated Sharpe uses the run logs' count + 48).
 
+### Addendum 10.3, 2026-11-01: indicators combined with levels, and a tuned stop (written before any round-8 code or run)
+
+Nick (2026-11-01): "I'm not too sure on the 20% stop loss, you can tweak that around to find out what works best. Indicators alone don't work good, but pairing them with levels of resistance and other indicators together could work good."
+
+Recorded before any result:
+- Tuning a stop on the same data it is judged on is curve-fitting. So the stop and target are **chosen on 2016-2019 only**, frozen, and judged on 2020 to Jan 2024 (MODELED) and on DEV (REAL), the way the factory chose its rules.
+- `failed_break` is already a level-based reversal setup, and it failed on 2016-2023 (runs 4-7). The confluence rules below add the indicator confirmation it lacked.
+- They are **designed tests of Nick's idea**, with no published source (CLAUDE.md step 1: "design a pre-registered test for it"). So the made-up-levels benchmark below must also be beaten.
+
+**D5 `conf_level_rsi`: a level plus RSI** (5-minute bars and decision window as Addendum 10.2; levels from sprint/levels.py, known at the decision).
+- Support = PDL, PML, OR30L, VWAP-2, VAL, PWL. Resistance = PDH, PMH, OR30H, VWAP+2, VAH, PWH.
+- Long: the decision bar's low is at or within 0.10 x ATR(14, 5-minute) of a support level (or traded through it), RSI(14) at that bar <= 30, and the bar closes above that level. Short: mirrored at resistance, with RSI >= 70.
+- If two levels qualify, the nearest to the close counts.
+- **Made-up-levels benchmark:** the same rule on `LevelMap.fake(seed)` for seeds 1-5. The real levels must beat every seed's expectancy, or levels add nothing.
+
+**D6 `conf_trend_pullback`: trend plus pullback plus momentum.**
+- Long: the 5-minute close > VWAP, EMA(9) > EMA(21), the bar's low at or within 0.10 x ATR(14, 5-minute) of VWAP or of EMA(21), the MACD(12,26,9) histogram above its value on the prior bar, and the close above both VWAP and EMA(21).
+- Short: mirrored.
+
+**Shares (underlying first)**, with Part A's costs, notional and exit time.
+- D5 stop: the touched level -/+ 0.10 x ATR(14, 5-minute). D6 stop: the decision bar's low (long) / high (short) -/+ 0.10 x ATR.
+- The stop is judged on finished 1-minute closes and exits at the next bar's open -/+ $0.01. No target. Out at index 389.
+- Long-only reported too.
+- Pass = Part A's 7-item bar, and for D5 also beating all five made-up-level seeds.
+
+**The stop and target grid** (option twins of D1-D6; contracts 0DTE d40-55t45 and next-expiry n1d40-55t45; HIST MODELED, DEV REAL):
+- 12 exits: fixed stop -10%, -20%, -30% or -50% of the debit, crossed with fixed target +30%, +50% or none. All out 15:25. Addendum 10.2's TP30 exit is the (-20%, +30%) cell.
+- **Choice, per rule and contract, on HIST 2016-2019 only:** the cell with the highest PF among cells with at least 60 discovery trades.
+  - Ties: more trades, then the smaller stop, then the smaller target (none last).
+  - No cell with 60 trades = no choice.
+  - The choice is frozen; nothing dated 2020 or later can change it.
+- **Holdout 1** = HIST 2020-01 to 2024-01 (MODELED): at least 60 trades, PF >= 1.25, PF 2x > 1.0, profitable in at least 3 of 2020-2023 (years with 10+ trades), positive without the best 5 trades.
+- **Holdout 2** = DEV (REAL): at least 40 trades, PF >= 1.25, PF 2x > 1.0.
+- A rule and contract **survives** when its chosen cell passes both holdouts.
+- All 12 cells are shown in every window, labeled, so the picture isn't one cherry-picked cell. Win rate and break-even win rate are shown beside each.
+- Addendum 10.2's signal exit stays as a separate reported variant, with its -20% stop.
+- Implementation note: the 12 exits share each entry and its option tape. Evaluate them in one pass per entry rather than as 12 separate engine runs, and keep the whole Chart run near 3 hours or less. If it can't be, split it into run 8a and run 8b.
+
+**Trials, Part D, recounted** (this replaces Addendum 10.2's count of 24):
+- shares: 6 rules (D1-D6) x 2 sides = 12;
+- options: 6 rules x 2 contracts x (12 grid cells + 1 signal exit) = 156.
+
+That makes 168, and **round 8 totals 192**: Amendment 10's 13, plus 10.1's 11, plus 168. The deflated Sharpe uses the run logs' count + 192.
+
 ### Next, not in this amendment (round 9)
 
 - Single-stock catalyst days: news/earnings movers, so the wins come on company days, not market days. This needs an earnings/8-K calendar and a single-stock option pull (Feb 2024+), so it gets its own pre-registration before any pull.
