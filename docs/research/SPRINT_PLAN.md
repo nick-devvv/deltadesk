@@ -1130,6 +1130,46 @@ Nick (2026-11-01) linked github.com/milgar7969/alpaca-options-framework (MIT; a 
 
 **Trials:** 2 (with and without the day gates).
 
+### Addendum 15.4, 2026-11-01: 0DTE credit spreads from an r/options thread (paper research only; part of round 10; written before any code or run)
+
+Nick (2026-11-01) shared an r/options thread: claims only, no published backtest. These are option SELLING strategies. Nick's live account can't trade spreads (Robinhood Level 3 is needed), so this is paper research, like the desk's orb_credit and ic_20d ledgers.
+
+Recorded before any result:
+- A commenter's own SPY backtest found that the morning-direction filter made things worse than selling every day.
+- The poster lost money in April 2025.
+- Tail days decide the total ("picking up pennies").
+
+So every rule is reported beside its no-filter control, with April 2025 and the worst 5 days shown separately.
+
+**The rules** (SPY 0DTE stands in for SPX at 1/10 scale; QQQ as information):
+- **C1 `morning_trend_vertical`** (the post's rules):
+  - Direction = SPY's 10:30 price vs its 08:30 premarket price.
+  - Up -> sell a put vertical; down -> sell a call vertical.
+  - Short strike: 1.25 x the 10:30 ATM straddle mid away from the spot (the nearest listed strike at or beyond). Long strike $5 further out (SPX's $50 wing / 10).
+  - Entry at 10:30; hold to the close.
+- **C1-ctl:** the same put vertical every day with no direction filter. **C1-ic:** both sides every day (an iron condor).
+- **C2 `afternoon_condor`** (commenter ThrockmortenMD's rules):
+  - Entry at 13:45: short 30-delta call and put (BS-EST), wings $5 out, hold to the close.
+  - Only when SPY's close is above its 10-day SMA and VIX < 24. VIX history isn't available, so the proxy is SPY's 20-day realized vol (annualized) below 19%, labeled.
+  - **C2-ctl:** the same condor every day, unfiltered.
+
+**Settlement and costs:**
+- At the 16:00 close, at intrinsic value. SPY settles physically; after-hours assignment risk is ignored and labeled.
+- Each leg filled at its 1-minute option price -/+ the half-spread: MEASURED where available, else max($0.01, 2% of premium), plus $0.65 per contract per leg per side.
+- No exit cost when a leg expires worthless. Stress: 2x the half-spread.
+
+**Windows:** DEV REAL decides. HIST is MODELED information only: one flat IV per day misprices the skew a seller lives on.
+
+**Pass**, DEV REAL, all of:
+- at least 100 trades;
+- PF >= 1.25 and PF 2x > 1.0;
+- positive in at least 4 of the 6 two-month blocks of 2025-07..2026-06;
+- the filtered rule beats its own control's total.
+
+Reported: max drawdown, worst day, April 2025 alone, months green, return on the margin each spread ties up, and the $3,000 account view.
+
+**Trials:** 5 (C1, C1-ctl, C1-ic, C2, C2-ctl).
+
 ## Limits
 
 - Backtests only.
