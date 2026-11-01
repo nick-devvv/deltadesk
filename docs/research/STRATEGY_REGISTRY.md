@@ -220,3 +220,20 @@ Nick said yes on 2026-10-31. These are paper-only twins of the sprint's best nea
 - **Deviations from the backtest:** SPY+QQQ only (no IWM snapshot); Schwab bars, chain mids and live bid/ask instead of Alpaca bars, last trades and a modeled spread; VIXY from Schwab; the v4 risk layer can block entries (recorded).
 - **2016-2023 history check (pre-registered 2026-10-31, before any HIST pull or run):** `docs/research/SPRINT_PLAN.md` Amendment 5. The same rules on HIST = 2016-01-04 to 2024-01-31 (data they were never tuned on): Layer 1 on the stock signal alone, Layer 2 with MODELED (BS, calibrated IV) option prices validated against the real DEV runs first. Pass bars are fixed there. It cannot promote anything; it decides whether each ledger carries a "failed HIST" note.
 
+
+## Locked-period exam (SPRINT_PLAN Amendment 11; run 2026-11-01)
+
+Four finalists went through the frozen exam, once each, on L2 (2024-02-01..07-31) and L1 (2026-07-01..10-30): BACKTEST, out-of-sample, REAL option prices. All four **fail** both periods.
+
+| Finalist | L2 exp $ (PF) | L1 exp $ (PF) |
+|---|---|---|
+| FIN-H, far-OTM 0DTE calls at 11:00 with rvol >= 1.06 (run 7 otm_v1-040 + filter) | -5.49 (0.356) | -1.42 (0.847) |
+| FIN-L, the same with a logit filter | -4.30 (0.475) | -8.75 (0.160) |
+| FIN-HS, sized 0/1/2 | -6.74 (0.319) per contract | -6.76 (0.340) per contract |
+| NB-VOL, the vol-sized noise band in shares | +2.65 (1.092) | +1.95 (1.072) |
+
+- NB-VOL fails because it does not beat random direction (p 0.19 and 0.31).
+- The far-OTM call family is dropped.
+- The paper ledger `otm_h` is to be relabeled "failed the exam" (a desk change, awaiting Nick's yes).
+
+Details: `docs/research/SPRINT_RESULTS_EXAM.md`.

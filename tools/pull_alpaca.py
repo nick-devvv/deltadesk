@@ -20,6 +20,7 @@ option-data gaps (2024-02-26, 2024-03-15).
 """
 import argparse
 import gzip
+import http.client
 import io
 import json
 import os
@@ -41,7 +42,13 @@ DATA_HOST = "https://data.alpaca.markets"
 ROOT = HERE / "data" / "alpaca"
 MAX_PER_MIN = 180                      # free plan allows 200 requests a minute
 KNOWN_OPTION_GAPS = ("2024-02-26", "2024-03-15")
+NET_BACKOFF = (5, 15, 30, 60, 120, 300)  # waits (s) after a network error (timeout, TLS handshake, reset, DNS) before retrying
+NET_ERRORS = (urllib.error.URLError, TimeoutError, ConnectionError, http.client.HTTPException, OSError)
 _calls = []
+
+
+def _sleep(seconds):                     # tests replace this (or time.sleep)
+    time.sleep(seconds)
 
 
 def _guard(url):
@@ -69,7 +76,8 @@ def _throttle():
 
 
 def get(path, params):
-    """GET a market-data path with pagination; yields each page's JSON. Retries 429/5xx with backoff."""
+    """GET a market-data path with pagination; yields each page's JSON. Retries 429/5xx with backoff (2^k s, 4 times) and
+    network errors (timeouts, TLS handshake, resets, DNS) with NET_BACKOFF (6 times, about 9 minutes), then raises."""
     key, sec = os.environ.get("ALPACA_KEY"), os.environ.get("ALPACA_SECRET")
     if not key or not sec:
         raise RuntimeError("ALPACA_KEY / ALPACA_SECRET are not set (the desk's paper key, market data only)")
@@ -78,14 +86,26 @@ def get(path, params):
     while True:
         p = dict(params, **({"page_token": token} if token else {}))
         url = _guard(f"{DATA_HOST}{path}?{urllib.parse.urlencode(p)}")
-        for attempt in range(5):
+        attempt, net = 0, 0
+        while True:
             _throttle()
             try:
                 j = _http(url, headers)
                 break
             except urllib.error.HTTPError as e:
                 if e.code in (429, 500, 502, 503, 504) and attempt < 4:
-                    time.sleep(2 ** attempt)
+                    _sleep(2 ** attempt)
+                    attempt += 1
+                    continue
+                raise
+            except NET_ERRORS as e:
+                # a dropped or slow connection (the exam's "handshake operation timed out"): wait and retry the same page,
+                # 6 times over about 9 minutes, then give up (the pulls are resumable: re-running continues)
+                if net < len(NET_BACKOFF):
+                    print(f"pull_alpaca: network error ({type(e).__name__}: {str(e)[:120]}); retry {net + 1}/{len(NET_BACKOFF)} "
+                          f"in {NET_BACKOFF[net]} s", file=sys.stderr, flush=True)
+                    _sleep(NET_BACKOFF[net])
+                    net += 1
                     continue
                 raise
         yield j

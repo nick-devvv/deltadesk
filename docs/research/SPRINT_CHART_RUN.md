@@ -226,7 +226,7 @@ Nick asked for steadier money: multi-day rules (in scope for this round only, at
 
 | Stage | Requests (about) | Time (estimate) | Disk |
 | --- | --- | --- | --- |
-| Update + sprint tests (340) | | 5-10 min | |
+| Update + sprint tests (372) | | 5-10 min | |
 | assets + daily bars (raw and split-adjusted) | 2,000-2,600 Alpaca | 15-40 min | 0.3-0.5 GB |
 | F-opt calls (DEV) | 2,500-5,500 Alpaca | 15-35 min | 20-60 MB |
 | weekly expiry (FIN-H days only, DEV) | 1,000-2,000 Alpaca | 6-15 min | 0.1-0.2 GB |
@@ -268,7 +268,7 @@ If a step fails, show the error and stop. Don't change any code; re-running the 
 What Nick sends back: step 1's commit line, step 2's last line, step 3's lines, step 4's first log lines, and step 6's output.
 
 Checks on the way in:
-- Step 2: 340 sprint tests pass.
+- Step 2: 372 sprint tests pass.
 - Step 6: `[assets]` gives U-STK's size (about 3,000-4,500 stocks, SURVIVORSHIP-BIASED) and the excluded count; `[daily]` about twice as many symbols done; `[fopt]` a few hundred DEV trades with few `no_pick`; `[weekly]` about 450-500 FIN-H days over SPY, QQQ and IWM; `[edgar index]` about 2,650 days; `[edgar headers]` 100,000-200,000 filings with few `missing`; `[g1]` the event count; `[g2]` the Item 2.02 events and 5 pool dates each. Any `REFUSED` line, `SEC kept refusing` or a Python error is a problem to look at.
 
 ## Run 9b: round 9, every part and the book (about 1-2.5 hours, after run 9a)
@@ -287,7 +287,7 @@ Runs `tools/sprint_round9.py` on the files run 9a pulled plus what runs 1-8 left
 
 | Step | Time (estimate) | Disk |
 | --- | --- | --- |
-| Update + sprint tests (368) | 5-10 min | |
+| Update + sprint tests (372) | 5-10 min | |
 | Check the files | seconds | |
 | `tools/sprint_round9.py` (Part E included) | 60-150 min | about 100-200 MB (report + trade files) |
 | Zip | 1-2 min | about 30-80 MB |
@@ -321,7 +321,7 @@ If a step fails, show the error and stop. Don't change any code; re-running the 
 What Nick sends back: step 1's commit line, step 2's last line, step 3's lines, step 4's output (the summary lines and any WARNING lines), step 5's lines and summary, and `~/sprint_results9.zip`.
 
 Checks on the way in:
-- Step 2: 368 sprint tests pass.
+- Step 2: 372 sprint tests pass.
 - Step 3: the pull log's last line says `sprint_pull9 done`; round 8's share trade file and run 7's two factory trade files are listed (without run 7's files the book's FIN-H is Part I's same-pass FIN-H on 2024-2026 only, with a WARNING); about 470-479 option days under `options/SPY`; stock months `2015-11` to `2026-06`. The chains count says whether Part S used measured spreads (0 = the max($0.02, 0.5%) fallback everywhere, labeled). Part E's lines: QQQ and IWM stock months `2015-11` to `2026-06` like SPY; an NB-VOL trade count above 0; VIXY daily closes from `2014-11-03` to `2026-06-30` (L1/L2 dates are never in the file).
 - Step 4: one summary line per Part F rule and universe, F-opt twin, G1 variant, G2, Part H strategy, Part I, Part S signal and contract, `E gate on` FIN-H, NB-VOL and each Part S chosen cell, and the book. The log shows `Part E: ... symbol-sessions` and `96 monthly refits` (out of sample from 2018-01). Every line is a BACKTEST; option lines say REAL; U-STK lines say SURVIVORSHIP-BIASED. Any `WARNING:` line (a part not run because an input is missing, an unfinished pull stage, run 7's files not found) is a problem to look at.
 - Known before any result (Amendments 12, 13 and 14): Part E's idea comes from an unverified post (no strategy, costs or random-skip comparison shown); steady option income mostly belongs to option sellers, which Nick's account can't do; U-STK lists today's survivors only; G2 uses the realized 8-K date (look-ahead caveat); Part S's wins are +3-8%, so the spread decides it, and the logged chains are recent (an assumption for 2024-2025); SMA(200) restarts after L2, so DEV rsi2 trades start about May 2025.
