@@ -2,6 +2,77 @@
 
 This runs the sprint's backtests on Chart's computer, the only machine that can reach Alpaca's data API. Everything runs in its own folder, `~/sprint`, from branch `sprint/exits`. Nothing touches `~/desk`, its journal or the live desk, and nothing can place an order: the puller only reads `data.alpaca.markets` (market data), and the engine only reads files it pulled.
 
+## Rounds 9 + 10 in one go (recommended): about 16-23 hours unattended
+
+Round 10 needs round 9's download (U-STK, daily bars, the 8-K headers), so round 9 can't be skipped. Its analysis is short and runs while round 10 downloads.
+
+`tools/sprint_overnight.sh` (branch `sprint/round10`, which holds all of round 9's code too) runs the steps of runs 9a, 9b, 10a and 10b below in order, unattended:
+1. round 9's pull;
+2. round 9's analysis and its zip, in the background;
+3. the four ETFs' minute bars;
+4. round 10's pull;
+5. round 10's four tools;
+6. round 10's zip.
+
+**How it handles stops and failures:**
+- A stage that finishes writes a marker and is skipped on a re-run.
+- Network stages are retried after 5 minutes and resume where they stopped.
+- A locked-period refusal or a missing key stops it at once.
+- A failed analysis gets one crash re-run; the others still run.
+
+It never touches `~/desk` and never passes `--locked` or `--frozen`. Its own test is `tests/test_sprint_overnight.py`.
+
+| Stage | Time (estimate) |
+| --- | --- |
+| Update + sprint tests | 15-30 min |
+| Round 9's pull | 7-11 hours |
+| Round 9's analysis (in parallel with the next rows) | 1-2.5 hours |
+| ETF minute bars + round 10's pull | 7-9.5 hours |
+| Round 10's analysis | 1.5-3 hours |
+| **Total** | **about 16-23 hours, about 5-7 GB of disk** |
+
+### Message for Chart: start (one paste)
+
+```
+Sprint rounds 9 + 10, unattended (research only; long: about 16-23 hours; safe to stop and resume). Show me every output.
+Rules: you never place trades, never click buy/sell/order buttons, never enter passwords or keys, never print a key.
+Never touch ~/desk: don't cd into it, don't edit, copy, restart or run anything there. Never pass --locked or --frozen to any command.
+If a step fails, show the error and stop. Don't change any code.
+1. Update the sprint code to the round-10 branch (it holds round 9 too):
+   cd ~/sprint && git fetch -q origin sprint/round10 && git checkout -q -B sprint/round10 origin/sprint/round10 && git reset -q --hard origin/sprint/round10 && git log -1 --oneline
+2. Tests:
+   cd ~/sprint && .venv/bin/pip install -q -r requirements.txt && .venv/bin/python -m pytest -q tests/test_sprint_*.py 2>&1 | tail -3
+3. Checks (these print only yes/no, never a value):
+   [ -n "$ALPACA_KEY" ] && [ -n "$ALPACA_SECRET" ] && echo "alpaca keys present" || echo "ALPACA KEYS MISSING: stop and tell Nick"
+   if [ -n "$SEC_USER_AGENT" ]; then echo "SEC_USER_AGENT set"; elif grep -q '^SEC_USER_AGENT=' ~/.config/deltadesk/deltadesk.env 2>/dev/null; then echo "SEC_USER_AGENT is in the desk env file (the pull reads only that line)"; else echo "SEC_USER_AGENT MISSING: stop and tell Nick"; fi
+   cd ~/sprint && ls -la data/sprint/calib_modeled.json && df -h ~ | tail -1
+   (stop and tell Nick if a key is missing or less than 8 GB is free)
+4. Start everything in the background (it keeps going if this chat ends):
+   cd ~/sprint && mkdir -p data/sprint/logs && nohup bash tools/sprint_overnight.sh >> data/sprint/logs/overnight.out 2>&1 &
+   sleep 120; tail -6 ~/sprint/data/sprint/logs/overnight.log; tail -4 ~/sprint/data/sprint/logs/run9_pull.log
+```
+
+### Message for Chart: progress (any time; a few seconds, no network)
+
+```
+Sprint overnight progress (research only; read-only). Show me every output. Never touch ~/desk. Don't change any code.
+cd ~/sprint && tail -15 data/sprint/logs/overnight.log; pgrep -f sprint_overnight.sh >/dev/null && echo "overnight still running" || echo "overnight not running"
+If it says "overnight not running" and the log's last line has neither "ALL DONE", "finished with failures" nor "STOPPED", start it again (finished stages are skipped):
+cd ~/sprint && nohup bash tools/sprint_overnight.sh >> data/sprint/logs/overnight.out 2>&1 &
+If the last line says "STOPPED", don't restart it: show me the log.
+```
+
+### Message for Chart: results (when the log says "ALL DONE" or "finished with failures")
+
+```
+Sprint rounds 9 + 10 results (research only; read-only). Show me every output. Never touch ~/desk. Don't change any code.
+cd ~/sprint && tail -30 data/sprint/logs/overnight.log && ls -la ~/sprint_results9.zip ~/sprint_results10.zip
+cd ~/sprint && for f in $(ls -t data/sprint/round9_*.md | head -1) $(ls -t data/sprint/r10noise_*.md | head -1) $(ls -t data/sprint/r10credit_*.md | head -1) $(ls -t data/sprint/r10grid_*.md | head -1) $(ls -t data/sprint/r10swing_*.md | head -1); do echo "=== $f"; sed -n '/^## Summary/,/^## [^S]/p' "$f" | head -60; done
+(send Nick the files ~/sprint_results9.zip and ~/sprint_results10.zip)
+```
+
+What Nick sends back: step 1's commit line, step 2's last line, step 3's lines, step 4's lines, then the results message's output and both zips.
+
 ## Run 10a: round 10 data pull (long: about 7-10 hours, resumable; after run 9a)
 
 **Why:** Nick asked for "it all in the next test". Round 10 (SPRINT_PLAN Amendment 15, Addenda 15.1-15.5, Amendment 16 and Addenda 16.1-16.3, all committed before any round 10 code or run) holds:
