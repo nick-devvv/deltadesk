@@ -657,9 +657,48 @@ Run 7's trades are re-stamped from cached bars (features.recompute style); trade
 - No rule, cut or threshold changes after results. A change is a new amendment, labeled in-sample.
 - A pass is still research: it reaches paper trading only through a new versioned ledger after Nick's yes, and promotion needs CLAUDE.md step 5.
 
+### Addendum 10.1, 2026-11-01: not only 0DTE, and selling before 15:25 (written before any round-8 code finished or any round-8 run)
+
+Nick (2026-11-01): "maybe for better wins more consistent not only 0DTE would be good" and "we can sell those contracts whenever, they don't have to be held till the end".
+
+Recorded before any result:
+- Earlier runs already showed that early profit-taking on 0DTE far-OTM calls and on failed-break calls cut the few winners that pay for everything:
+  - run 2: every early exit on failed-break lost;
+  - run 3: +300/+500/+1000% targets on far-OTM gave PF 0.50-0.70.
+  Those runs were in-sample on DEV. The tests below are the clean 10-year version.
+- Next-expiry contracts keep overnight time value at 15:25, so a losing day should lose less than 0DTE. They also pay less on a big day.
+- Weekly expiries (5-10 days) need a new option pull. That goes to round 9 with the single-stock pull; the next-expiry bars are already on Chart's computer (runs 2-3, 479 sessions per symbol).
+
+**B4 FIN-H on next-expiry contracts, with exits that can sell early.**
+- Entry: FIN-H's own (time_1100 calls, SPY + QQQ + IWM, taken only when f_rvol >= 1.06).
+- New contract rule `n1d03-12t07`: the next expiry after today, BS-EST |delta| 0.03-0.12 nearest 0.07. Same band as d03-12t07; BS time includes the calendar days to the next expiry, as n1d40-55t45 does.
+- Four exits, all with all out 15:25:
+  - (i) fixed -95% stop, no target (FIN-H's own);
+  - (ii) fixed -50% stop, no target;
+  - (iii) fixed -50% stop plus trail `gb50` (give back at most 50% of the peak open profit, sprint/sim.py);
+  - (iv) fixed -50% stop plus fixed target +100%.
+- **The same four exits on FIN-H's 0DTE contract (d03-12t07)**, so "sell early" is judged on the ledger Nick is paper trading.
+- HIST twins are MODELED. The next-expiry modeled tapes were never validated against real prices (labeled NOT VALIDATED); DEV REAL decides.
+- **Pass** (per variant): B3's bars (HIST 2016-2023: at least 60 trades, PF >= 1.25, PF 2x > 1.0, profitable in 5 of 8 years, positive without the best 5 trades; DEV: at least 40 trades, PF >= 1.25, PF 2x > 1.0).
+- **"Steadier than FIN-H"** additionally needs, on DEV REAL against FIN-H 0DTE exit (i) on the same days:
+  - more months green;
+  - a total without the best day above FIN-H's (+$57.82);
+  - a smaller average loss.
+
+**A-opt: the steady share rules carried by options, exiting on the rule's own signal** (DEV, REAL; reported beside the shares, CLAUDE.md step 3):
+- A1 `noise_sh` on 0DTE d55-75t65, and on next expiry with the new rule `n1d55-75t65` (|delta| 0.55-0.75 nearest 0.65).
+  - Exits are the share rule's own: band/VWAP stop and reversal at the half-hour checks. No premium line; all out 15:25.
+  - Calls carry longs, puts carry shorts.
+- A3 `gapfade_vix` on next expiry `n1d55-75t65` (its 0DTE twin is already in Amendment 10).
+- A2 can't be carried: its 15:30-16:00 window is after the options' 15:25 all-out.
+- **Pass:** at least 40 trades, PF >= 1.25, PF 2x > 1.0, expectancy > 0.
+
+**Trials added by this addendum:** B4 4 exits x 2 contracts = 8; A-opt 3. That makes 11, and round 8 totals 24 (the deflated Sharpe uses the run logs' count + 24).
+
 ### Next, not in this amendment (round 9)
 
 - Single-stock catalyst days: news/earnings movers, so the wins come on company days, not market days. This needs an earnings/8-K calendar and a single-stock option pull (Feb 2024+), so it gets its own pre-registration before any pull.
+- Weekly-expiry (5-10 day) contracts for the FIN-H family and the steady rules, which need a new option pull (Addendum 10.1).
 
 ## Limits
 
