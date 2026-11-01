@@ -413,6 +413,36 @@ A rule that passes both becomes a frozen finalist for L1/L2 (each run once). If 
 - HIST: hist_v1-003 / hist_v1-005.
 - DEV real prices: otm_v1-010 (10:30 puts, d06-15t10, 15:25) and otm_v1-040 (11:00 calls, d03-12t07, 15:25).
 
+## Amendment 7, 2026-10-31: frozen finalists and the locked-period exam (written after holdout 2, before any L1/L2 pull or run)
+
+**Holdout 2 result** (Chart run 5, DEV real option prices; SPRINT_RESULTS_5.md):
+- PASS: H (11:00 far-OTM calls with f_rvol >= 1.06): 485 trades, PF 2.35, PF 2x 2.10, p 0.0045.
+- PASS: L-call (logit fit on HIST hist_v1-005, applied to DEV): 504 trades, PF 1.93, PF 2x 1.73, p 0.083.
+- Fail: F, G, I and L-put.
+- Both passes are negative without their best 5 trades.
+
+**Finalists (frozen, nothing tuned after this point):**
+- **FIN-H:** the otm_v1-040 rules, plus a filter that the relative volume at the signal bar is at least 1.06. That relative volume is daytype `rvol`, the value stamped as `f_rvol`.
+- **FIN-L:** the otm_v1-040 rules, plus the Amendment 3 logit fit once on ALL HIST hist_v1-005 trades. Its weights and preprocessing are saved to a committed JSON with its sha256. A trade is taken when P(win) >= 0.5 from the entry features.
+- **Reference:** otm_v1-040 unfiltered on the same period.
+- **otm_v1-040 rules:** 11:00 bar signal, calls, |delta| 0.03-0.12 nearest 0.07, -95% stop, no target, all out 15:25, SPY + QQQ + IWM, desk fills, 2% half-spread, $0.65 per contract per side.
+
+**The exam:**
+- The spec is committed with its sha256 and run once on L2 (2024-02-01 to 2024-07-31) and once on L1 (2026-07-01 to 2026-10-30), through the existing `--locked <name> --frozen <sha256>` guard.
+- A 5% half-spread rerun is information only.
+- Features need VIXY daily closes up to each prior session; the locked-period run may read them.
+
+**Pass, per finalist and per period:**
+- at least 30 trades on L2 and at least 20 on L1;
+- PF >= 1.25 and PF at 2x slippage > 1.0;
+- expectancy above the unfiltered reference's on the same period.
+
+**Verdict:**
+- **Holds:** passes on both L2 and L1. It then becomes a new versioned PAPER ledger and needs 40 forward trades under CLAUDE.md step 5. Never real money without Nick's explicit yes.
+- **Mixed:** passes on one period. It's reported as such and not promoted.
+- **Fails:** dropped.
+- Without-best-5, by symbol and by month are reported for both periods whatever the verdict.
+
 ## Limits
 
 - Backtests only.

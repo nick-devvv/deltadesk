@@ -37,3 +37,20 @@ The learner's strongest weights repeat the rules: range so far, prior-day range,
 The option model uses one flat IV per day. On days that are already moving, real 0DTE IV rises, so real options cost more than the model says. These rules buy exactly on those days, so MODELED results may flatter them.
 
 **Holdout 2** decides it: the same frozen rules and a learner trained only on HIST, scored on DEV 2024-08 to 2026-06 with **real** option prices (`tools/sprint_regime.py`, Chart run 5). Failed-break calls are dropped: no rule or learner fixed them.
+
+## Holdout 2 result: DEV 2024-08 to 2026-06, REAL option prices (Chart run 5, `5f46cd7`)
+
+| rule | taken | exp $ | PF | PF 2x | total $ | without best 5 | p (random day-skips) | verdict |
+|---|---|---|---|---|---|---|---|---|
+| F 10:30 puts | 346 | -5.26 | 0.74 | 0.69 | -1,822 | -4,654 | 0.65 | fail |
+| G 11:00 calls, range | 526 | 4.17 | 1.44 | 1.28 | 2,192 | -2,998 | 0.37 | fail |
+| **H 11:00 calls, rvol >= 1.06** | 485 | 13.22 | **2.35** | **2.10** | 6,413 | -1,083 | **0.0045** | **PASS** |
+| I 11:00 calls, both | 331 | 10.30 | 1.99 | 1.79 | 3,411 | -1,780 | 0.24 | fail |
+| L-put (learner) | 428 | -2.35 | 0.89 | 0.82 | -1,005 | -4,879 | 0.48 | fail |
+| **L-call (learner)** | 504 | 9.89 | **1.93** | **1.73** | 4,984 | -2,512 | **0.083** | **PASS** |
+
+- Unfiltered on DEV: 10:30 puts 1,408 trades, PF 0.87, -$3,054. 11:00 calls 1,418 trades, PF 1.01, +$107.
+- H by symbol: IWM PF 1.89, QQQ 2.47, SPY 2.48. L-call by symbol: 1.60 / 2.06 / 1.97.
+- The put rules failed on real prices, as the flat-IV caveat warned.
+- The two passes are both 11:00 far-OTM call filters, and both are negative without their best 5 trades. The payoff still comes from a few big days.
+- Finalists and the locked-period exam: SPRINT_PLAN Amendment 7.
