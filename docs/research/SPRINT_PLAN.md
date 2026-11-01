@@ -1101,6 +1101,35 @@ The autopsy used round 8's noise_sh_vol share trades, 2016-2019 only: 2,796 trad
 
 **Trials:** 3 (round 10).
 
+### Addendum 15.3, 2026-11-01: the alpaca-options-framework 0DTE rules, frozen as published (part of round 10; written before any code or run)
+
+Nick (2026-11-01) linked github.com/milgar7969/alpaca-options-framework (MIT; a paper bot with no backtest; its settings were tuned on its own recent paper months). Its config.py and momentum.py, read as data, give a fully mechanical rule set. It is tested exactly as published, with nothing tuned.
+
+**Entry** (SPY; QQQ reported as information):
+- finished 1-minute bars, entries 09:45-12:00;
+- 3 consecutive green bars (red for puts);
+- 5-bar rate of change >= +0.03% (<= -0.03% for puts);
+- ATR(5 bars, 1-minute) >= $0.20;
+- 3-bar cooldown after a trade closes.
+
+**Contract:**
+- 0DTE, out of the money by 0.60 x the 5-day ATR, capped at $4.50, on the $1 strike grid;
+- premium between $0.20 and $10.00;
+- never in the money at entry.
+
+**Exit**, all checked on the option mid (our 1-minute option bars) plus SPY:
+- stop at 50% of the entry price;
+- target at +50%;
+- trail armed at +20%, exiting at 88% of the peak;
+- an SPY stop 0.75 x ATR5 (at least $0.10) beyond the entry price;
+- all out 15:25.
+
+**Day gates:** stop new entries after a -$300 day, a +$125 day or 3 wins in a row, at their $150-risk sizing. Reported both with and without the gates.
+
+**Windows and pass:** HIST 2016-2024 MODELED and DEV REAL, with B3's bars. Information: by hour, by exit reason, and win rate against break-even win rate.
+
+**Trials:** 2 (with and without the day gates).
+
 ## Limits
 
 - Backtests only.
