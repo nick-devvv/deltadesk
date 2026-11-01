@@ -930,6 +930,61 @@ U-STK results are labeled survivorship-biased, and a U-STK pass needs U-ETF's ru
 - **Outputs:** `data/sprint/round9_<date>.md` and `.json`, plus per-part trade files.
 - No rule, cut or threshold changes after results.
 
+## Amendment 13, 2026-11-01: Part S, the 1-minute option scalper (written before any Part S code or run; part of round 9)
+
+Nick (2026-11-01) shared one day of trade alerts from four "QQQ Trader" bots and asked to reverse-engineer them. He'd be comfortable with "5 contracts for really good entries and 3 otherwise, with a tighter stop".
+
+**What the alerts show** (Friday 2026-10-30; parsed by code, information only; 38 round trips):
+- Entries land 1-14 seconds after a minute ends, so the bots act on each finished 1-minute bar. Median hold 90 seconds, longest 705 seconds.
+- Near-the-money QQQ options at $5-7. The strikes follow the price (697 at the open, 685 by 14:46, a falling day).
+- Overall win rate 82%, median trade +3.2%:
+  - wins average +3.3% to +5.4% by bot;
+  - losses average -5.4% to -8.9%.
+- The largest bot ("#3", $57,000-84,000 a trade) bought only puts all day. The others switched between calls and puts in the choppy morning.
+- One day of posted alerts is not a record: there's no account, no losing days and no fill quality. **That day is inside L1, which is never read, so the hypotheses below come from the alert text alone, not from that day's bars.**
+
+**S signals** (DEV REAL option prices, SPY + QQQ, 0DTE; decisions at each finished 1-minute bar finishing 09:31-15:20; entry at the next bar's open):
+- **S1 `scalp_trend`:**
+  - close below VWAP and below the lowest close of the 5 prior bars -> buy a put;
+  - close above VWAP and above the highest close of the 5 prior bars -> buy a call.
+- **S2 `scalp_fade`:** the same triggers, the opposite option.
+- One position at a time per symbol and rule. No new trigger while a position is open.
+
+**Contracts:**
+- `d45-55t50`: the bots' near-the-money shape.
+- `d20-30t25`: a cheaper one that fits a $3,000 account.
+
+**Exits, a 6-cell grid:** target +3%, +5% or +8% of the debit, crossed with stop -5% or -10%. Max hold 5 minutes, then out at the next bar's open.
+- Target and stop are judged on each 1-minute option bar's high/low (desk fills: a bar touching both counts as the stop).
+- All out 15:25.
+
+**Costs** (the spread decides a strategy whose wins are +3-5%):
+- Base: sprint/spread.py's MEASURED-SPREAD from the desk's logged chains where a cell has data, else a half-spread of max($0.02, 0.5% of premium). Logged chains exist only for recent months, so applying them to 2024-2025 is an assumption, and labeled.
+- Plus $0.65 per contract per side.
+- Stress: 2x the half-spread.
+- Robinhood-fee view (about $0.03 a contract per side, information): reported beside the base.
+
+**Choice and test (inside DEV only, since 1-minute option behavior needs real prices):**
+- The cell is chosen per signal and contract on 2024-08-01..2025-06-30: highest PF among cells with at least 200 trades (ties: more trades, smaller stop, smaller target). Then it is frozen.
+- **Test** on 2025-07-01..2026-06-30, all of:
+  - at least 200 trades;
+  - PF >= 1.20;
+  - PF at 2x spread > 1.0;
+  - positive in at least 4 of the 6 two-month blocks;
+  - beats random direction (the same entries and exits with a coin-flip side, 200 draws, seeds 31-230) with p < 0.05.
+
+**Underlying first** (CLAUDE.md step 3): the S1 / S2 triggers on SPY + QQQ 1-minute stock bars, 2016-01..2026-06 (never L1/L2).
+- Report: the hit rate and mean of the next 5-minute move in the trade's direction, in bps, by year, against random direction.
+- Information only: the option test decides.
+
+**Nick's sizing (S-size, information plus a pass):**
+- 5 contracts when the trigger agrees with the day's direction (close vs the open) and f_rvol >= 1.06; otherwise 3.
+- Reported for the chosen cell on the test half: P/L, worst losing streak in $, max drawdown.
+- **Account view:** each trade's debit as a % of $3,000, and the max drawdown as a % of $3,000.
+- Pass: sized PF >= 1.20 and the sized max drawdown smaller than 50% of $3,000.
+
+**Trials:** 2 signals x 2 contracts x 6 cells = 24, plus 2 underlying checks, plus 2 sized variants = 28. Round 9 becomes 203 (the deflated Sharpe uses the run logs' count + 203).
+
 ## Limits
 
 - Backtests only.
