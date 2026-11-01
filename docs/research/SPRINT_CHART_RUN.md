@@ -2,6 +2,143 @@
 
 This runs the sprint's backtests on Chart's computer, the only machine that can reach Alpaca's data API. Everything runs in its own folder, `~/sprint`, from branch `sprint/exits`. Nothing touches `~/desk`, its journal or the live desk, and nothing can place an order: the puller only reads `data.alpaca.markets` (market data), and the engine only reads files it pulled.
 
+## Run 10a: round 10 data pull (long: about 7-10 hours, resumable; after run 9a)
+
+**Why:** Nick asked for "it all in the next test". Round 10 (SPRINT_PLAN Amendment 15, Addenda 15.1-15.5, Amendment 16 and Addenda 16.1-16.3, all committed before any round 10 code or run) holds:
+- the stop/target grid on Nick's setups;
+- the noise band's settings and autopsy fixes;
+- the alpaca-options-framework rules as published;
+- the 0DTE credit spreads (paper research);
+- the Reddit pack: ITM contracts, scale-out, the ratchet, no-stop and the premarket-inside regime;
+- the swing families: IV term slope, RV-IV gap, pre-earnings run-up, new highs;
+- the compounding view.
+
+7,767 trials in all. The run uses branch **`sprint/round10`** (the message checks it out). It needs run 9a's files: U-STK, the daily bars and the 8-K headers.
+
+**What it pulls** (read-only, every stage resumable):
+- **ETF bars:** 1-minute stock bars for DIA, XLK, XLF and SMH (2015-11..2024-01 and 2024-08..2026-06; `tools/sprint_pull.py`, stock bars only). These are for the noise band's 7-symbol cells; without them those cells fall back to SPY/QQQ/IWM, labeled.
+- **`tools/sprint_pull10.py`:**
+  - `stock15`: the last 15 minutes of stock bars for the IV names on the IV days;
+  - `needs`: option bars asked for by five providers:
+    - D-IV, 15:45-16:00, 2 expiries x the strikes bracketing spot, on the rebalance days and the 5 sessions before each;
+    - the V1/V2/V2-s legs and the V3/V4 option twins;
+    - the SPY/QQQ contracts for the spread calibration (Addendum 16.1);
+    - the credit spreads' strikes beyond the old ±3% band;
+    - the grid's strikes beyond the old band, 0DTE and next expiry;
+  - `export`: copies the SPY/QQQ/IWM contracts into `options_r10/` and `options_r10_next/`, no network.
+- **Locked periods:** L1 (2026-07-01..10-30) and L2 (2024-02-01..07-31) are never requested.
+- **Safety:** only `data.alpaca.markets` is called; no orders, no account.
+
+### What to expect
+
+| Stage | Requests (about) | Time (estimate) | Disk |
+| --- | --- | --- | --- |
+| Update + sprint tests | | 15-30 min | |
+| DIA/XLK/XLF/SMH 1-minute stock bars | 1,500-3,000 | 10-25 min | 0.5-1 GB |
+| `stock15` (D-IV names, rebalance days) | 1,500-3,000 | 10-20 min | 50-100 MB |
+| `needs` (D-IV ~70,000; the rest a few thousand) | 70,000-85,000 | 6.5-8 hours | 1-3 GB |
+| `export` | none | 2-10 min | 50-200 MB |
+| **Total** | | **about 7-10 hours** | **about 2-4 GB** |
+
+These are estimates from request counts at 180 a minute; Claude's workspace can't reach Alpaca. Step 5 prints the tool's own estimate from the real universe size. The pull was run end to end on synthetic data behind a fake Alpaca server (the tests). It can stop at any time; run the same start command again and finished work is skipped.
+
+### Message for Chart, run 10a (one paste)
+
+```
+Sprint run 10a: round 10 data pull (research only; long: about 7-10 hours; safe to stop and resume; run only after run 9a's log ends with "sprint_pull9 done"). Show me every output.
+Rules: you never place trades, never click buy/sell/order buttons, never enter passwords or keys, never print a key.
+Never touch ~/desk: don't cd into it, don't edit, copy, restart or run anything there. Never pass --locked or --frozen to any command.
+If a step fails, show the error and stop. Don't change any code; re-running the same command is fine (the pulls resume where they stopped).
+1. Update the sprint code to the round-10 branch:
+   cd ~/sprint && git fetch -q origin sprint/round10 && git checkout -q -B sprint/round10 origin/sprint/round10 && git reset -q --hard origin/sprint/round10 && git log -1 --oneline
+2. Tests:
+   cd ~/sprint && .venv/bin/pip install -q -r requirements.txt && .venv/bin/python -m pytest -q tests/test_sprint_*.py 2>&1 | tail -3
+3. Checks (yes/no only, never a value) and round 9's pull:
+   [ -n "$ALPACA_KEY" ] && [ -n "$ALPACA_SECRET" ] && echo "alpaca keys present" || echo "ALPACA KEYS MISSING: stop and tell Nick"
+   cd ~/sprint && tail -1 data/sprint/logs/run9_pull.log && ls -la data/alpaca/universe/ustk.json && df -h ~ | tail -1
+   (stop and tell Nick if a key is missing, the run 9a log doesn't end with "sprint_pull9 done", or less than 6 GB is free)
+4. The four extra ETFs' 1-minute stock bars (about 10-25 minutes):
+   cd ~/sprint && mkdir -p data/sprint/logs && .venv/bin/python tools/sprint_pull.py --period HIST --symbols DIA,XLK,XLF,SMH > data/sprint/logs/run10_etf_hist.log 2>&1; tail -3 data/sprint/logs/run10_etf_hist.log
+   cd ~/sprint && .venv/bin/python tools/sprint_pull.py --symbols DIA,XLK,XLF,SMH --from 2024-08-01 --to 2026-06-30 --stock-bars-only > data/sprint/logs/run10_etf_dev.log 2>&1; tail -3 data/sprint/logs/run10_etf_dev.log
+5. The pull's own estimate (no network, seconds):
+   cd ~/sprint && .venv/bin/python tools/sprint_pull10.py --estimate --div-scope rebalance
+6. Start the round 10 pull in the background (it keeps going if this chat ends):
+   cd ~/sprint && nohup .venv/bin/python tools/sprint_pull10.py --div-scope rebalance >> data/sprint/logs/run10_pull.log 2>&1 &
+   sleep 90; tail -6 ~/sprint/data/sprint/logs/run10_pull.log
+7. Progress, any time (no network, a few seconds):
+   cd ~/sprint && tail -3 data/sprint/logs/run10_pull.log; .venv/bin/python tools/sprint_pull10.py --status --div-scope rebalance; pgrep -f sprint_pull10 >/dev/null && echo "pull still running" || echo "pull not running"
+   If it says "pull not running" and the log's last line is not "sprint_pull10 done ...", run step 6 again: it skips finished work and continues.
+8. When the log ends with "sprint_pull10 done", show the stage results and the disk used:
+   cd ~/sprint && grep -E "^\[|^WARNING|^sprint_pull10" data/sprint/logs/run10_pull.log | grep -vE "^\[[A-Za-z0-9_ ]+\] [0-9]+/[0-9]+ " | tail -40; du -sh data/alpaca/r10 data/alpaca/options_r10 data/alpaca/options_r10_next 2>/dev/null
+   (send Nick that output)
+```
+
+What Nick sends back: step 1's commit line, step 2's last line, step 3's lines, step 4's last lines, step 5's estimate, step 6's first log lines, and step 8's output.
+
+Checks on the way in:
+- Step 2: every sprint test passes.
+- Step 4: both pulls end without errors.
+- Step 8: `[needs]` lists rounds, contracts and requests, with `refused` empty or only L1/L2 counts; `[export]` gives days, files and rows. Any `REFUSED` request, `network kept failing` or Python error is a problem to look at. A WARNING about missing logged chains means the 16.1 calibration will use a ratio of 1 (labeled).
+
+## Run 10b: round 10, every part (about 1.5-3 hours, no new data; after run 10a)
+
+Runs the four round 10 tools on what runs 1-10a left on Chart's computer. Each writes its own report (`data/sprint/r10<part>_<date>.md` and `.json`) and trade files:
+- **`sprint_r10_noise.py`:** Addendum 15.1's 162 noise-band cells (chosen on 2016-2019, tested on 2020-2024 and DEV) and 15.2's fixes N1, N2, N12.
+- **`sprint_r10_credit.py`:** C1/C1-ctl/C1-ic/C2/C2-ctl and C3/C3-ctl/C4 on SPY 0DTE. DEV REAL decides; QQQ and HIST MODELED are information. Paper research only: option selling.
+- **`sprint_r10_grid.py`:** the 7 entries x 1,080 stop/target cells (chosen on 2016-2019 MODELED, tested on 2020-2024 MODELED and DEV REAL), plus:
+  - R2 (ITM), R3 (scale-out), R4 (ratchet);
+  - the framework (Addendum 16.2);
+  - R1 (premarket inside);
+  - the regime tables.
+- **`sprint_r10_swing.py`:** D-IV, then:
+  - V1 term slope, V2 RV-IV gap and V2-s (sell side, paper research), on DEV REAL at the ESTIMATED-SPREAD;
+  - V3 pre-earnings run-up, shares then options;
+  - V4 new highs, shares then options.
+- **Every report:** labels each number BACKTEST (in-sample or holdout, REAL or MODELED), shows the trial count (the run logs + 7,767) and the deflated Sharpe, and gives the $3,000 compounding view for anything that passes.
+
+### Message for Chart, run 10b (one paste)
+
+```
+Sprint run 10b: round 10, every part (research only, about 1.5-3 hours, no new data; run only after run 10a's log ends with "sprint_pull10 done"). Show me every output.
+Rules: you never place trades, never click buy/sell/order buttons, never enter passwords or keys, never print a key.
+Never touch ~/desk: don't cd into it, don't edit, copy, restart or run anything there. Never pass --locked or --frozen to any command.
+If a step fails, show the error and stop. Don't change any code; re-running the same command once is fine.
+1. Update the sprint code to the round-10 branch:
+   cd ~/sprint && git fetch -q origin sprint/round10 && git checkout -q -B sprint/round10 origin/sprint/round10 && git reset -q --hard origin/sprint/round10 && git log -1 --oneline
+2. Tests:
+   cd ~/sprint && .venv/bin/python -m pytest -q tests/test_sprint_*.py 2>&1 | tail -3
+3. Check the files (no pull):
+   cd ~/sprint && tail -1 data/sprint/logs/run10_pull.log && ls -la data/sprint/calib_modeled.json && ls data/alpaca/stocks/DIA | head -1 && ls data/alpaca/stocks/DIA | tail -1 && echo "logged chains: $(ls data/chains 2>/dev/null | wc -l) files" && df -h ~ | tail -1
+4. The noise band (about 5-15 minutes):
+   cd ~/sprint && .venv/bin/python tools/sprint_r10_noise.py > data/sprint/logs/run10_noise.log 2>&1; tail -25 data/sprint/logs/run10_noise.log
+5. The credit spreads (paper research):
+   cd ~/sprint && .venv/bin/python tools/sprint_r10_credit.py > data/sprint/logs/run10_credit.log 2>&1; tail -25 data/sprint/logs/run10_credit.log
+6. The stop/target grid and its add-ons (about 30-60 minutes):
+   cd ~/sprint && .venv/bin/python tools/sprint_r10_grid.py > data/sprint/logs/run10_grid.log 2>&1; tail -40 data/sprint/logs/run10_grid.log
+7. The swing families:
+   cd ~/sprint && .venv/bin/python tools/sprint_r10_swing.py > data/sprint/logs/run10_swing.log 2>&1; tail -30 data/sprint/logs/run10_swing.log
+8. Zip the results and show every summary:
+   cd ~/sprint && .venv/bin/python -m zipfile -c ~/sprint_results10.zip $(ls -t data/sprint/r10noise_*.md | head -1) $(ls -t data/sprint/r10noise_*.json | head -1) $(ls -t data/sprint/r10credit_*.md | head -1) $(ls -t data/sprint/r10credit_*.json | head -1) $(ls -t data/sprint/r10grid_*.md | head -1) $(ls -t data/sprint/r10grid_*.json | head -1) $(ls -t data/sprint/r10swing_*.md | head -1) $(ls -t data/sprint/r10swing_*.json | head -1) $(ls -t data/sprint/trades_r10credit_*.csv.gz | head -1) $(ls -t data/sprint/trades_r10noise_fixes_*.csv.gz | head -1) $(ls -t data/sprint/trades_r10swing_*.csv.gz | head -8) $(ls -t data/sprint/r10_div_*.csv.gz | head -1) data/sprint/logs/run10_*.log && ls -la ~/sprint_results10.zip && ls -la $(ls -t data/sprint/trades_r10grid_*.csv.gz | head -1) $(ls -t data/sprint/trades_r10noise_grid_*.csv.gz | head -1)
+   for f in $(ls -t data/sprint/r10noise_*.md | head -1) $(ls -t data/sprint/r10credit_*.md | head -1) $(ls -t data/sprint/r10grid_*.md | head -1) $(ls -t data/sprint/r10swing_*.md | head -1); do echo "=== $f"; sed -n '/^## Summary/,/^## [^S]/p' "$f" | head -60; done
+   (send Nick the file ~/sprint_results10.zip; the big grid and noise-grid trade files stay on this computer, their sizes are shown)
+```
+
+What Nick sends back: step 1's commit line, step 2's last line, step 3's lines, steps 4-7's output, step 8's lines and summaries, and `~/sprint_results10.zip`.
+
+Checks on the way in:
+- Step 3: `sprint_pull10 done`, `calib_modeled.json` present, DIA months `2015-11` to `2026-06`.
+- Steps 4-7: each tool ends with its summary lines and no Python error. Any `WARNING:` line is worth a look:
+  - a missing input;
+  - the noise band falling back to 3 symbols;
+  - a calibration ratio of 1;
+  - a HIST key NOT VALIDATED (expected for d20-30t25 and d55-70t60, labeled).
+- Known before any result:
+  - Most of the 7,767 cells are expected to fail.
+  - The swing option families have only DEV (about 2 years) of real prices.
+  - V3/V4's DEV signals start about August 2025 because their lookbacks don't cross L2.
+  - Credit spreads are paper research that Nick's account can't trade.
+  - The single-stock spread is an estimate, floored at 2% of premium.
+
 ## Run 9a: round 9 data pull (long: about 7-11 hours, resumable)
 
 Nick asked for steadier money: multi-day rules (in scope for this round only, at his request), all-stock news catalysts, pre-earnings straddles, an honest tweak search, weekly expiries for FIN-H, and a test of the "QQQ Trader" 1-minute scalper alerts. Everything was fixed before any round-9 code or pull in SPRINT_PLAN "Amendment 12" and "Amendment 13" (commits `68a3b1e`, `e8c89d1`). This run uses branch **`sprint/round9`** (the message checks it out).
