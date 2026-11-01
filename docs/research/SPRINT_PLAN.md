@@ -1170,6 +1170,172 @@ Reported: max drawdown, worst day, April 2025 alone, months green, return on the
 
 **Trials:** 5 (C1, C1-ctl, C1-ic, C2, C2-ctl).
 
+### Addendum 15.5, 2026-11-01: the "Reddit pack" for long options (part of round 10; written before any code or run)
+
+Nick (2026-11-01) shared three more threads: r/options "0-1 DTE Traders: Identifying Trend Days and Exits", r/options "Things I've learned trading 0DTE options for the last 6 months" and r/TastyBite "automated 0DTE SPX paper trading bot". All are claims, with no published backtest. Three ideas repeat across many commenters and are not yet in round 10:
+- buy at or one strike in the money, not cheap out-of-the-money contracts;
+- scale out of a winner in parts instead of all at once;
+- a premarket "regime" for the day.
+
+Recorded before any result:
+- One commenter found the Hurst exponent useless in all his backtests.
+- The TastyBite poster dropped a variant with an 88% win rate that lost money over 34 trades.
+- Round 8 found that real levels did no better than made-up levels, and that a fixed early sale hurt FIN-H.
+
+**R1 `pm_inside_break`** (commenter NationalOwl9561's regime 1):
+- The day qualifies when today's premarket range (04:00-09:29 ET bars) lies inside the prior session's regular-hours range: premarket high <= prior high and premarket low >= prior low. Both are known at 09:30.
+- Entry: the first finished 1-minute bar from 09:45 to 12:00 that closes above the premarket high (call) or below the premarket low (put). One trade a day per symbol (SPY, QQQ).
+- Exit: a finished 5-minute bar closing back inside the premarket range, else the time exit (15:55 in shares, 15:25 in options).
+- Control: the same break on days that don't qualify, reported side by side, plus a random-side twin (seed 31).
+- The claim itself is reported first: the share of qualifying break days that close beyond the broken level, against non-qualifying days.
+- Tested in shares, then 0DTE options as d40-55t45 and d55-70t60 (one strike in the money).
+- **Trials:** 3.
+
+**R2 in-the-money contract:**
+- For each round 10 entry's frozen cell (Amendment 15) and for Addendum 15.3's rules, the same cell with the contract d55-70t60 instead.
+- It holds only if it passes Amendment 15's holdout bars and beats the original cell's PF in both holdouts.
+- **Trials:** 8.
+
+**R3 scale-out:**
+- For each round 10 entry's frozen cell, the same entry at 3 contracts:
+  - sell 1 at +30%, then move the stop on the other 2 to the entry price;
+  - sell 1 at +60%;
+  - the last one trails gb50, all out 15:25.
+- It is compared on P/L per 3-contract trade against the frozen cell at 3 contracts.
+- It holds only if it passes the same bars and beats the frozen cell's P/L in both holdouts.
+- **Trials:** 7.
+
+**Information only, no pass/fail, no trials** (any later rule built on these counts its own trials):
+- Regime features stamped on every round 10 trade:
+  - daily ATR(9)/ATR(50);
+  - daily ADX(14);
+  - a 100-bar rescaled-range Hurst exponent on 1-minute closes;
+  - the share of opposite-color 1-minute bars since 09:30 (commenter MRPguy's "trend day").
+- Each is reported as tercile tables on 2016-2019 only.
+- SPY vs QQQ P/L per entry, split by VIXY percentile tercile (commenter EggSandwich1: "under VIX 21 trade QQQ").
+
+**Not tested:**
+- market internals (VOLD, TICK): no history in our data;
+- GEX: the survey found nothing beyond VIX;
+- the TastyBite gap-filtered condors are added by Amendment 16 (C3, C4).
+
+**Round 10 trial tally:** see Amendment 16, which adds to round 10.
+
+## Amendment 16, 2026-11-01: round 10 gets everything in the queue (written before any round-10 code, pull or run)
+
+Nick (2026-11-01): "i want it all to be in the next test". Round 9 is built and waits only on Chart's network fix, so "the next test" is round 10. Round 10 therefore also takes:
+- the survey's top swing families that the desk can test (docs/research/OPTIONS_STRATEGY_SURVEY.md, "Suggested order": #2, #3, #4 and #6);
+- the remaining Reddit ideas;
+- github.com/Temple-Stuart/temple-stuart-accounting (AGPL-3.0; read as data, no code copied).
+
+**What the Temple-Stuart repo is.** A 15-60 DTE scanner for single stocks. Its 12 steps are:
+1. IV-rank and liquidity pre-score;
+2. hard filters (market cap, borrow, earnings proximity, liquidity);
+3. peer z-scores;
+4. a four-gate score: vol edge (IV vs realized vol, term structure), quality (fundamentals), macro regime (FRED), info edge (analysts, insiders, news and X sentiment);
+5. then credit-spread and iron-condor cards ranked by EV/risk, theta and an edge ratio.
+
+The repo publishes no backtest and no scanner track record. Its outcome tracker stores results in the owner's database. Its trade_review.csv (2025-06..10) predates the scanner and is discretionary trading.
+
+Only the vol-edge gate has published evidence behind it: Goyal & Saretto (survey #4) and Vasquez (#3). It is tested below (V2-s), on the selling side the repo uses. The other gates aren't testable here:
+- analyst and sentiment data: no free history (and the survey found analyst changes dead);
+- quality fundamentals: Finnhub;
+- macro: needs FRED;
+- insiders: EDGAR Form 4, possible later.
+
+**Data step D-IV** (DEV only; no locked dates; no results read while building):
+- **Universe:** U-STK and U-ETF, DEV sessions (2024-08-01..2026-06-30).
+- **Which contracts:** two expiries per name per day:
+  - the first expiry at least 21 calendar days out (the "30-day" expiry);
+  - the expiry nearest 90 days within 60-120 (the "90-day" expiry).
+- **Price used:** each contract's last trade 15:45-16:00, matched to the stock's 1-minute close in the same minute. Prints older than 30 minutes are dropped.
+- **ATM IV:** BS IV of the two strikes bracketing spot, call and put averaged, interpolated in strike, with r = q = 0 (labeled; averaging call and put cancels most of the rate effect at the money).
+- **Smoothing:** a 5-session mean is used for sorting.
+- **Coverage report:** the share of name-days with an IV, and each name's median IV vs its 20-day realized vol.
+
+**Shared mechanics for V1, V2 and V2-s:**
+- **Rebalance:** the first session of each month at 15:45, on data through the prior close.
+- **Hold:** to the next rebalance's 15:45. If a realized 8-K Item 2.02 date falls inside the hold, exit at the last 15:45 before it. That is the same look-ahead caveat as G2, labeled.
+- **Fills:** the 15:45-16:00 last trade ± the measured half-spread, plus $0.65 per contract per side. Every result is shown at mid, 50% and 100% of the measured spread; pass/fail is judged at 100%.
+- **Benchmark:** the same structure on 10 random eligible names on the same dates, 200 draws, seeds 31-230.
+- **Pass** (all at 100% spread):
+  - at least 100 positions;
+  - PF >= 1.2;
+  - mean return per position above the 90th percentile of the random draws;
+  - positive in at least 4 of the 6 two-month blocks of 2025-07..2026-06.
+
+**The rules:**
+- **V1 `term_slope`** (Vasquez 2017, survey #3): slope = 90-day IV minus 30-day IV. Buy the 30-day ATM straddle on the top 10 names by slope.
+- **V2 `rv_iv_gap`** (Goyal & Saretto 2009, survey #4): ratio = log(RV252 / 30-day IV). RV252 comes from the last 252 daily closes in round 9's daily file, which skips the locked periods. Buy the 30-day ATM straddle on the top 10 by ratio (IV cheapest against realized). V1/V2 name overlap is reported.
+- **V2-s `rv_iv_rich`** (the Temple-Stuart vol-edge side; paper research only, needs Level 3):
+  - On the bottom 10 by V2's ratio (IV richest), sell a 30-day iron condor.
+  - Shorts at 20 delta, longs at 10 delta (BS from the day's IV).
+  - Held as above; the per-position return is on the margin (width minus credit).
+- **V3 `earn_runup`** (Aboody, Lehavy & Trueman 2010, survey #2):
+  - **Shares**, U-STK: the top 10% by 12-1 month return on the entry date. Buy at the close 5 sessions before the realized 8-K 2.02 date, and sell at the last close before the report.
+  - **Shares windows:** HIST 2016-2023, then DEV. Part F's 7-item bar, with Part F's costs. The random-date benchmark uses dates at least 10 sessions from any report.
+  - **Options twin** (DEV REAL): a delta 0.50-0.60 call on the first expiry after the report, with the same entry and exit times (15:45-16:00 prints). Pass: F-opt's bar plus the random-date twin.
+- **V4 `new_high`** (Zarattini, Pagani & Wilcox 2025, survey #6):
+  - **Shares**, U-STK + U-ETF: buy at the next open after a close at the highest close of the prior 252 sessions.
+  - **Exit:** at the next open after a close below a trailing stop. The stop is the highest close since entry minus 3 x ATR(20); it is raised daily and never lowered. The 3 x ATR(20) is our frozen choice; the paper's exact multiple wasn't verified.
+  - **Book:** $10,000 a position, at most 10 open; ties go to higher 20-day dollar volume.
+  - **Windows:** discovery 2016-2019, holdout 2020-2023, then DEV. Part F's bar.
+  - **Also reported:** the share of profit from the top 7% of trades.
+  - **Options twin** (DEV REAL): a delta 0.60-0.70 call 60-120 days out, exited on the stock's stop and rolled at 30 days left. F-opt's bar.
+
+**More from the Reddit threads:**
+- **Stop "none"** in Amendment 15's grid (commenters: "don't use stop losses on 0DTE, use take-profits"). The stop list becomes 6 options:
+  - 6 x 5 x 2 x 3 x 3 x 2 = 1,080 cells per entry;
+  - 7,560 in all.
+- **R4 ratchet exit** (commenter variousbakedgoodies): for each round 10 entry's frozen cell, the same entry with:
+  - stop -50%;
+  - at +50%, the stop moves to break-even;
+  - at +100%, the stop moves to +50%;
+  - from +150%, a gb50 trail;
+  - all out 15:25.
+  
+  Same holdout bars as R3. **Trials:** 7.
+- **C3 `gap_condor`** (the r/TastyBite bot; paper research):
+  - SPY 0DTE 20-delta iron condor at 09:45, $5 wings, take profit at 25% of the credit, else held to the close.
+  - Only on gap days of >= +0.50% or flat days with |gap| <= 0.10%. These thresholds are ours; the post gives none.
+  - **C3-ctl:** every day.
+- **C4 `dynamic_fly`:**
+  - At 10:00: if SPY is down more than 0.10% from the open, an iron fly (short ATM, $5 wings); else the 20-delta condor.
+  - Take profit at 25%; time exit 13:00 (the post's 18:00 UK).
+- C3, C3-ctl and C4 use 15.4's costs, windows and pass bar.
+
+**Compounding view** (information, not trials). For every rule that passes, simulate a $3,000 account over 2,000 bootstrap paths of its holdout trades (resampled by session):
+- fixed-fractional risk of 1%, 2% and 5% a trade;
+- reported: the median and 5th-percentile ending balance, the worst drawdown, and the chance of halving the account.
+
+That is Nick's "compound and scale" question, answered from the numbers.
+
+**Data the next Chart run needs:**
+- round 9's pull;
+- D-IV's option bars: 2 expiries x about 4 strikes x U-STK/U-ETF x DEV, last 15 minutes only;
+- the option bars for V3/V4's twins and C3/C4.
+
+The pull tool must refuse L1/L2 dates, as round 9's does.
+
+**Round 10 trial tally:**
+
+| Source | Trials |
+|---|---|
+| Amendment 15 (with stop "none") | 7,560 |
+| 15.1 | 162 |
+| 15.2 | 3 |
+| 15.3 | 2 |
+| 15.4 | 5 |
+| 15.5 (R1 3, R2 8, R3 7) | 18 |
+| R4 | 7 |
+| C3, C3-ctl, C4 | 3 |
+| V1, V2, V2-s | 3 |
+| V3 shares + options | 2 |
+| V4 shares + options | 2 |
+| **Total** | **7,767** |
+
+The deflated Sharpe uses the run logs' count + 7,767.
+
 ## Limits
 
 - Backtests only.
