@@ -5,7 +5,7 @@
  "description": "The final locked-period exam: FIN-H, FIN-L, FIN-HS (FIN-H with B2 confidence sizing) and NB-VOL (the vol-sized noise band in shares), each run once on L2 and once on L1 through the --locked/--frozen guard. Research only.",
  "models": {
   "path": "sprint/specs/final_v2_models.json",
-  "sha256": "PENDING: the sha256 that tools/sprint_exam.py fit prints (set it with tools/sprint_exam.py freeze)"
+  "sha256": "7f4b9951e53f751c1d0e8cc977a84fe2965c6436d1b1a2233bc546152028dc97"
  },
  "symbols": [
   "SPY",
