@@ -524,6 +524,143 @@ Inputs: the two trade files (`data/sprint/trades_factory_hist_v1_<date>.csv.gz` 
 - **Trials added by this amendment: 357** = 42 runs (21 on HIST + 21 on DEV) + 252 candidate rules (12 x 21) + 63 learner models (3 x 21). The holdout evaluations are of rules already counted.
 - No rule, cut, threshold or book setting changes after seeing factory results. Any change is a new amendment, labeled in-sample. A surviving variant is still research: it reaches paper trading only through a new versioned ledger after Nick's yes, and promotion still needs CLAUDE.md step 5 (40 forward paper trades); L1/L2 stay reserved for frozen finalists.
 
+## Amendment 10, 2026-11-01: round 8, steady daily rules plus a sharper big-day filter (written before any round-8 code or run)
+
+Amendment 8 lives on `sprint/exits` (the locked-exam finalists); this branch skips the number so the two merge cleanly. Branch `sprint/round8`, from `sprint/factory` at `31860f5`. Research only: nothing here trades or touches the desk.
+
+Nick's request (2026-11-01): keep the big-day calls (FIN-H family). Try to make the program spot the big days and skip the rest. Also research strategies beyond ORB that make steadier, simple, repeatable money through the days, so a combined book pays out more consistently and can be sized up.
+
+Run 7's lesson, recorded before any round-8 result:
+- The only surviving family is far-OTM calls on busy days.
+- On real prices the four survivors win on the same days: daily correlation 0.95-0.99, and 2025-04-09 carries the book.
+- Steadier payouts need rules that win on *different* days. A lottery-shaped long-option rule can't be steady on its own: long 0DTE premium loses a little most days by construction.
+- So Part A tests steady rules in **shares**, on 10 years of real stock bars with no option model.
+
+### Data and periods
+
+- **Stock tests (Part A):** real Alpaca 1-minute bars for SPY, QQQ and IWM over HIST 2016-01-04 to 2024-01-31 and DEV 2024-08-01 to 2026-06-30. These files are already on Chart's computer.
+  - L1 (2026-07-01 to 10-30) and L2 (2024-02-01 to 07-31) are never pulled or read.
+  - History from 2015-11-01 feeds indicators only.
+- **Option tests (Part B, Part A's option twin):** as Amendment 9. HIST options are **MODELED** (run 4's calibration); DEV options are **REAL** Alpaca prices. The same 2% half-spread with the $0.005 floor and $0.65 per contract per side.
+- **Share costs:** fill at the open of the bar after the decision bar, +$0.01 per share for a buy and -$0.01 for a sell (half-spread plus slippage). No commission. "2x costs" = $0.02 per side.
+- **Share sizing:** $10,000 notional per trade, shares = floor(10,000 / the decision bar's close). Results in $ and in bps of notional. One position at a time per rule and symbol.
+- **Exit time for shares:** the close of the bar finishing 15:59 (index 389) +/- $0.01, or 12:59 (index 209) on 1 PM early-close days. Shares may trade to the close: the desk's 15:25 all-out is the 0DTE options rule. Option twins keep 15:25.
+
+### Part A: steady rules in shares (rules from the sources, frozen, no tuning)
+
+**A1 `noise_sh`: Beat the Market** (Zarattini, Aziz & Barbon 2024; registry #1; the paper's final version).
+- Noise: sigma(t) for minute index t = the mean over the 14 prior sessions (at least 10) of |close(t) / that session's open - 1|.
+- Bands:
+  - UB(t) = max(open, prior close) x (1 + sigma(t));
+  - LB(t) = min(open, prior close) x (1 - sigma(t)).
+- Checks at the bars finishing 10:00, 10:30, ..., 15:30 (indices 29, 59, ..., 359):
+  - flat: close > UB -> long; close < LB -> short;
+  - long: close < LB -> reverse to short; else close < max(UB, VWAP) -> flat;
+  - short: mirrored (close > UB -> reverse to long; else close > min(LB, VWAP) -> flat).
+- VWAP is regular-hours, from 09:30.
+- Primary variant: long and short, $10,000 notional.
+- Secondary variant (vol-sized, the paper's sizing): notional = 10,000 x min(4, 0.02 / sd), where sd = the sample standard deviation of the 14 prior daily close-to-close returns.
+- The paper reports 2007 to Apr 2024, net: 100% sizing Sharpe 1.24, hit ratio 43%, 1.8 trades a day. Vol-sized Sharpe 1.33, with 2016 -12.8% and 2017 -6.9%.
+
+**A2 `last30`: market intraday momentum** (Gao, Han, Li & Zhou 2018 JFE; Baltussen, Da, Lammers & Martens 2021 JFE; registry #2-3).
+- Primary (Baltussen's "rest of day" signal): r = close of the bar finishing 15:30 (index 359) / prior close - 1.
+  - r > 0: buy at the open of index 360. r < 0: sell short. Exit at the close of index 389.
+  - One trade a day. No trade on early-close days, or when r = 0.
+- Secondary (Gao's first half-hour signal): r1 = close of index 29 / prior close - 1, same trade window.
+- Shares only: a 15:30-16:00 trade can't be an option twin under the desk's 15:25 all-out.
+
+**A3 `gapfade_vix`: overnight gap fade on stressed days.**
+- Source: falsifylab 2025, a blog test on about 2 years: Sharpe 1.1-1.15, random-date p = 0.005, low VIX loses. Source grade **C**, exploratory.
+- Context: the overnight-versus-intraday reversal literature (Lou, Polk & Skouras 2019 JFE, cross-sectional).
+- This 10-year test is the large-sample check CLAUDE.md step 1 asks for; a pass would still be labeled exploratory.
+- Gap g = open / prior close - 1. Gap z = g / the sample sd of the 60 prior sessions' gaps (at least 40).
+- VIX proxy z = (VIXY's prior-session close - the mean of the 60 closes before it) / their sample sd.
+- Trade when |gap z| > 1.0 and the VIXY z > 0.5. Direction against the gap.
+- Enter at the open of index 60 (after the bar finishing 10:30). No stop; exit at the close of index 389.
+- **Option twin on DEV, REAL:** calls for longs, puts for shorts, contract d55-75t65, no stop, all out 15:25.
+
+Every Part A rule is also reported **long-only**, since Nick's account may not short shares. Shorts can be carried by puts, as in A3's twin. A2's VWAP-trend cousin (Zarattini & Aziz 2023) is not tested. Its replications fail after costs, and it flips many times a day, so it is not simple to hand-trade.
+
+**Part A pass bar.** Per rule, primary variant, SPY + QQQ + IWM pooled, base costs unless stated:
+1. at least 300 trades over the 2016-2026 windows;
+2. expectancy per trade > 0 at 2x costs;
+3. profitable in at least 6 of the 8 years 2016-2023, and in DEV 2024-08 to 2026-06;
+4. the bootstrap 95% interval of the daily mean P/L is above 0 (all sessions, 0 on days without a trade; resampled by session, 2,000 draws, seed 29);
+5. positive without the best 5 days;
+6. beats random direction, p < 0.05: the same entries and exits with a coin-flip side, 200 draws, seeds 31-230; p = the share of draws with a total at or above the rule's;
+7. **steadiness:** at least 55% of months green (months with at least one trade, 2016-2026).
+
+Reported per rule:
+- by year and by symbol;
+- long-only, with its own pass line;
+- months and weeks green;
+- the longest run of losing months;
+- the worst month;
+- trades per day;
+- daily correlation with FIN-H.
+
+### Part B: a sharper big-day filter for the far-OTM calls (FIN-H family)
+
+Sleeves: the run-7 rule sleeves otm_c_1030, otm_c_1100 (= FIN-H) and otm_c_1200: d03-12t07, -95% stop, all out 15:25, f_rvol >= 1.06. Trade files: run 7's HIST and DEV factory files, so no new option run.
+
+**B1 new entry features**, known at the end of the decision bar, added to sprint/features.py:
+- `f_ret5d`: side-signed % return over the 5 sessions to the prior close.
+- `f_dd20`: prior close vs the highest close of the 20 prior sessions, %.
+- `f_vixy_chg1`: VIXY's prior close / the close before it - 1, %.
+- `f_vixy_z20`: VIXY's prior close, z vs the 20 closes before it.
+- `f_or30_atr`: the 09:30-10:00 range / daily ATR.
+- `f_gap_abs`: |gap| %.
+- `f_hod`: 1 if the decision bar's close is at or above every earlier high of the session.
+
+Run 7's trades are re-stamped from cached bars (features.recompute style); trade P/L is unchanged.
+
+**B2 confidence sizing.**
+- sprint/learn.walk_forward's logit (Amendment 3 settings, 24 training months), on the 18 existing plus 7 new features, over each sleeve's rule trades.
+- At every monthly refit, take the terciles of the training trades' predicted probabilities.
+- Then, out-of-sample: bottom tercile -> skip, middle -> 1 contract, top -> 2 contracts.
+- **Pass, per sleeve:** on DEV (REAL, out-of-sample decisions) and on 2018-01 to 2024-01 (MODELED, walk-forward), all of:
+  - (a) P/L per contract traded is above the flat 1-contract rule's;
+  - (b) daily Sharpe is above the flat rule's;
+  - (c) PF 2x > 1.0.
+
+**B3 "wait for proof" entry `newhigh_c`** (calls, new in sprint/entries.py).
+- Signal: the first finished bar with index 89-269 (11:00-14:00) whose close is above every earlier high of the session, with f_rvol >= 1.06 at that bar. One per day per symbol.
+- Trade: d03-12t07, -95% stop, all out 15:25.
+- There is no fitted parameter (the 1.06 cut is FIN-H's frozen cut), so there is no discovery split.
+- **Pass:**
+  - HIST 2016-2023 (MODELED): at least 60 trades, PF >= 1.25, PF 2x > 1.0, profitable in at least 5 of 8 years, positive without the best 5 trades;
+  - DEV (REAL): at least 40 trades, PF >= 1.25, PF 2x > 1.0.
+- Reported beside FIN-H on the same days: win rate, average loss, total without the best day.
+
+### The book
+
+- Sleeves: FIN-H (1 contract), each Part B variant that passes, and each Part A rule whose primary or long-only variant passes. Shares at $10,000 notional per trade.
+- **A Part A rule counts as adding steadiness only if its daily P/L correlation with FIN-H is below 0.3** (sessions both could trade).
+- Windows as Amendment 9: 2018 to Jan 2024 MODELED for option sleeves (shares are real throughout), DEV REAL, and a labeled mixed line.
+- Reported:
+  - total and per year;
+  - max drawdown;
+  - months green and weeks green;
+  - the longest losing-month run;
+  - the worst month;
+  - each sleeve's share of the total;
+  - the correlation matrix.
+
+### Trials and outputs
+
+- **Trials added by this amendment:**
+  - Part A: 3 rules, 2 sides each (long-short, long-only), plus 2 secondary variants (vol-sized A1, Gao A2) = 8;
+  - A3's option twin = 1;
+  - Part B: 3 sleeves x B2 + B3 = 4.
+  - Total 13. Deflated Sharpe (information) uses the run logs' count + 13.
+- Outputs: `data/sprint/round8_<date>.md` and `.json`, the share trade file `data/sprint/trades_round8_shares_<date>.csv.gz`, and the B3 HIST/DEV option trade files.
+- No rule, cut or threshold changes after results. A change is a new amendment, labeled in-sample.
+- A pass is still research: it reaches paper trading only through a new versioned ledger after Nick's yes, and promotion needs CLAUDE.md step 5.
+
+### Next, not in this amendment (round 9)
+
+- Single-stock catalyst days: news/earnings movers, so the wins come on company days, not market days. This needs an earnings/8-K calendar and a single-stock option pull (Feb 2024+), so it gets its own pre-registration before any pull.
+
 ## Limits
 
 - Backtests only.

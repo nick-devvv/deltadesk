@@ -23,6 +23,13 @@ Registry version 2026-10-31. Machine-readable twin: `strategy_registry.json` (25
 | 8 | ORB on Stocks in Play (Zarattini, Barbon, Aziz 2024) | paper | B | Relative volume at the open is a free catalyst proxy; fully specified | Cross-sectional ORB with spread/impact slippage, by RV decile and price bucket |
 | 9 | Pervasive Underreaction (Jiang, Li, Wang 2021, JFE) | paper | B | News moves continue, no-news moves reverse; cost-sensitive | EDGAR-timestamped event study, t+5 to t+120 minutes |
 | 10 | Leveraged ETFs and option imbalances, end of day (Barbon et al. 2021) | paper | B | LETF rebalancing demand is computable for free | Does LETF demand predict SPY/QQQ 15:30-16:00 returns? |
+| 11 | Gap fade on stressed days (falsifylab 2025 blog; overnight-intraday reversal: Lou, Polk & Skouras 2019, JFE) | blog + paper | C (exploratory) | Fade an overnight gap over 1 sd from the first hour to the close when VIX z > 0.5; about 2 years of data, Sharpe 1.1-1.15, random-date p 0.005; mean reversion, a different shape from the momentum entries | SPRINT_PLAN Amendment 10 A3: 10 years of SPY/QQQ/IWM shares with VIXY as the VIX proxy |
+
+**Round 8 (SPRINT_PLAN Amendment 10, 2026-11-01)** tests #1 (as `noise_sh`), #2-3 (as `last30`) and #11 (as `gapfade_vix`) in shares on 2016-2026 real stock bars, with frozen source defaults. Sources:
+- Zarattini, Aziz & Barbon 2024, SFI Research Paper 24-97, [Concretum summary](https://concretumgroup.com/beat-the-market-an-effective-intraday-momentum-strategy-for-sp500-etf-spy/): 2007 to Apr 2024, 100% sizing Sharpe 1.24, hit ratio 43%, 1.8 trades a day.
+- Gao, Han, Li & Zhou 2018, JFE 129(2): out-of-sample R^2 up to 0.018, gross 6.3% a year (CXO's summary).
+- Baltussen, Da, Lammers & Martens 2021, JFE 142(1): 60+ futures, 1974-2020.
+- [falsifylab, "gap fade works, gold doesn't"](https://falsifylab.substack.com/p/gap-fade-works-gold-doesnt).
 
 The other entries (day-trader-skill, QuantRocket first-last, QC stocks-in-play replication, Busse and Green, Kaminski and Lo, PyBroker, vectorbt, NautilusTrader, LEAN) are B and support the tests above. The six C entries are rejected.
 
