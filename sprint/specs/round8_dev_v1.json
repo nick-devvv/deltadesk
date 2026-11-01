@@ -1,0 +1,565 @@
+{
+ "spec_id": "round8_dev_v1",
+ "description": "SPRINT_PLAN Amendment 10 with Addenda 10.1-10.3 (round 8, pre-registered 2026-11-01 before any round-8 run). Engine runs: B3 newhigh_c and B4 (FIN-H's entry, time_1100 calls with rvol >= 1.06, on d03-12t07 and n1d03-12t07 with exits (i) -95%, (ii) -50%, (iii) -50% + gb50, (iv) -50% + target +100%), SPY+QQQ+IWM pooled, desk fills, 2% half-spread ($0.005 floor), $0.65/contract/side, 1 contract, all out 15:25, one position at a time per run and symbol. 9 runs. No pass-2 robustness (tools/sprint_round8.py does its own checks). The option_pass section (D1-D6 grids, random-side twins, A-opt, A3 twins) is run by tools/sprint_round8.py, not by tools/sprint_run.py. DEV = 2024-08-01..2026-06-30, REAL Alpaca option prices (0DTE and next expiry; run with an empty --chains-dir so the pre-registered 2% MODELED-SPREAD is used, never logged 2026 chains).",
+ "period": "DEV",
+ "symbols": [
+  "SPY",
+  "QQQ",
+  "IWM"
+ ],
+ "defaults": {},
+ "blocks": [
+  {
+   "name": "newhigh_c",
+   "why": "B3 (Amendment 10): wait for proof. The first finished bar 11:00-14:00 (index 89-269) closing above every earlier high of the session with f_rvol >= 1.06 at that bar, calls, d03-12t07, -95% stop, +9900% target (never reached), all out 15:25, one per day per symbol",
+   "grid": {
+    "_": [
+     {
+      "tp_buffer": "$0.03",
+      "rr_min": null,
+      "trail": "none",
+      "mechanics": "desk",
+      "filters": [],
+      "risk": "none",
+      "allout": "15:25",
+      "time": "b",
+      "tp": "none",
+      "entry": "newhigh_c",
+      "side": "C",
+      "stop": "fixed",
+      "fixed_stop": 0.95,
+      "fixed_target": 99.0,
+      "contract": "d03-12t07"
+     }
+    ]
+   }
+  },
+  {
+   "name": "b4_d03_i",
+   "why": "B4 (Addendum 10.1): FIN-H's entry (time_1100 calls, taken only when f_rvol >= 1.06: filter rvol_ge106) on FIN-H's 0DTE contract (|delta| 0.03-0.12 nearest 0.07); exit (i) fixed -95% stop, no target (FIN-H's own; +9900% target never reached); all out 15:25",
+   "grid": {
+    "_": [
+     {
+      "tp_buffer": "$0.03",
+      "rr_min": null,
+      "trail": "none",
+      "mechanics": "desk",
+      "filters": [
+       "rvol_ge106"
+      ],
+      "risk": "none",
+      "allout": "15:25",
+      "time": "b",
+      "tp": "none",
+      "entry": "time_1100",
+      "side": "C",
+      "stop": "fixed",
+      "contract": "d03-12t07",
+      "fixed_stop": 0.95,
+      "fixed_target": 99.0
+     }
+    ]
+   }
+  },
+  {
+   "name": "b4_d03_ii",
+   "why": "B4 (Addendum 10.1): FIN-H's entry (time_1100 calls, taken only when f_rvol >= 1.06: filter rvol_ge106) on FIN-H's 0DTE contract (|delta| 0.03-0.12 nearest 0.07); exit (ii) fixed -50% stop, no target (+9900% never reached); all out 15:25",
+   "grid": {
+    "_": [
+     {
+      "tp_buffer": "$0.03",
+      "rr_min": null,
+      "trail": "none",
+      "mechanics": "desk",
+      "filters": [
+       "rvol_ge106"
+      ],
+      "risk": "none",
+      "allout": "15:25",
+      "time": "b",
+      "tp": "none",
+      "entry": "time_1100",
+      "side": "C",
+      "stop": "fixed",
+      "contract": "d03-12t07",
+      "fixed_stop": 0.5,
+      "fixed_target": 99.0
+     }
+    ]
+   }
+  },
+  {
+   "name": "b4_d03_iii",
+   "why": "B4 (Addendum 10.1): FIN-H's entry (time_1100 calls, taken only when f_rvol >= 1.06: filter rvol_ge106) on FIN-H's 0DTE contract (|delta| 0.03-0.12 nearest 0.07); exit (iii) fixed -50% stop plus trail gb50 (give back at most 50% of the peak open profit, sprint/sim.py); all out 15:25",
+   "grid": {
+    "_": [
+     {
+      "tp_buffer": "$0.03",
+      "rr_min": null,
+      "trail": "gb50",
+      "mechanics": "desk",
+      "filters": [
+       "rvol_ge106"
+      ],
+      "risk": "none",
+      "allout": "15:25",
+      "time": "b",
+      "tp": "none",
+      "entry": "time_1100",
+      "side": "C",
+      "stop": "fixed",
+      "contract": "d03-12t07",
+      "fixed_stop": 0.5,
+      "fixed_target": 99.0
+     }
+    ]
+   }
+  },
+  {
+   "name": "b4_d03_iv",
+   "why": "B4 (Addendum 10.1): FIN-H's entry (time_1100 calls, taken only when f_rvol >= 1.06: filter rvol_ge106) on FIN-H's 0DTE contract (|delta| 0.03-0.12 nearest 0.07); exit (iv) fixed -50% stop plus fixed target +100%; all out 15:25",
+   "grid": {
+    "_": [
+     {
+      "tp_buffer": "$0.03",
+      "rr_min": null,
+      "trail": "none",
+      "mechanics": "desk",
+      "filters": [
+       "rvol_ge106"
+      ],
+      "risk": "none",
+      "allout": "15:25",
+      "time": "b",
+      "tp": "none",
+      "entry": "time_1100",
+      "side": "C",
+      "stop": "fixed",
+      "contract": "d03-12t07",
+      "fixed_stop": 0.5,
+      "fixed_target": 1.0
+     }
+    ]
+   }
+  },
+  {
+   "name": "b4_n1d03_i",
+   "why": "B4 (Addendum 10.1): FIN-H's entry (time_1100 calls, taken only when f_rvol >= 1.06: filter rvol_ge106) on the next expiry after today, |delta| 0.03-0.12 nearest 0.07 (BS time incl. the calendar days); exit (i) fixed -95% stop, no target (FIN-H's own; +9900% target never reached); all out 15:25",
+   "grid": {
+    "_": [
+     {
+      "tp_buffer": "$0.03",
+      "rr_min": null,
+      "trail": "none",
+      "mechanics": "desk",
+      "filters": [
+       "rvol_ge106"
+      ],
+      "risk": "none",
+      "allout": "15:25",
+      "time": "b",
+      "tp": "none",
+      "entry": "time_1100",
+      "side": "C",
+      "stop": "fixed",
+      "contract": "n1d03-12t07",
+      "fixed_stop": 0.95,
+      "fixed_target": 99.0
+     }
+    ]
+   }
+  },
+  {
+   "name": "b4_n1d03_ii",
+   "why": "B4 (Addendum 10.1): FIN-H's entry (time_1100 calls, taken only when f_rvol >= 1.06: filter rvol_ge106) on the next expiry after today, |delta| 0.03-0.12 nearest 0.07 (BS time incl. the calendar days); exit (ii) fixed -50% stop, no target (+9900% never reached); all out 15:25",
+   "grid": {
+    "_": [
+     {
+      "tp_buffer": "$0.03",
+      "rr_min": null,
+      "trail": "none",
+      "mechanics": "desk",
+      "filters": [
+       "rvol_ge106"
+      ],
+      "risk": "none",
+      "allout": "15:25",
+      "time": "b",
+      "tp": "none",
+      "entry": "time_1100",
+      "side": "C",
+      "stop": "fixed",
+      "contract": "n1d03-12t07",
+      "fixed_stop": 0.5,
+      "fixed_target": 99.0
+     }
+    ]
+   }
+  },
+  {
+   "name": "b4_n1d03_iii",
+   "why": "B4 (Addendum 10.1): FIN-H's entry (time_1100 calls, taken only when f_rvol >= 1.06: filter rvol_ge106) on the next expiry after today, |delta| 0.03-0.12 nearest 0.07 (BS time incl. the calendar days); exit (iii) fixed -50% stop plus trail gb50 (give back at most 50% of the peak open profit, sprint/sim.py); all out 15:25",
+   "grid": {
+    "_": [
+     {
+      "tp_buffer": "$0.03",
+      "rr_min": null,
+      "trail": "gb50",
+      "mechanics": "desk",
+      "filters": [
+       "rvol_ge106"
+      ],
+      "risk": "none",
+      "allout": "15:25",
+      "time": "b",
+      "tp": "none",
+      "entry": "time_1100",
+      "side": "C",
+      "stop": "fixed",
+      "contract": "n1d03-12t07",
+      "fixed_stop": 0.5,
+      "fixed_target": 99.0
+     }
+    ]
+   }
+  },
+  {
+   "name": "b4_n1d03_iv",
+   "why": "B4 (Addendum 10.1): FIN-H's entry (time_1100 calls, taken only when f_rvol >= 1.06: filter rvol_ge106) on the next expiry after today, |delta| 0.03-0.12 nearest 0.07 (BS time incl. the calendar days); exit (iv) fixed -50% stop plus fixed target +100%; all out 15:25",
+   "grid": {
+    "_": [
+     {
+      "tp_buffer": "$0.03",
+      "rr_min": null,
+      "trail": "none",
+      "mechanics": "desk",
+      "filters": [
+       "rvol_ge106"
+      ],
+      "risk": "none",
+      "allout": "15:25",
+      "time": "b",
+      "tp": "none",
+      "entry": "time_1100",
+      "side": "C",
+      "stop": "fixed",
+      "contract": "n1d03-12t07",
+      "fixed_stop": 0.5,
+      "fixed_target": 1.0
+     }
+    ]
+   }
+  }
+ ],
+ "robustness": {
+  "top_k": 0,
+  "random_paths": 0,
+  "fake_seeds": 0,
+  "min_trades": 60
+ },
+ "option_pass": {
+  "what": "Round 8's option twins whose exits the engine has no run type for, run by tools/sprint_round8.py in ONE pass per entry over its option tape (sprint/optpass.py; Addendum 10.3's implementation note): D1-D6 on d40-55t45 and n1d40-55t45 with the 12-cell stop/target grid and the signal exit, their matched random-side twins, A-opt and A3's option twins. Engine fill rules; 2% MODELED-SPREAD; all out 15:25 (12:50 on early-close days).",
+  "grid": {
+   "stops": [
+    0.1,
+    0.2,
+    0.3,
+    0.5
+   ],
+   "targets": [
+    0.3,
+    0.5,
+    null
+   ],
+   "none_target": 99.0,
+   "signal_stop": 0.2,
+   "allout": "15:25"
+  },
+  "studies": [
+   {
+    "name": "d1_ind_rsi_d40",
+    "family": "D",
+    "rule": "ind_rsi",
+    "entry": "ind_rsi",
+    "contract": "d40-55t45",
+    "exits": "grid12+signal",
+    "random_seed": null,
+    "why": "D1 (Addendum 10.2): RSI(14, Wilder) crosses up through 30 -> calls, down through 70 -> puts; 5-minute decisions 09:45-15:00"
+   },
+   {
+    "name": "d1_ind_rsi_n1d40",
+    "family": "D",
+    "rule": "ind_rsi",
+    "entry": "ind_rsi",
+    "contract": "n1d40-55t45",
+    "exits": "grid12+signal",
+    "random_seed": null,
+    "why": "D1 (Addendum 10.2): RSI(14, Wilder) crosses up through 30 -> calls, down through 70 -> puts; 5-minute decisions 09:45-15:00"
+   },
+   {
+    "name": "d2_ind_bb_d40",
+    "family": "D",
+    "rule": "ind_bb",
+    "entry": "ind_bb",
+    "contract": "d40-55t45",
+    "exits": "grid12+signal",
+    "random_seed": null,
+    "why": "D2 (Addendum 10.2): Bollinger(20, 2 population sd): a close back above the lower band -> calls; back below the upper band -> puts; 5-minute decisions 09:45-15:00"
+   },
+   {
+    "name": "d2_ind_bb_n1d40",
+    "family": "D",
+    "rule": "ind_bb",
+    "entry": "ind_bb",
+    "contract": "n1d40-55t45",
+    "exits": "grid12+signal",
+    "random_seed": null,
+    "why": "D2 (Addendum 10.2): Bollinger(20, 2 population sd): a close back above the lower band -> calls; back below the upper band -> puts; 5-minute decisions 09:45-15:00"
+   },
+   {
+    "name": "d3_ind_ema_d40",
+    "family": "D",
+    "rule": "ind_ema",
+    "entry": "ind_ema",
+    "contract": "d40-55t45",
+    "exits": "grid12+signal",
+    "random_seed": null,
+    "why": "D3 (Addendum 10.2): EMA(9) crosses above EMA(21) -> calls; below -> puts; 5-minute decisions 09:45-15:00"
+   },
+   {
+    "name": "d3_ind_ema_n1d40",
+    "family": "D",
+    "rule": "ind_ema",
+    "entry": "ind_ema",
+    "contract": "n1d40-55t45",
+    "exits": "grid12+signal",
+    "random_seed": null,
+    "why": "D3 (Addendum 10.2): EMA(9) crosses above EMA(21) -> calls; below -> puts; 5-minute decisions 09:45-15:00"
+   },
+   {
+    "name": "d4_ind_macd_d40",
+    "family": "D",
+    "rule": "ind_macd",
+    "entry": "ind_macd",
+    "contract": "d40-55t45",
+    "exits": "grid12+signal",
+    "random_seed": null,
+    "why": "D4 (Addendum 10.2): MACD(12, 26, 9) line crosses above its signal -> calls; below -> puts; 5-minute decisions 09:45-15:00"
+   },
+   {
+    "name": "d4_ind_macd_n1d40",
+    "family": "D",
+    "rule": "ind_macd",
+    "entry": "ind_macd",
+    "contract": "n1d40-55t45",
+    "exits": "grid12+signal",
+    "random_seed": null,
+    "why": "D4 (Addendum 10.2): MACD(12, 26, 9) line crosses above its signal -> calls; below -> puts; 5-minute decisions 09:45-15:00"
+   },
+   {
+    "name": "d5_conf_level_rsi_d40",
+    "family": "D",
+    "rule": "conf_level_rsi",
+    "entry": "conf_level_rsi",
+    "contract": "d40-55t45",
+    "exits": "grid12+signal",
+    "random_seed": null,
+    "why": "D5 (Addendum 10.3): a support/resistance level touched within 0.10 x ATR(14, 5m) with RSI <= 30 / >= 70 and a close back beyond it; 5-minute decisions 09:45-15:00"
+   },
+   {
+    "name": "d5_conf_level_rsi_n1d40",
+    "family": "D",
+    "rule": "conf_level_rsi",
+    "entry": "conf_level_rsi",
+    "contract": "n1d40-55t45",
+    "exits": "grid12+signal",
+    "random_seed": null,
+    "why": "D5 (Addendum 10.3): a support/resistance level touched within 0.10 x ATR(14, 5m) with RSI <= 30 / >= 70 and a close back beyond it; 5-minute decisions 09:45-15:00"
+   },
+   {
+    "name": "d6_conf_trend_pullback_d40",
+    "family": "D",
+    "rule": "conf_trend_pullback",
+    "entry": "conf_trend_pullback",
+    "contract": "d40-55t45",
+    "exits": "grid12+signal",
+    "random_seed": null,
+    "why": "D6 (Addendum 10.3): VWAP and EMA 9/21 trend, a pullback to VWAP or EMA21 within 0.10 x ATR, MACD histogram rising (falling for puts); 5-minute decisions 09:45-15:00"
+   },
+   {
+    "name": "d6_conf_trend_pullback_n1d40",
+    "family": "D",
+    "rule": "conf_trend_pullback",
+    "entry": "conf_trend_pullback",
+    "contract": "n1d40-55t45",
+    "exits": "grid12+signal",
+    "random_seed": null,
+    "why": "D6 (Addendum 10.3): VWAP and EMA 9/21 trend, a pullback to VWAP or EMA21 within 0.10 x ATR, MACD histogram rising (falling for puts); 5-minute decisions 09:45-15:00"
+   },
+   {
+    "name": "rnd_d1_ind_rsi_d40",
+    "family": "D",
+    "rule": "ind_rsi",
+    "entry": "ind_rsi",
+    "contract": "d40-55t45",
+    "exits": "grid12+signal",
+    "random_seed": 31,
+    "why": "matched random for D1 on d40-55t45: the same days and decision minutes with a random side (seed 31), the same 13 exits (a benchmark, not a trial)"
+   },
+   {
+    "name": "rnd_d1_ind_rsi_n1d40",
+    "family": "D",
+    "rule": "ind_rsi",
+    "entry": "ind_rsi",
+    "contract": "n1d40-55t45",
+    "exits": "grid12+signal",
+    "random_seed": 31,
+    "why": "matched random for D1 on n1d40-55t45: the same days and decision minutes with a random side (seed 31), the same 13 exits (a benchmark, not a trial)"
+   },
+   {
+    "name": "rnd_d2_ind_bb_d40",
+    "family": "D",
+    "rule": "ind_bb",
+    "entry": "ind_bb",
+    "contract": "d40-55t45",
+    "exits": "grid12+signal",
+    "random_seed": 31,
+    "why": "matched random for D2 on d40-55t45: the same days and decision minutes with a random side (seed 31), the same 13 exits (a benchmark, not a trial)"
+   },
+   {
+    "name": "rnd_d2_ind_bb_n1d40",
+    "family": "D",
+    "rule": "ind_bb",
+    "entry": "ind_bb",
+    "contract": "n1d40-55t45",
+    "exits": "grid12+signal",
+    "random_seed": 31,
+    "why": "matched random for D2 on n1d40-55t45: the same days and decision minutes with a random side (seed 31), the same 13 exits (a benchmark, not a trial)"
+   },
+   {
+    "name": "rnd_d3_ind_ema_d40",
+    "family": "D",
+    "rule": "ind_ema",
+    "entry": "ind_ema",
+    "contract": "d40-55t45",
+    "exits": "grid12+signal",
+    "random_seed": 31,
+    "why": "matched random for D3 on d40-55t45: the same days and decision minutes with a random side (seed 31), the same 13 exits (a benchmark, not a trial)"
+   },
+   {
+    "name": "rnd_d3_ind_ema_n1d40",
+    "family": "D",
+    "rule": "ind_ema",
+    "entry": "ind_ema",
+    "contract": "n1d40-55t45",
+    "exits": "grid12+signal",
+    "random_seed": 31,
+    "why": "matched random for D3 on n1d40-55t45: the same days and decision minutes with a random side (seed 31), the same 13 exits (a benchmark, not a trial)"
+   },
+   {
+    "name": "rnd_d4_ind_macd_d40",
+    "family": "D",
+    "rule": "ind_macd",
+    "entry": "ind_macd",
+    "contract": "d40-55t45",
+    "exits": "grid12+signal",
+    "random_seed": 31,
+    "why": "matched random for D4 on d40-55t45: the same days and decision minutes with a random side (seed 31), the same 13 exits (a benchmark, not a trial)"
+   },
+   {
+    "name": "rnd_d4_ind_macd_n1d40",
+    "family": "D",
+    "rule": "ind_macd",
+    "entry": "ind_macd",
+    "contract": "n1d40-55t45",
+    "exits": "grid12+signal",
+    "random_seed": 31,
+    "why": "matched random for D4 on n1d40-55t45: the same days and decision minutes with a random side (seed 31), the same 13 exits (a benchmark, not a trial)"
+   },
+   {
+    "name": "rnd_d5_conf_level_rsi_d40",
+    "family": "D",
+    "rule": "conf_level_rsi",
+    "entry": "conf_level_rsi",
+    "contract": "d40-55t45",
+    "exits": "grid12+signal",
+    "random_seed": 31,
+    "why": "matched random for D5 on d40-55t45: the same days and decision minutes with a random side (seed 31), the same 13 exits (a benchmark, not a trial)"
+   },
+   {
+    "name": "rnd_d5_conf_level_rsi_n1d40",
+    "family": "D",
+    "rule": "conf_level_rsi",
+    "entry": "conf_level_rsi",
+    "contract": "n1d40-55t45",
+    "exits": "grid12+signal",
+    "random_seed": 31,
+    "why": "matched random for D5 on n1d40-55t45: the same days and decision minutes with a random side (seed 31), the same 13 exits (a benchmark, not a trial)"
+   },
+   {
+    "name": "rnd_d6_conf_trend_pullback_d40",
+    "family": "D",
+    "rule": "conf_trend_pullback",
+    "entry": "conf_trend_pullback",
+    "contract": "d40-55t45",
+    "exits": "grid12+signal",
+    "random_seed": 31,
+    "why": "matched random for D6 on d40-55t45: the same days and decision minutes with a random side (seed 31), the same 13 exits (a benchmark, not a trial)"
+   },
+   {
+    "name": "rnd_d6_conf_trend_pullback_n1d40",
+    "family": "D",
+    "rule": "conf_trend_pullback",
+    "entry": "conf_trend_pullback",
+    "contract": "n1d40-55t45",
+    "exits": "grid12+signal",
+    "random_seed": 31,
+    "why": "matched random for D6 on n1d40-55t45: the same days and decision minutes with a random side (seed 31), the same 13 exits (a benchmark, not a trial)"
+   },
+   {
+    "name": "aopt_noise_sh_d55",
+    "family": "A-opt",
+    "rule": "noise_sh",
+    "entry": "noise_sh",
+    "contract": "d55-75t65",
+    "exits": "share_signal",
+    "random_seed": null,
+    "decided_on": "DEV",
+    "why": "A-opt (Addendum 10.1): A1 noise_sh on 0DTE d55-75t65, exiting on the share rule's own band/VWAP stop and reversal at the half-hour checks, no premium line, all out 15:25 (DEV REAL decides; HIST MODELED is information)"
+   },
+   {
+    "name": "aopt_noise_sh_n1d55",
+    "family": "A-opt",
+    "rule": "noise_sh",
+    "entry": "noise_sh",
+    "contract": "n1d55-75t65",
+    "exits": "share_signal",
+    "random_seed": null,
+    "decided_on": "DEV",
+    "why": "A-opt (Addendum 10.1): A1 noise_sh on next-expiry n1d55-75t65 (|delta| 0.55-0.75 nearest 0.65), the same exits"
+   },
+   {
+    "name": "a3_gapfade_vix_d55",
+    "family": "A3",
+    "rule": "gapfade_vix",
+    "entry": "gapfade_vix",
+    "contract": "d55-75t65",
+    "exits": "hold",
+    "random_seed": null,
+    "decided_on": "DEV",
+    "why": "A3's option twin (Amendment 10): calls for longs, puts for shorts, d55-75t65, no stop, all out 15:25 (DEV REAL)"
+   },
+   {
+    "name": "a3_gapfade_vix_n1d55",
+    "family": "A3",
+    "rule": "gapfade_vix",
+    "entry": "gapfade_vix",
+    "contract": "n1d55-75t65",
+    "exits": "hold",
+    "random_seed": null,
+    "decided_on": "DEV",
+    "why": "A-opt (Addendum 10.1): A3 gapfade_vix on next-expiry n1d55-75t65, no stop, all out 15:25 (DEV REAL)"
+   }
+  ]
+ }
+}
