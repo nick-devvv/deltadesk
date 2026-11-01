@@ -46,6 +46,13 @@ MAX_PER_MIN = 180                      # free plan allows 200 requests a minute
 KNOWN_OPTION_GAPS = ("2024-02-26", "2024-03-15")
 NET_BACKOFF = (5, 15, 30, 60, 120, 300)  # waits (s) after a network error (timeout, TLS handshake, reset, DNS) before retrying
 NET_ERRORS = (urllib.error.URLError, TimeoutError, ConnectionError, http.client.HTTPException, OSError)
+MAX_PAGES = 500                          # far above any real request (daily bars of 100 symbols x 10 years: ~25 pages)
+PAGE_NOTE = 100                          # a "still paging" line every 100 pages, so a long request is never silent
+READ_DEADLINE = 120                      # seconds for one whole response (the socket timeout only bounds each read)
+
+
+class PagingError(RuntimeError):
+    """Alpaca kept paging past MAX_PAGES or sent the same page token twice: the request is abandoned, not looped on."""
 _calls = []
 
 
@@ -76,7 +83,7 @@ def _proxied():
 def _urllib_get(url, headers):
     req = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(req, timeout=30) as r:
-        return json.loads(r.read().decode())
+        return json.loads(_read_all(r).decode())
 
 
 def _drop():
@@ -87,6 +94,20 @@ def _drop():
         except Exception:
             pass
     _local.conn, _local.used = None, 0
+
+
+def _read_all(r, deadline=None):
+    """The whole response body, or TimeoutError if it takes longer than READ_DEADLINE seconds in total (a trickling
+    response can otherwise outlast the per-read socket timeout forever)."""
+    t_end = time.monotonic() + (READ_DEADLINE if deadline is None else deadline)
+    chunks = []
+    while True:
+        b = r.read(65536)
+        if not b:
+            return b"".join(chunks)
+        chunks.append(b)
+        if time.monotonic() > t_end:
+            raise TimeoutError(f"response still arriving after {READ_DEADLINE if deadline is None else deadline} s")
 
 
 def _default_http(url, headers):
@@ -107,7 +128,7 @@ def _default_http(url, headers):
         try:
             _local.conn.request("GET", target, headers=headers)
             r = _local.conn.getresponse()
-            body = r.read()
+            body = _read_all(r)
         except (http.client.HTTPException, OSError):
             _drop()
             if reused:
@@ -135,9 +156,13 @@ def _throttle():
         _calls.append(time.time())
 
 
-def get(path, params):
+def get(path, params, net_backoff=None, max_pages=None):
     """GET a market-data path with pagination; yields each page's JSON. Retries 429/5xx with backoff (2^k s, 4 times) and
-    network errors (timeouts, TLS handshake, resets, DNS) with NET_BACKOFF (6 times, about 9 minutes), then raises."""
+    network errors (timeouts, TLS handshake, resets, DNS) with NET_BACKOFF (6 times, about 9 minutes; `net_backoff`
+    overrides), then raises. Raises PagingError after MAX_PAGES pages or a repeated page token (never loops forever)."""
+    net_backoff = NET_BACKOFF if net_backoff is None else tuple(net_backoff)
+    max_pages = MAX_PAGES if max_pages is None else int(max_pages)
+    seen, pages = set(), 0
     key, sec = os.environ.get("ALPACA_KEY"), os.environ.get("ALPACA_SECRET")
     if not key or not sec:
         raise RuntimeError("ALPACA_KEY / ALPACA_SECRET are not set (the desk's paper key, market data only)")
@@ -161,17 +186,24 @@ def get(path, params):
             except NET_ERRORS as e:
                 # a dropped or slow connection (the exam's "handshake operation timed out"): wait and retry the same page,
                 # 6 times over about 9 minutes, then give up (the pulls are resumable: re-running continues)
-                if net < len(NET_BACKOFF):
-                    print(f"pull_alpaca: network error ({type(e).__name__}: {str(e)[:120]}); retry {net + 1}/{len(NET_BACKOFF)} "
-                          f"in {NET_BACKOFF[net]} s", file=sys.stderr, flush=True)
-                    _sleep(NET_BACKOFF[net])
+                if net < len(net_backoff):
+                    print(f"pull_alpaca: network error ({type(e).__name__}: {str(e)[:120]}); retry {net + 1}/{len(net_backoff)} "
+                          f"in {net_backoff[net]} s", file=sys.stderr, flush=True)
+                    _sleep(net_backoff[net])
                     net += 1
                     continue
                 raise
         yield j
+        pages += 1
         token = j.get("next_page_token")
         if not token:
             return
+        if pages % PAGE_NOTE == 0:
+            print(f"pull_alpaca: still paging {path} ({pages} pages so far)", file=sys.stderr, flush=True)
+        if token in seen or pages >= max_pages:
+            raise PagingError(f"{path}: {'the same page token came back' if token in seen else f'more than {max_pages} pages'}; "
+                              f"request abandoned ({str(params.get('symbols', ''))[:80]})")
+        seen.add(token)
 
 
 def _frame(bars):

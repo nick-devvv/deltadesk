@@ -183,12 +183,17 @@ def pull_assets(root, log):
 
 
 # ---------------------------------------------------------------- daily bars
-def _multi_bars(path, symbols, params, kind):
+FETCH_ERRORS = (PA.PagingError, urllib.error.URLError, TimeoutError, ConnectionError, OSError)
+SINGLE_BACKOFF = (5, 15)                 # the single-symbol fallback's network retries (the batch already used the long ones)
+SYMBOL_ERRORS = (PA.PagingError, urllib.error.HTTPError)   # errors that belong to one symbol's request, not to the network
+
+
+def _multi_bars(path, symbols, params, kind, net_backoff=None):
     """Multi-symbol stock bars, at most BATCH symbols a request (each request paginated by pull_alpaca.get)."""
     rows = []
     symbols = list(symbols)
     for i in range(0, len(symbols), BATCH):
-        for page in PA.get(path, dict(params, symbols=",".join(symbols[i:i + BATCH]))):
+        for page in PA.get(path, dict(params, symbols=",".join(symbols[i:i + BATCH])), net_backoff=net_backoff):
             for s, lst in (page.get(kind) or {}).items():
                 rows += [dict(x, symbol=s) for x in lst or []]
     return PA._frame(rows)
@@ -199,20 +204,56 @@ def pull_daily(symbols, root, log, feed="sip", batch=BATCH):
     segs = U.locked_free_segments(U.DAILY_FROM, U.DAILY_TO)
     for a, b in segs:
         check_window(a, b)
-    out = {"pulled": 0, "skipped": 0, "rows": 0}
+    out = {"pulled": 0, "skipped": 0, "rows": 0, "failed": []}
+
+    def fetch(part, adj, net_backoff=None):
+        frames = []
+        for a, b in segs:
+            frames.append(_multi_bars("/v2/stocks/bars", part, {"timeframe": "1Day", "start": _utc(a), "end": _utc(b + timedelta(days=1)),
+                                                               "limit": 10000, "adjustment": adj, "feed": feed, "sort": "asc"}, "bars",
+                                      net_backoff=net_backoff))
+        return pd.concat([f for f in frames if len(f)], ignore_index=True) if any(len(f) for f in frames) else PA._frame([])
+
     for adj in ("raw", "split"):
         folder = Path(root) / "daily9" / adj
-        todo = [s for s in symbols if not (folder / f"{s}.done").exists()]
+        failed_before = [s for s in symbols if (folder / f"{s}.failed").exists() and not (folder / f"{s}.done").exists()]
+        if failed_before:
+            log(f"[daily {adj}] {len(failed_before)} symbol(s) failed on an earlier try and are left out: "
+                f"{', '.join(failed_before[:20])}{' ...' if len(failed_before) > 20 else ''} (delete their .failed markers to retry)")
+            out["failed"] += [f"{adj}:{s}" for s in failed_before]
+        todo = [s for s in symbols if not (folder / f"{s}.done").exists() and not (folder / f"{s}.failed").exists()]
         out["skipped"] += len(symbols) - len(todo)
         pr = Progress(f"daily {adj}", len(todo), log, root=root)
         for i in range(0, len(todo), batch):
             part = todo[i:i + batch]
-            frames = []
-            for a, b in segs:
-                frames.append(_multi_bars("/v2/stocks/bars", part, {"timeframe": "1Day", "start": _utc(a), "end": _utc(b + timedelta(days=1)),
-                                                                   "limit": 10000, "adjustment": adj, "feed": feed, "sort": "asc"}, "bars"))
-            df = pd.concat([f for f in frames if len(f)], ignore_index=True) if any(len(f) for f in frames) else PA._frame([])
+            bad = {}
+            try:
+                df = fetch(part, adj)
+            except FETCH_ERRORS as e:
+                # one stuck or refused request must not stop the whole stage: fetch the batch one symbol at a time with a short
+                # retry budget, keep what comes back, and mark the symbols that still fail (left out, listed in the log)
+                log(f"[daily {adj}] a batch of {len(part)} failed ({type(e).__name__}: {str(e)[:160]}); fetching them one by one")
+                frames, net_only = [], True
+                for s in part:
+                    try:
+                        frames.append(fetch([s], adj, net_backoff=SINGLE_BACKOFF))
+                    except FETCH_ERRORS as e1:
+                        bad[s] = f"{type(e1).__name__}: {str(e1)[:200]}"
+                        net_only = net_only and not isinstance(e1, SYMBOL_ERRORS)
+                if len(bad) == len(part) and net_only:
+                    # every symbol failed on network errors alone: the network is down, not a bad symbol. Stop (the run
+                    # retries later and resumes) instead of marking good symbols as failed.
+                    raise ConnectionError(f"daily {adj}: every symbol of the batch failed on network errors ({next(iter(bad.values()))})")
+                df = pd.concat([f for f in frames if len(f)], ignore_index=True) if any(len(f) for f in frames) else PA._frame([])
+            for s, why in bad.items():
+                folder.mkdir(parents=True, exist_ok=True)
+                (folder / f"{s}.failed").write_text(json.dumps({"reason": why}))
+                out["failed"].append(f"{adj}:{s}")
+            if bad:
+                log(f"[daily {adj}] left out after single-symbol tries: {', '.join(sorted(bad))}")
             for s in part:
+                if s in bad:
+                    continue
                 g = df[df["symbol"] == s].drop(columns=["symbol"]) if len(df) else PA._frame([])
                 if len(g):
                     g = g.drop_duplicates("ts").sort_values("ts")
