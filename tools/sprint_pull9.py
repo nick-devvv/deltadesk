@@ -416,6 +416,18 @@ def pull_weekly(root, log, symbols=W.SYMBOLS, a=periods.DEV[0], b=periods.DEV[1]
 
 
 # ---------------------------------------------------------------- EDGAR
+def quarter_listing(q, http, throttle):
+    """The set of file names in EDGAR's daily-index folder for quarter q = (year, n) (its index.json), or None when the
+    listing can't be read (then every weekday is asked for, as before)."""
+    url = f"https://www.sec.gov/Archives/edgar/daily-index/{q[0]}/QTR{q[1]}/index.json"
+    try:
+        txt = E.fetch(url, http, throttle)
+        items = json.loads(txt)["directory"]["item"] if txt else None
+    except (E.RateLimited, ValueError, KeyError, TypeError):
+        return None
+    return {str(i.get("name")) for i in items} if items is not None else None
+
+
 def index_days():
     """Weekdays 2015-12-31..2026-06-30 outside L1/L2 (EDGAR publishes no weekend index; a holiday answers 404)."""
     out, d = [], E.INDEX_FROM
@@ -437,10 +449,22 @@ def pull_edgar_index(root, log, http=None, throttle=None):
         _write_json(tk, json.loads(txt))
     days = index_days()
     todo = [d for d in days if not (er / "index" / f"{d}.done").exists()]
-    out = {"days": len(days), "fetched": 0, "skipped": len(days) - len(todo), "rows_8k": 0}
+    out = {"days": len(days), "fetched": 0, "skipped": len(days) - len(todo), "rows_8k": 0, "not_published": 0}
+    listed = {}
     pr = Progress("edgar index", len(todo), log, root=root)
     for d in todo:
         check_window(d, d)
+        q = (d.year, (d.month - 1) // 3 + 1)
+        if q not in listed:
+            listed[q] = quarter_listing(q, http, throttle)
+        if listed[q] is not None and E.index_url(d).rsplit("/", 1)[1] not in listed[q]:
+            # EDGAR publishes no daily index on its holidays (SEC answers 403 for those, which the fetch would read as a
+            # refusal): a day missing from the quarter's own listing has no filings, so it is recorded as empty
+            _write_json(er / "index" / f"{d}.json", [])
+            (er / "index" / f"{d}.done").write_text(json.dumps({"rows": 0, "found": False, "not_published": True}))
+            out["not_published"] += 1
+            pr.step()
+            continue
         txt = E.fetch(E.index_url(d), http, throttle)
         rows = E.parse_form_index(txt) if txt else []
         _write_json(er / "index" / f"{d}.json", [{"form": r["form"], "cik": r["cik"], "filed": r["filed"].isoformat(), "acc": r["acc"]}

@@ -148,3 +148,28 @@ def test_unreachable_sec_skips_the_8k_stages_and_finishes(monkeypatch, tmp_path,
     out = capsys.readouterr().out
     assert rc == 0 and called == [] and out.count("WARNING: [") == 4 and "NOT reachable" in out
     assert "sprint_pull9 done" in out
+
+
+def test_edgar_index_skips_holidays_missing_from_the_quarter_listing(tmp_path, monkeypatch):
+    from datetime import date
+    asked = []
+    listing = {"directory": {"item": [{"name": "form.20160104.idx"}, {"name": "form.20160105.idx"}]}}
+
+    def http(url):
+        asked.append(url)
+        if url.endswith("company_tickers.json"):
+            return 200, json.dumps({"0": {"cik_str": 1, "ticker": "AAA", "title": "A"}})
+        if url.endswith("QTR1/index.json"):
+            return 200, json.dumps(listing)
+        if url.endswith("form.20160101.idx"):
+            return 403, ""                                      # SEC's answer for a holiday
+        return 200, ""
+    monkeypatch.setattr(P9, "index_days", lambda: [date(2016, 1, 1), date(2016, 1, 4), date(2016, 1, 5)])
+
+    class NoT:
+        def wait(self):
+            pass
+    out = P9.pull_edgar_index(tmp_path / "alpaca", print, http=http, throttle=NoT())
+    assert out["not_published"] == 1 and out["fetched"] == 2
+    assert not any(u.endswith("form.20160101.idx") for u in asked)
+    assert sum(u.endswith("index.json") for u in asked) == 1

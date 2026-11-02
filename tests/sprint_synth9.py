@@ -287,6 +287,8 @@ class FakeSEC:
             return self.fail_codes.pop(0), ""
         if url.endswith("company_tickers.json"):
             return 200, json.dumps(self.m.tickers())
+        if "/daily-index/" in url and url.endswith("/index.json"):
+            return 404, ""                                  # no quarter listing: the pull asks for every weekday, as before
         if "/daily-index/" in url:
             d = datetime.strptime(url.rsplit("form.", 1)[1][:8], "%Y%m%d").date()
             assert not periods.overlaps(d, d), url
