@@ -125,3 +125,26 @@ def test_a_symbol_that_hangs_alone_is_left_out_when_the_others_come_back(tmp_pat
     monkeypatch.setattr(P9, "_multi_bars", fake_multi)
     out = P9.pull_daily(["AAA", "BAD"], tmp_path / "alpaca", print, batch=100)
     assert sorted(out["failed"]) == ["raw:BAD", "split:BAD"]
+
+
+def test_sec_probe_needs_an_answer_and_is_bounded_by_its_deadline():
+    import time as _t
+    assert P9.sec_reachable(lambda u: (200, "ok")) is True
+    assert P9.sec_reachable(lambda u: (404, "")) is True
+    assert P9.sec_reachable(lambda u: (403, "")) is False
+    assert P9.sec_reachable(lambda u: (599, "")) is False
+    t0 = _t.time()
+    assert P9.sec_reachable(lambda u: _t.sleep(5) or (200, ""), deadline=0.5) is False
+    assert _t.time() - t0 < 2
+
+
+def test_unreachable_sec_skips_the_8k_stages_and_finishes(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(P9, "sec_reachable", lambda *a, **k: False)
+    monkeypatch.setattr(P9.E, "load_user_agent", lambda *a, **k: "env")
+    called = []
+    for fn in ("pull_edgar_index", "pull_edgar_headers", "pull_g1", "pull_g2"):
+        monkeypatch.setattr(P9, fn, lambda *a, fn=fn, **k: called.append(fn))
+    rc = P9.main(["--only", "edgar_index,edgar_headers,g1,g2", "--root", str(tmp_path / "alpaca")])
+    out = capsys.readouterr().out
+    assert rc == 0 and called == [] and out.count("WARNING: [") == 4 and "NOT reachable" in out
+    assert "sprint_pull9 done" in out

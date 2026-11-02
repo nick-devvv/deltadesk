@@ -69,6 +69,21 @@ ET = "America/New_York"
 TRADING_HOST = "https://paper-api.alpaca.markets"
 ASSETS_URL = TRADING_HOST + "/v2/assets?status=active&asset_class=us_equity"
 STAGES = ("assets", "daily", "fopt", "weekly", "edgar_index", "edgar_headers", "g1", "g2")
+SEC_STAGES = ("edgar_index", "edgar_headers", "g1", "g2")   # g1/g2 need the 8-K headers
+SEC_PROBE_URL = "https://www.sec.gov/robots.txt"
+
+
+def sec_reachable(http=None, deadline=30.0):
+    """One GET of www.sec.gov with a hard deadline (a thread, so even a connection that hangs past its socket timeout can't
+    block the pull). True when SEC answers at all, except 403 (SEC refusing this computer); False on no answer (599) or no
+    answer within the deadline."""
+    import threading
+    http = http or E.default_http
+    box = {}
+    t = threading.Thread(target=lambda: box.setdefault("r", http(SEC_PROBE_URL)), daemon=True)
+    t.start()
+    t.join(deadline)
+    return bool(box.get("r")) and box["r"][0] not in (403, 599)
 BATCH = 100
 HEADER_WORKERS = 6
 FOPT_BAND = (0.85, 1.01)
@@ -682,8 +697,20 @@ def main(argv=None):
     t0 = time.time()
     panel = None
     rc = 0
+    sec_ok, ua_src = None, None
     for st in stages:
         ts = time.time()
+        if st in SEC_STAGES:
+            if ua_src is None:
+                ua_src = E.load_user_agent(x.sec_env_file)
+            if sec_ok is None and ua_src is not None:
+                sec_ok = sec_reachable()
+                log(f"[sec] www.sec.gov {'reachable' if sec_ok else 'NOT reachable from this computer (no answer within 30 s, or refused)'}")
+            if sec_ok is False:
+                log(f"WARNING: [{st}] skipped: SEC EDGAR can't be reached from this computer, so the 8-K stages (edgar_index, "
+                    "edgar_headers, g1, g2) are left out of this run. Round 9 Part G and round 10's earnings rules will say so. "
+                    "Re-run them later from a computer that reaches www.sec.gov.")
+                continue
         try:
             if st == "assets":
                 pull_assets(root, log)
@@ -701,7 +728,7 @@ def main(argv=None):
             elif st == "weekly":
                 log(f"[weekly] {pull_weekly(root, log)}")
             elif st in ("edgar_index", "edgar_headers"):
-                src = E.load_user_agent(x.sec_env_file)
+                src = ua_src if ua_src is not None else E.load_user_agent(x.sec_env_file)
                 if src is None:
                     log(f"[{st}] SEC_USER_AGENT is not set (not in the environment, not in {x.sec_env_file}): SEC asks every "
                         "automated client for a contact; stage skipped. Tell Nick.")
