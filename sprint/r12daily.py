@@ -16,7 +16,7 @@ Timing: signals on day t's close; orders fill at day t+1's open. Stops are check
   1x = 5 bps, 2x = 10 bps; pass/fail uses 2x. Cash: uninvested capital earns the 3-month T-bill (DTB3, %/100/252 a day)
   on the average of the prior and current close's exposure; exposure above 1 (T7) pays the same rate.
 
-Trials (12; added to the 11,284 before this round for the deflated Sharpe):
+Trials (13; added to the 11,284 before this round for the deflated Sharpe):
   T1 rsi2 (F1, Amendment 12, rules unchanged): long only; signal at the close: close > SMA(200), close < SMA(5), Wilder
      RSI(2) < 10; buy at the next open; exit at the next open after a close > SMA(5) (closes from the entry day on); no
      stop; one position per symbol. 10 ETFs: SPY QQQ IWM DIA XLF XLE XLV EEM GLD TLT, 1/10 of capital each (a symbol's
@@ -34,16 +34,24 @@ Trials (12; added to the 11,284 before this round for the deflated Sharpe):
   T9 mix: 50% T5 + 50% T1, rebalanced to 50/50 every day; the rebalance trades pay the same cost per side.
   T10-T12 (Addendum 12.1, before any run) T1 plus a TRAILING stop 3%, 5%, 8% below the highest of the entry fill and
      every close since entry (through the prior close; it only rises), checked like T2-T4 against the day's low.
+  T13 (Addendum 12.2, before any run) GLD Parabolic SAR, long only (Wilder 1978; the settings of the XAUUSD 4-hour
+     strategy Nick sent: start 0.02, step 0.02, max 0.20, target 3R). SAR from GLD's daily high/low, restarting in each
+     segment. Entry: at the next open after a close on which the SAR flipped from down to up. Stop: that day's SAR level
+     (from bars before it; it follows price up), checked against the low; an open at or below it fills at the open.
+     Target: entry fill + 3 x (entry fill - the entry day's SAR), checked against the high (an open above it fills at the
+     open); stop first when both are touched the same day. An entry open at or below its SAR is skipped and counted.
+     After any exit, flat until the next down-to-up flip. 100% of capital while long (the source's 1%-risk sizing needs
+     leverage that shares don't have).
 
 Windows: FRESH 2005-01-03..2015-12-31 decides pass/fail. SUPP 2000-01-03..2004-12-31, REPL_HIST = HIST and REPL_DEV = DEV
   are information only (rsi2 was already tested in HIST and DEV in rounds 9 and 11).
 
-Pass (all four on FRESH at 2x costs): 1 one-sided p < 0.05 / 12 that the mean daily return over cash is > 0 (circular
+Pass (all four on FRESH at 2x costs): 1 one-sided p < 0.05 / 13 that the mean daily return over cash is > 0 (circular
   block bootstrap of the demeaned series, 21-session blocks, 10,000 draws, default_rng(12)); 2 max drawdown smaller than
-  buy-and-hold SPY's (dividend-adjusted closes); 3 (the rsi2 family T1-T4 and T10-T12) the mean net trade return beats the 95th percentile of
+  buy-and-hold SPY's (dividend-adjusted closes); 3 (trade-based trials: T1-T4, T10-T13) the mean net trade return beats the 95th percentile of
   1,000 random-entry draws (same symbol, same holding length in sessions, open-to-open, inside FRESH, default_rng(7));
-  4 Sharpe over cash > 0. The deflated Sharpe (report.deflated_sharpe, N = 11,284 + 12, sr_var = the variance of round 12's
-  twelve FRESH per-session Sharpes) is reported, not a pass item. A pass earns a forward paper ledger at most.
+  4 Sharpe over cash > 0. The deflated Sharpe (report.deflated_sharpe, N = 11,284 + 13, sr_var = the variance of round 12's
+  thirteen FRESH per-session Sharpes) is reported, not a pass item. A pass earns a forward paper ledger at most.
 """
 import math
 import statistics
@@ -67,7 +75,7 @@ WINDOWS = {
 PASS_WINDOW, PASS_COST = "FRESH", "2x"
 COSTS = {"1x": 0.0005, "2x": 0.0010}
 GAP_DAYS = 10
-N_ROUND, N_PRIOR = 12, 11_284
+N_ROUND, N_PRIOR = 13, 11_284
 ALPHA = 0.05 / N_ROUND
 BOOT_DRAWS, BOOT_BLOCK, BOOT_SEED = 10_000, 21, 12
 CTRL_DRAWS, CTRL_SEED, CTRL_PCT = 1_000, 7, 0.95
@@ -80,8 +88,11 @@ VT_TARGET, VT_CAP, VT_BAND, VT_N = 0.10, 1.5, 0.10, 20
 MOM_N, TOP_K = 252, 3
 MA_FAST, MA_SLOW, MA_EXIT = 10, 30, 0.98
 TRIALS = ("T1_rsi2", "T2_rsi2_stop3", "T3_rsi2_stop5", "T4_rsi2_stop8", "T5_trend200", "T6_sector_dualmom",
-          "T7_voltarget", "T8_twoma_2pct", "T9_mix", "T10_rsi2_trail3", "T11_rsi2_trail5", "T12_rsi2_trail8")
-RSI2_TRIALS = TRIALS[:4] + TRIALS[9:]
+          "T7_voltarget", "T8_twoma_2pct", "T9_mix", "T10_rsi2_trail3", "T11_rsi2_trail5", "T12_rsi2_trail8",
+          "T13_gld_psar_long")
+RSI2_TRIALS = TRIALS[:4] + TRIALS[9:12]
+TRADE_TRIALS = RSI2_TRIALS + ("T13_gld_psar_long",)
+PSAR_START, PSAR_STEP, PSAR_MAX, PSAR_TARGET_R = 0.02, 0.02, 0.20, 3.0
 LABEL = "BACKTEST on Yahoo daily bars (dividend-adjusted returns)"
 
 
@@ -326,6 +337,115 @@ def twoma_weights(m, sym="SPY"):
     return per_segment(m, sc, one)
 
 
+def psar(h, lo, start=PSAR_START, step=PSAR_STEP, amax=PSAR_MAX):
+    """Wilder's Parabolic SAR on one segment. Returns (level, trend): level[i] is the SAR in effect during bar i, computed
+    from bars before i only (the stop a position holds through bar i); trend[i] is +1 / -1 after bar i (a bar whose low
+    goes under an up-trend's level, or whose high goes over a down-trend's level, reverses it). NaN / 0 before two bars.
+    The first trend is up if bar 1's midpoint is above bar 0's. On a reversal the new trend's SAR starts at the old
+    trend's extreme point and the acceleration factor resets."""
+    n = len(h)
+    level = np.full(n, np.nan)
+    trend = np.zeros(n, int)
+    idx = np.flatnonzero(np.isfinite(h) & np.isfinite(lo))
+    if len(idx) < 2:
+        return level, trend
+    s0 = idx[0]
+    if not np.all(np.isfinite(h[s0:])) or not np.all(np.isfinite(lo[s0:])):
+        return level, trend
+    up = (h[s0 + 1] + lo[s0 + 1]) > (h[s0] + lo[s0])
+    sar = lo[s0] if up else h[s0]
+    ep = h[s0 + 1] if up else lo[s0 + 1]
+    af = start
+    level[s0 + 1] = sar
+    trend[s0 + 1] = 1 if up else -1
+    for i in range(s0 + 2, n):
+        s = sar + af * (ep - sar)
+        if up:
+            s = min(s, lo[i - 1], lo[i - 2])
+            level[i] = s
+            if lo[i] <= s:
+                up, s, ep, af = False, ep, lo[i], start
+            elif h[i] > ep:
+                ep, af = h[i], min(af + step, amax)
+        else:
+            s = max(s, h[i - 1], h[i - 2])
+            level[i] = s
+            if h[i] >= s:
+                up, s, ep, af = True, ep, h[i], start
+            elif lo[i] < ep:
+                ep, af = lo[i], min(af + step, amax)
+        sar = s
+        trend[i] = 1 if up else -1
+    return level, trend
+
+
+def psar_segments(m, sym):
+    level = np.full(m.n, np.nan)
+    trend = np.zeros(m.n, int)
+    for a, b in m.segments():
+        level[a:b], trend[a:b] = psar(m.h[sym][a:b], m.l[sym][a:b])
+    return level, trend
+
+
+def sim_psar_long(m, sym, cost, target_r=PSAR_TARGET_R):
+    """T13 on one symbol, 100% of capital while long. Returns (daily return excluding cash, exposure, trades, skipped)."""
+    level, trend = psar_segments(m, sym)
+    flip_up = np.zeros(m.n, bool)
+    flip_up[1:] = (trend[1:] == 1) & (trend[:-1] == -1) & (m.seg[1:] == m.seg[:-1])
+    o, hi, lo, c = m.o[sym], m.h[sym], m.l[sym], m.c[sym]
+    ends = _ends(m)
+    r = np.zeros(m.n)
+    expo = np.zeros(m.n)
+    trades = []
+    skipped = 0
+    pos, entry, e_idx, target = False, math.nan, -1, math.nan
+    enter = False
+
+    def book(x_idx, px, why):
+        trades.append({"symbol": sym, "entry_idx": e_idx, "exit_idx": x_idx, "entry_day": m.days[e_idx].isoformat(),
+                       "exit_day": m.days[x_idx].isoformat(), "entry_px": round(entry, 6), "exit_px": round(px, 6),
+                       "gross": px / entry - 1.0, "hold": x_idx - e_idx, "exit": why})
+
+    for d in range(m.n):
+        new_seg = d == 0 or m.seg[d] != m.seg[d - 1]
+        if new_seg:
+            enter = False
+        else:
+            if pos:
+                r[d] += o[d] / c[d - 1] - 1.0
+            if not pos and enter and np.isfinite(o[d]):
+                if np.isfinite(level[d]) and o[d] > level[d]:
+                    pos, entry, e_idx = True, o[d], d
+                    target = entry + target_r * (entry - level[d])
+                    r[d] -= cost
+                else:
+                    skipped += 1
+        if pos:
+            stop = level[d]
+            fill = why = None
+            if o[d] <= stop:
+                fill, why = o[d], "stop"
+            elif lo[d] <= stop:
+                fill, why = stop, "stop"
+            elif o[d] >= target:
+                fill, why = o[d], "target"
+            elif hi[d] >= target:
+                fill, why = target, "target"
+            if fill is not None:
+                r[d] += fill / o[d] - 1.0 - cost
+                book(d, fill, why)
+                pos = False
+            else:
+                r[d] += c[d] / o[d] - 1.0
+        if pos and ends[d]:
+            r[d] -= cost
+            book(d, c[d], "segment end")
+            pos = False
+        enter = (not pos) and bool(flip_up[d])
+        expo[d] = 1.0 if pos else 0.0
+    return r, expo, trades, skipped
+
+
 def _ret_n(x, n=MOM_N):
     """Return over the last n sessions (NaN until n sessions exist)."""
     out = np.full(len(x), np.nan)
@@ -379,7 +499,7 @@ def combine(m, rets, expos, shares):
 
 
 def run_trials(m, cost):
-    """All twelve trials at one cost level. Returns {trial: {"r": daily returns, "expo": exposure, "trades": [...]}}."""
+    """All thirteen trials at one cost level. Returns {trial: {"r": daily returns, "expo": exposure, "trades": [...]}}."""
     out = {}
     sigs = {s: rsi2_signal(m, s) for s in RSI2_ETFS if m.has(s)}
     share = 1.0 / len(RSI2_ETFS)
@@ -407,6 +527,13 @@ def run_trials(m, cost):
     mix = 0.5 * a + 0.5 * b
     mix -= cost * 0.5 * np.abs(a - b) / (1.0 + mix)
     out["T9_mix"] = {"r": mix, "expo": 0.5 * out["T5_trend200"]["expo"] + 0.5 * out["T1_rsi2"]["expo"]}
+    if m.has("GLD"):
+        r13, e13, t13, sk13 = sim_psar_long(m, "GLD", cost)
+        r13, e13 = combine(m, {"GLD": r13}, {"GLD": e13}, {"GLD": 1.0})
+    else:                                   # GLD excluded by the data check: cash, no trades, the trial fails
+        r13, e13 = combine(m, {}, {}, {})
+        t13, sk13 = [], 0
+    out["T13_gld_psar_long"] = {"r": r13, "expo": e13, "trades": t13, "skipped": sk13}
     for v in out.values():
         v.setdefault("trades", None)
     return out
@@ -523,6 +650,7 @@ def evaluate(m, results_by_cost):
     masks = {w: window_mask(m, w) for w in WINDOWS}
     for w, mk in masks.items():
         out["benchmark"][w] = buy_hold(m, mk)[0]
+    out["benchmark_gld"] = {w: buy_hold(m, mk, "GLD")[0] for w, mk in masks.items()} if m.has("GLD") else {}
     fresh = masks[PASS_WINDOW]
     for name in TRIALS:
         row = {}
@@ -539,8 +667,10 @@ def evaluate(m, results_by_cost):
         ex = res["r"][fresh] - m.cash[fresh]
         p, ci = block_bootstrap(ex)
         row["pass_inputs"] = {"p_one_sided": p, "mean_excess_ci95_bps": [ci[0] * 1e4, ci[1] * 1e4]}
-        if name in RSI2_TRIALS:
+        if name in TRADE_TRIALS:
             row["random_control"] = random_control(res["trades"], m, COSTS[PASS_COST], fresh)
+        if "skipped" in res:
+            row["skipped_entries"] = int(res["skipped"])
         out["trials"][name] = row
     sh = {}
     for name in TRIALS:
@@ -565,7 +695,7 @@ def verdict(name, row, bench):
         "2 drawdown smaller than SPY": f["max_dd"] > bench["max_dd"],
         "4 Sharpe over cash > 0": (f["sharpe"] or 0) > 0,
     }
-    if name in RSI2_TRIALS:
+    if name in TRADE_TRIALS:
         rc = row.get("random_control")
         items["3 beats 95% of random entries"] = bool(rc) and rc["observed_mean"] > rc["p95"]
     ok = all(items.values())
@@ -600,6 +730,9 @@ def report_md(ev, data_note=""):
                  f"{'' if v['pass'] else v['why'].replace('failed: ', '')} |")
     if b:
         L += ["", f"Buy-and-hold SPY on FRESH: Sharpe {_f(b['sharpe'])}, CAGR {_pct(b['cagr'])}, max DD {_pct(b['max_dd'])}."]
+    g = (ev.get("benchmark_gld") or {}).get("FRESH")
+    if g:
+        L += [f"Buy-and-hold GLD on FRESH (information, for T13): Sharpe {_f(g['sharpe'])}, CAGR {_pct(g['cagr'])}, max DD {_pct(g['max_dd'])}."]
     L += ["", "## Every window (2x costs; information except FRESH)", "",
           "| Trial | Window | Sessions | CAGR | Sharpe | Max DD | Trades | Expectancy/trade | PF | Trade CI 95% |", "|---|---|---|---|---|---|---|---|---|---|"]
     for name in TRIALS:
@@ -616,9 +749,9 @@ def report_md(ev, data_note=""):
     for w, s in ev["benchmark"].items():
         if s:
             L.append(f"| buy and hold | {w} | {s['sessions']} | {_pct(s['cagr'])} | {_f(s['sharpe'])} | {_pct(s['max_dd'])} |")
-    L += ["", "## Random-entry control (rsi2 family: T1-T4, T10-T12; FRESH, 2x costs)", "", "| Trial | Trades | Mean net/trade | Random 95th pct | Share of draws below |",
+    L += ["", "## Random-entry control (trade-based trials: T1-T4, T10-T13; FRESH, 2x costs)", "", "| Trial | Trades | Mean net/trade | Random 95th pct | Share of draws below |",
           "|---|---|---|---|---|"]
-    for name in RSI2_TRIALS:
+    for name in TRADE_TRIALS:
         rc = ev["trials"][name].get("random_control")
         if rc:
             L.append(f"| {name} | {rc['trades']} | {_pct(rc['observed_mean'], 3)} | {_pct(rc['p95'], 3)} | {_f(rc['share_below'], 3)} |")

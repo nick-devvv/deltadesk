@@ -148,6 +148,45 @@ def test_trailing_stop_rises_with_closes_and_never_falls():
     assert t[0]["exit_px"] == pytest.approx(110.0)
 
 
+PS_H = [10, 11, 12, 13, 12.5, 12.8, 14, 15, 15.5, 16, 16.2, 16.4]
+PS_L = [9, 10, 11, 12, 8, 11, 12, 13, 14, 14.5, 15, 15.2]
+PS_O = [9.5, 10.5, 11.5, 12.5, 12, 12, 13, 14.5, 14.8, 15, 15.5, 15.8]
+PS_C = [9.8, 10.8, 11.8, 12.8, 9, 12.5, 13.8, 14.8, 15.2, 15.8, 16, 16.1]
+
+
+def test_psar_matches_hand_computation():
+    level, trend = R.psar(np.array(PS_H, float), np.array(PS_L, float))
+    # up from bar 1 (SAR 9); AF 0.02 -> 0.04 -> 0.06 on new highs; bar 4's low 8 breaks 9.3528: down, SAR = the old EP 13;
+    # bar 6's high 14 breaks 12.9: up, SAR = the old EP 8, then 8 + 0.02 x (14 - 8) = 8.12 for bar 7
+    assert np.allclose(level[1:8], [9, 9, 9.12, 9.3528, 13, 12.9, 8.12])
+    assert list(trend[1:8]) == [1, 1, 1, -1, -1, 1, 1]
+
+
+def ps_market(**chg):
+    o, h, lo, c = (np.array(x, float) for x in (PS_O, PS_H, PS_L, PS_C))
+    for k, (i, v) in chg.items():
+        {"o": o, "h": h, "l": lo, "c": c}[k][i] = v
+    return tiny_market(o, h, lo, c)
+
+
+def test_psar_long_entry_target_stop_and_skip():
+    target = 14.5 + 3 * (14.5 - 8.12)
+    m = ps_market(h=(9, 40.0))
+    _, ex, t, sk = R.sim_psar_long(m, "SPY", COST)
+    assert t[0]["entry_idx"] == 7 and t[0]["entry_px"] == pytest.approx(14.5), "in at the open after the down-to-up flip"
+    assert t[0]["exit"] == "target" and t[0]["exit_px"] == pytest.approx(target)
+    m = ps_market(h=(9, 40.0), l=(9, 5.0))
+    _, _, t, _ = R.sim_psar_long(m, "SPY", COST)
+    level, _ = R.psar_segments(m, "SPY")
+    assert t[0]["exit"] == "stop" and t[0]["exit_px"] == pytest.approx(level[9]), "stop first when both are touched"
+    m = ps_market(o=(9, 5.0), l=(9, 4.9))
+    _, _, t, _ = R.sim_psar_long(m, "SPY", COST)
+    assert t[0]["exit"] == "stop" and t[0]["exit_px"] == pytest.approx(5.0), "a gap under the SAR fills at the open"
+    m = ps_market(o=(7, 8.0), l=(7, 7.9))
+    _, _, t, sk = R.sim_psar_long(m, "SPY", COST)
+    assert sk == 1 and not [x for x in t if x["entry_idx"] == 7], "an entry open at or below its SAR is skipped"
+
+
 def test_round_trip_costs_and_segment_end():
     n = 8
     c = np.full(n, 100.0)
@@ -207,7 +246,7 @@ def test_rotation_picks_top3_or_tlt():
         assert w["TLT"][d] == 1.0 and sum(w[s][d] for s in R.SECTORS) == 0
 
 
-@pytest.mark.parametrize("fn", ["trend", "vol", "twoma", "rot", "rsi2"])
+@pytest.mark.parametrize("fn", ["trend", "vol", "twoma", "rot", "rsi2", "psar"])
 def test_no_lookahead(fn):
     m, frames, cash = market_all(seed=7, a="2002-01-02", b="2010-12-31")
     k = 1500
@@ -221,6 +260,8 @@ def test_no_lookahead(fn):
             return R.twoma_weights(mm)
         if fn == "rot":
             return sum(R.rotation_weights(mm).values())
+        if fn == "psar":
+            return R.sim_psar_long(mm, "GLD", COST)[0]
         return R.sim_rsi2(mm, "SPY", 0.05, COST)[0]
 
     base = out(m)
@@ -278,7 +319,8 @@ def test_evaluate_and_report(monkeypatch):
         assert "3 beats 95% of random entries" in ev["verdicts"][name]["items"]
         assert ev["trials"][name]["random_control"]["draws"] == R.CTRL_DRAWS
     assert ev["trials"]["T1_rsi2"]["2x"]["FRESH"]["trade_stats"]["trades"] > 0
-    assert ev["n_trials_total"] == 11_296
+    assert ev["n_trials_total"] == 11_297
+    assert ev["trials"]["T13_gld_psar_long"]["random_control"] is not None
     md = R.report_md(ev, "note")
     for name in R.TRIALS:
         assert name in md
@@ -423,7 +465,7 @@ def test_end_to_end_run_and_zips(tmp_path, monkeypatch):
     with gzip.open(out / "round12_daily_2026-11-03.csv.gz", "rt") as fh:
         daily = pd.read_csv(fh)
     assert {"T1_rsi2", "T9_mix", "SPY_bh", "cash"} <= set(daily.columns)
-    assert sum(1 for x in lines if x.startswith("round12 ")) == len(R.TRIALS) == 12
+    assert sum(1 for x in lines if x.startswith("round12 ")) == len(R.TRIALS) == 13
     zr, zd = T12.make_zips(data, out, tmp_path, stamp, log=lambda *a: None)
     with zipfile.ZipFile(zr) as z:
         names = z.namelist()

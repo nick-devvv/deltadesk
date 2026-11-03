@@ -240,7 +240,7 @@ Details: `docs/research/SPRINT_RESULTS_EXAM.md`.
 
 ## Round 12 (2026-11-03): daily-bar ETF rules on 2005-2015
 
-Pre-registered in SPRINT_PLAN "Round 12 pre-registration" before any pull or run. Twelve trials on free Yahoo daily bars, judged on 2005-2015 (history no round has touched) at 10 bps a side. Code: `sprint/r12daily.py`, `tools/sprint_r12.py`.
+Pre-registered in SPRINT_PLAN "Round 12 pre-registration" before any pull or run. Thirteen trials on free Yahoo daily bars, judged on 2005-2015 (history no round has touched) at 10 bps a side. Code: `sprint/r12daily.py`, `tools/sprint_r12.py`.
 
 | Trial | Source | Evidence grade | Note |
 |---|---|---|---|
@@ -250,3 +250,4 @@ Pre-registered in SPRINT_PLAN "Round 12 pre-registration" before any pull or run
 | T7 volatility target | 151 s6.5; Moreira & Muir 2017, "Volatility-Managed Portfolios" (*JF*) | A | Leverage up to 1.5x, paid at the T-bill rate |
 | T8 two moving averages, 2% exit | 151 s3.12 | C | Described, not tested, in the source |
 | T9 50/50 T5 + T1 | this round | n/a | Tests whether two unlike rules smooth each other |
+| T13 GLD Parabolic SAR, long only, 3R target | Wilder 1978, *New Concepts in Technical Trading Systems*; settings from the XAUUSD 4-hour strategy Nick sent (seller's backtest only) | C | A daily-bar, long-only GLD cousin of that strategy; the exact XAUUSD 4-hour version can't be tested or traded on the desk |

@@ -4,7 +4,7 @@ This runs the sprint's backtests on Chart's computer, the only machine that can 
 
 ## Round 12: daily ETF rules on free 2005-2015 history (about 10-20 minutes)
 
-SPRINT_PLAN "Round 12 pre-registration" and Addendum 12.1. Twelve trials on free Yahoo daily bars, judged on 2005-2015. It runs in a new folder, `~/sprint12`, from branch `sprint/round12`, so `~/sprint` (round 11's unpushed commit 657a8f4 and its data) is never touched. No Alpaca key is needed: the data come from Yahoo (yfinance), Stooq and FRED, read-only. Only 1998-01-02..2024-01-31 and 2024-08-01..2026-06-30 are requested, so L1 and L2 are never asked for. It reuses `~/sprint/.venv`'s Python (pandas, numpy, yfinance) and only reads from it.
+SPRINT_PLAN "Round 12 pre-registration" and Addenda 12.1-12.2. Thirteen trials on free Yahoo daily bars, judged on 2005-2015. It runs in a new folder, `~/sprint12`, from branch `sprint/round12`, so `~/sprint` (round 11's unpushed commit 657a8f4 and its data) is never touched. No Alpaca key is needed: the data come from Yahoo (yfinance), Stooq and FRED, read-only. Only 1998-01-02..2024-01-31 and 2024-08-01..2026-06-30 are requested, so L1 and L2 are never asked for. It reuses `~/sprint/.venv`'s Python (pandas, numpy, yfinance) and only reads from it.
 
 ### Message for Chart, round 12 (one paste)
 
@@ -24,7 +24,7 @@ If a step fails, show the error and stop. Don't change any code; re-running the 
    cd ~/sprint12 && mkdir -p data/sprint/logs && ~/sprint/.venv/bin/python tools/sprint_r12.py fetch > data/sprint/logs/r12_fetch.log 2>&1; echo "exit $?"; tail -45 data/sprint/logs/r12_fetch.log
 5. Data check:
    cd ~/sprint12 && ~/sprint/.venv/bin/python tools/sprint_r12.py check > data/sprint/logs/r12_check.log 2>&1; echo "exit $?"; cat data/sprint/logs/r12_check.log
-6. Run the twelve trials (about 1 minute):
+6. Run the thirteen trials (about 1 minute):
    cd ~/sprint12 && ~/sprint/.venv/bin/python tools/sprint_r12.py run > data/sprint/logs/r12_run.log 2>&1; echo "exit $?"; cat data/sprint/logs/r12_run.log
 7. Zip and show the verdicts:
    cd ~/sprint12 && ~/sprint/.venv/bin/python tools/sprint_r12.py zip && sed -n '/^## Verdicts/,/^## Every window/p' "$(ls -t data/sprint/round12_2*.md | head -1)"
@@ -35,10 +35,10 @@ What Nick sends back: step 3's last line, steps 4-6 in full, step 7's table, and
 
 Checks on the way in:
 - Step 2: if the import fails, stop; Chart must not install anything into `~/sprint/.venv`. Fallback (Nick's yes first): `cd ~/sprint12 && python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt`, then use `~/sprint12/.venv/bin/python` in steps 3-7.
-- Step 3: 27 round 12 tests pass.
+- Step 3: 30 round 12 tests pass.
 - Step 4: 16 symbols plus ^IRX from Yahoo, each "N rows first..last" with no "locked rows dropped" (or a count, which is fine: they are dropped). SPY, DIA and the XL sectors start in 1998, QQQ 1999, IWM 2000, TLT 2002-07, EEM 2003-04, GLD 2004-11. Every file ends on 2026-06-30 with a gap from 2024-02-01 to 2024-07-31. Stooq may answer "unavailable" (daily-hits limit or a block): that is allowed, and the report then says "single source".
 - Step 5: "Excluded: none" is the normal answer. Missing sessions near 0. A long row of mismatches for one symbol means that symbol is dropped by the pre-registered rule, not by judgment.
-- Step 6: twelve `round12 T...: PASS/FAIL` lines and a report path. Exit 3 means SPY failed the check or there is no cash series: stop there.
+- Step 6: thirteen `round12 T...: PASS/FAIL` lines and a report path. Exit 3 means SPY failed the check or there is no cash series: stop there.
 
 ## Rounds 9 + 10 in one go (recommended): about 16-23 hours unattended
 
