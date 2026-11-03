@@ -2,6 +2,44 @@
 
 This runs the sprint's backtests on Chart's computer, the only machine that can reach Alpaca's data API. Everything runs in its own folder, `~/sprint`, from branch `sprint/exits`. Nothing touches `~/desk`, its journal or the live desk, and nothing can place an order: the puller only reads `data.alpaca.markets` (market data), and the engine only reads files it pulled.
 
+## Round 12: daily ETF rules on free 2005-2015 history (about 10-20 minutes)
+
+SPRINT_PLAN "Round 12 pre-registration". Nine trials on free Yahoo daily bars, judged on 2005-2015. It runs in a new folder, `~/sprint12`, from branch `sprint/round12`, so `~/sprint` (round 11's unpushed commit 657a8f4 and its data) is never touched. No Alpaca key is needed: the data come from Yahoo (yfinance), Stooq and FRED, read-only. Only 1998-01-02..2024-01-31 and 2024-08-01..2026-06-30 are requested, so L1 and L2 are never asked for. It reuses `~/sprint/.venv`'s Python (pandas, numpy, yfinance) and only reads from it.
+
+### Message for Chart, round 12 (one paste)
+
+```
+Sprint round 12: daily ETF rules on free long history (research only, about 10-20 minutes). Show me every output.
+Rules: you never place trades, never click buy/sell/order buttons, never enter passwords or keys, never print a key.
+Never touch ~/desk: don't cd into it, don't edit, copy, restart or run anything there. Never pass --locked or --frozen to any command.
+Leave ~/sprint as it is: don't checkout, reset or pull there. Round 12 runs in its own folder, ~/sprint12.
+If a step fails, show the error and stop. Don't change any code; re-running the same command once is fine (the fetch resumes).
+1. Get the round 12 code in its own folder:
+   [ -d ~/sprint12/.git ] || git clone -q --branch sprint/round12 https://github.com/nick-devvv/deltadesk ~/sprint12; cd ~/sprint12 && git fetch -q origin sprint/round12 && git checkout -q sprint/round12 && git reset -q --hard origin/sprint/round12 && git log -1 --oneline
+2. Python check (reuses the sprint venv, read-only):
+   cd ~/sprint12 && ~/sprint/.venv/bin/python -c "import pandas, numpy, yfinance; print('ok', pandas.__version__, numpy.__version__, yfinance.__version__)"
+3. Tests:
+   cd ~/sprint12 && ~/sprint/.venv/bin/python -m pytest -q -p no:cacheprovider tests/test_sprint_r12.py 2>&1 | tail -3
+4. Fetch the free daily history (2-10 min, safe to re-run):
+   cd ~/sprint12 && mkdir -p data/sprint/logs && ~/sprint/.venv/bin/python tools/sprint_r12.py fetch > data/sprint/logs/r12_fetch.log 2>&1; echo "exit $?"; tail -45 data/sprint/logs/r12_fetch.log
+5. Data check:
+   cd ~/sprint12 && ~/sprint/.venv/bin/python tools/sprint_r12.py check > data/sprint/logs/r12_check.log 2>&1; echo "exit $?"; cat data/sprint/logs/r12_check.log
+6. Run the nine trials (about 1 minute):
+   cd ~/sprint12 && ~/sprint/.venv/bin/python tools/sprint_r12.py run > data/sprint/logs/r12_run.log 2>&1; echo "exit $?"; cat data/sprint/logs/r12_run.log
+7. Zip and show the verdicts:
+   cd ~/sprint12 && ~/sprint/.venv/bin/python tools/sprint_r12.py zip && sed -n '/^## Verdicts/,/^## Every window/p' "$(ls -t data/sprint/round12_2*.md | head -1)"
+   (send Nick both files: ~/sprint_results12.zip and ~/sprint_data12.zip)
+```
+
+What Nick sends back: step 3's last line, steps 4-6 in full, step 7's table, and both zips. `sprint_data12.zip` holds the raw daily files, so Claude can re-run every number independently.
+
+Checks on the way in:
+- Step 2: if the import fails, stop; Chart must not install anything into `~/sprint/.venv`. Fallback (Nick's yes first): `cd ~/sprint12 && python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt`, then use `~/sprint12/.venv/bin/python` in steps 3-7.
+- Step 3: 26 round 12 tests pass.
+- Step 4: 16 symbols plus ^IRX from Yahoo, each "N rows first..last" with no "locked rows dropped" (or a count, which is fine: they are dropped). SPY, DIA and the XL sectors start in 1998, QQQ 1999, IWM 2000, TLT 2002-07, EEM 2003-04, GLD 2004-11. Every file ends on 2026-06-30 with a gap from 2024-02-01 to 2024-07-31. Stooq may answer "unavailable" (daily-hits limit or a block): that is allowed, and the report then says "single source".
+- Step 5: "Excluded: none" is the normal answer. Missing sessions near 0. A long row of mismatches for one symbol means that symbol is dropped by the pre-registered rule, not by judgment.
+- Step 6: nine `round12 T...: PASS/FAIL` lines and a report path. Exit 3 means SPY failed the check or there is no cash series: stop there.
+
 ## Rounds 9 + 10 in one go (recommended): about 16-23 hours unattended
 
 Round 10 needs round 9's download (U-STK, daily bars, the 8-K headers), so round 9 can't be skipped. Its analysis is short and runs while round 10 downloads.

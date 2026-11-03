@@ -237,3 +237,16 @@ Four finalists went through the frozen exam, once each, on L2 (2024-02-01..07-31
 - The paper ledger `otm_h` is to be relabeled "failed the exam" (a desk change, awaiting Nick's yes).
 
 Details: `docs/research/SPRINT_RESULTS_EXAM.md`.
+
+## Round 12 (2026-11-03): daily-bar ETF rules on 2005-2015
+
+Pre-registered in SPRINT_PLAN "Round 12 pre-registration" before any pull or run. Nine trials on free Yahoo daily bars, judged on 2005-2015 (history no round has touched) at 10 bps a side. Code: `sprint/r12daily.py`, `tools/sprint_r12.py`.
+
+| Trial | Source | Evidence grade | Note |
+|---|---|---|---|
+| T1 rsi2 (F1 unchanged), T2-T4 with 3/5/8% stops | Connors & Alvarez 2008, *Short Term Trading Strategies That Work* | B (practitioner book, widely replicated) | Round 11: held-out PF 1.41 on 2016-2026 ETFs; deflated Sharpe failed. The stops are Nick's question; Chan 2013 (ch. 8) warns that stops tend to hurt mean-reversion rules |
+| T5 trend200 | Faber 2007, "A Quantitative Approach to Tactical Asset Allocation" (*Journal of Wealth Management*); Brock, Lakonishok & LeBaron 1992 (*JF*) | A for the drawdown claim, B for returns | The usual finding is a smaller drawdown, not a higher return |
+| T6 sector dual momentum | Kakushadze & Serur 2018, *151 Trading Strategies* (SSRN 3247865) s4.1.2; Antonacci 2014, *Dual Momentum Investing*; Moskowitz, Ooi & Pedersen 2012 (*JFE*) | B | Rules are descriptive in the 151 book; no performance figures there |
+| T7 volatility target | 151 s6.5; Moreira & Muir 2017, "Volatility-Managed Portfolios" (*JF*) | A | Leverage up to 1.5x, paid at the T-bill rate |
+| T8 two moving averages, 2% exit | 151 s3.12 | C | Described, not tested, in the source |
+| T9 50/50 T5 + T1 | this round | n/a | Tests whether two unlike rules smooth each other |
