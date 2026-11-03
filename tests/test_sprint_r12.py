@@ -128,6 +128,26 @@ def test_stopped_symbol_waits_for_a_close_above_sma5():
     assert ex[6] == 0 and ex[9] == 1
 
 
+def test_trailing_stop_rises_with_closes_and_never_falls():
+    c = np.array([100, 100, 100, 100, 110, 120, 115, 118, 112, 100, 100, 100], float)
+    o, h, lo = c.copy(), c * 1.001, c * 0.999
+    o[8], lo[8] = 116.0, 113.0          # day 8: peak close so far 120 -> trail 5% = 114; opens above, the low touches it
+    sig = np.zeros(len(c), bool)
+    ab = np.zeros(len(c), bool)
+    sig[2] = True                       # entry at the open of day 3 (100)
+    m = tiny_market(o, h, lo, c)
+    _, _, t = R.sim_rsi2(m, "SPY", 0.05, COST, sig, ab, trail=True)
+    assert t[0]["exit"] == "stop" and t[0]["exit_idx"] == 8
+    assert t[0]["exit_px"] == pytest.approx(114.0), "120 x 0.95; the dip to 115 on day 6 did not lower it"
+    _, _, f = R.sim_rsi2(m, "SPY", 0.05, COST, sig, ab, trail=False)
+    assert not [x for x in f if x["exit"] == "stop"], "the fixed stop (95) is never touched here"
+    o2 = o.copy()
+    o2[8], lo[8] = 110.0, 109.0         # a gap below the trail fills at the open
+    m = tiny_market(o2, h, lo, c)
+    _, _, t = R.sim_rsi2(m, "SPY", 0.05, COST, sig, ab, trail=True)
+    assert t[0]["exit_px"] == pytest.approx(110.0)
+
+
 def test_round_trip_costs_and_segment_end():
     n = 8
     c = np.full(n, 100.0)
@@ -258,7 +278,7 @@ def test_evaluate_and_report(monkeypatch):
         assert "3 beats 95% of random entries" in ev["verdicts"][name]["items"]
         assert ev["trials"][name]["random_control"]["draws"] == R.CTRL_DRAWS
     assert ev["trials"]["T1_rsi2"]["2x"]["FRESH"]["trade_stats"]["trades"] > 0
-    assert ev["n_trials_total"] == 11_293
+    assert ev["n_trials_total"] == 11_296
     md = R.report_md(ev, "note")
     for name in R.TRIALS:
         assert name in md
@@ -403,7 +423,7 @@ def test_end_to_end_run_and_zips(tmp_path, monkeypatch):
     with gzip.open(out / "round12_daily_2026-11-03.csv.gz", "rt") as fh:
         daily = pd.read_csv(fh)
     assert {"T1_rsi2", "T9_mix", "SPY_bh", "cash"} <= set(daily.columns)
-    assert sum(1 for x in lines if x.startswith("round12 ")) == 9
+    assert sum(1 for x in lines if x.startswith("round12 ")) == len(R.TRIALS) == 12
     zr, zd = T12.make_zips(data, out, tmp_path, stamp, log=lambda *a: None)
     with zipfile.ZipFile(zr) as z:
         names = z.namelist()

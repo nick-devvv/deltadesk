@@ -1414,7 +1414,7 @@ Nick asked for this round in the 2026-11-03 conversation, including multi-day ho
 
 **Timing and costs.** Signals on day t's close (split-adjusted closes, as F1); fills at day t+1's open; returns from dividend-adjusted prices. Stops are checked against the day's low; an open at or below the stop fills at the open. Costs per side on traded notional: 1x = 5 bps, 2x = 10 bps; pass/fail at 2x. The sessions split into segments at any gap over 10 calendar days (the L2 gap): indicators restart in each segment, as universe.Panel does, and every position is closed at the last close before a gap.
 
-**Trials (9):**
+**Trials (12):**
 - T1 `rsi2`: F1 exactly as Amendment 12 (Wilder RSI(2) < 10, close > SMA(200), close < SMA(5); buy next open; exit next open after a close > SMA(5), from the entry day on; no stop; one position per symbol) on the 10 ETFs SPY QQQ IWM DIA XLF XLE XLV EEM GLD TLT, 1/10 of capital each.
 - T2, T3, T4: T1 with a stop 3%, 5%, 8% below the entry fill, armed from the entry day; a stopped symbol waits for a close above SMA(5).
 - T5 `trend200`: SPY while its close > SMA(200), else cash (Faber 2007's rule on daily bars).
@@ -1422,22 +1422,27 @@ Nick asked for this round in the 2026-11-03 conversation, including multi-day ho
 - T7 `voltarget`: SPY at min(1.5, 10% / 20-session realized vol), changed only when the weight moves more than 0.10; leverage pays the cash rate (151 s6.5; Moreira & Muir 2017).
 - T8 `twoma_2pct`: SPY when SMA(10) > SMA(30); out on a close under 0.98 x the entry-signal close or a cross down; after a 2% exit, flat until the next cross below and back above (151 s3.12).
 - T9 `mix`: 50% T5 + 50% T1, rebalanced daily, rebalance trades at the same cost.
+- T10, T11, T12 (Addendum 12.1 below): T1 with a TRAILING stop 3%, 5%, 8% below the highest of the entry fill and every close since entry.
 
 **Windows.** FRESH 2005-01-03..2015-12-31 decides pass/fail. SUPP 2000-01-03..2004-12-31, REPL_HIST = HIST and REPL_DEV = DEV are information only (rsi2 was tested there in rounds 9 and 11).
 
 **Pass (all four, FRESH, 2x costs):**
-1. one-sided p < 0.05/9 = 0.0056 that the mean daily return over cash is above 0 (circular block bootstrap of the demeaned series, 21-session blocks, 10,000 draws, default_rng(12));
+1. one-sided p < 0.05/12 = 0.0042 that the mean daily return over cash is above 0 (circular block bootstrap of the demeaned series, 21-session blocks, 10,000 draws, default_rng(12));
 2. max drawdown smaller than buy-and-hold SPY's;
-3. T1-T4 only: the mean net trade return beats the 95th percentile of 1,000 random-entry draws (same symbol, same holding length in sessions, open-to-open, inside FRESH, default_rng(7));
+3. the rsi2 family only (T1-T4, T10-T12): the mean net trade return beats the 95th percentile of 1,000 random-entry draws (same symbol, same holding length in sessions, open-to-open, inside FRESH, default_rng(7));
 4. Sharpe over cash above 0.
 
-The deflated Sharpe (report.deflated_sharpe, N = 11,284 + 9 = 11,293, sr_var from round 12's nine FRESH Sharpes) is reported, not a pass item. A pass earns a forward paper ledger at most, after Nick's yes.
+The deflated Sharpe (report.deflated_sharpe, N = 11,284 + 12 = 11,296, sr_var from round 12's twelve FRESH Sharpes) is reported, not a pass item. A pass earns a forward paper ledger at most, after Nick's yes.
 
-**Power, stated before any result.** FRESH is 11 years. A t-stat of 2.54 needs an annualized Sharpe of about 0.77 (2.54 / sqrt(11)); a true Sharpe of 0.5 would pass item 1 only about one time in three. A fail here does not prove there is no edge.
+**Power, stated before any result.** FRESH is 11 years. A one-sided z of 2.64 (p 0.0042) needs an annualized Sharpe of about 0.80 (2.64 / sqrt(11)). A true Sharpe of 0.5 would pass item 1 about 1 time in 6 (16%); a true 0.8 about half the time. A fail here does not prove there is no edge.
 
-**Reported for every trial and window:** sessions, CAGR, volatility, Sharpe over cash, max drawdown; for T1-T4 also trades, win rate, average win and loss, expectancy, PF and a 95% CI (bootstrap clustered by entry day); 1x costs as a sensitivity; buy-and-hold SPY per window.
+**Reported for every trial and window:** sessions, CAGR, volatility, Sharpe over cash, max drawdown; for the rsi2 family also trades, win rate, average win and loss, expectancy, PF and a 95% CI (bootstrap clustered by entry day); 1x costs as a sensitivity; buy-and-hold SPY per window.
 
-**Trial count:** 9, so N = 11,293 after this round.
+**Trial count:** 12, so N = 11,296 after this round.
+
+### Addendum 12.1, 2026-11-03: trailing stops (before any round-12 pull or run)
+
+Nick asked for a stop that locks in gains as the price rises: break-even first, then into profit. T10-T12 are T1 plus a trailing stop at 3%, 5% and 8% below the highest of the entry fill and every close since entry, through the prior close. It only rises. It is checked against each day's low like T2-T4; an open below it fills at the open. Example at 5%: entry $100, stop $95; after a close at $105.26 the stop is $100 (break-even); after a close at $120 it is $114. Rules 1-9 are unchanged. The trial count rises from 9 to 12, so pass item 1 tightens from p < 0.0056 to p < 0.0042. The first draft's power line ("about one time in three") was wrong; at 9 trials it was about 1 in 5, and at 12 it is about 1 in 6.
 
 ## Limits
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""tools/sprint_r12.py - round 12 on Chart's computer: free daily history, a data check, the nine pre-registered trials
+"""tools/sprint_r12.py - round 12 on Chart's computer: free daily history, a data check, the twelve pre-registered trials
 (sprint/r12daily.py; SPRINT_PLAN "Round 12 pre-registration") and the zips. Research only: market data reads only (Yahoo
 Finance through yfinance; Stooq and FRED as plain CSV downloads); no orders, no account, no keys; never touches ~/desk.
   python3 tools/sprint_r12.py all            # fetch -> check -> run -> zip (about 5-15 minutes)

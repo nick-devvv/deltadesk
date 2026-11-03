@@ -16,7 +16,7 @@ Timing: signals on day t's close; orders fill at day t+1's open. Stops are check
   1x = 5 bps, 2x = 10 bps; pass/fail uses 2x. Cash: uninvested capital earns the 3-month T-bill (DTB3, %/100/252 a day)
   on the average of the prior and current close's exposure; exposure above 1 (T7) pays the same rate.
 
-Trials (9; added to the 11,284 before this round for the deflated Sharpe):
+Trials (12; added to the 11,284 before this round for the deflated Sharpe):
   T1 rsi2 (F1, Amendment 12, rules unchanged): long only; signal at the close: close > SMA(200), close < SMA(5), Wilder
      RSI(2) < 10; buy at the next open; exit at the next open after a close > SMA(5) (closes from the entry day on); no
      stop; one position per symbol. 10 ETFs: SPY QQQ IWM DIA XLF XLE XLV EEM GLD TLT, 1/10 of capital each (a symbol's
@@ -32,16 +32,18 @@ Trials (9; added to the 11,284 before this round for the deflated Sharpe):
   T8 two moving averages with a 2% exit (151 s3.12): long SPY when SMA(10) > SMA(30); out after a close < 0.98 x the
      entry-signal close or SMA(10) <= SMA(30); after a 2% exit, flat until SMA(10) crosses below and back above SMA(30).
   T9 mix: 50% T5 + 50% T1, rebalanced to 50/50 every day; the rebalance trades pay the same cost per side.
+  T10-T12 (Addendum 12.1, before any run) T1 plus a TRAILING stop 3%, 5%, 8% below the highest of the entry fill and
+     every close since entry (through the prior close; it only rises), checked like T2-T4 against the day's low.
 
 Windows: FRESH 2005-01-03..2015-12-31 decides pass/fail. SUPP 2000-01-03..2004-12-31, REPL_HIST = HIST and REPL_DEV = DEV
   are information only (rsi2 was already tested in HIST and DEV in rounds 9 and 11).
 
-Pass (all four on FRESH at 2x costs): 1 one-sided p < 0.05 / 9 that the mean daily return over cash is > 0 (circular
+Pass (all four on FRESH at 2x costs): 1 one-sided p < 0.05 / 12 that the mean daily return over cash is > 0 (circular
   block bootstrap of the demeaned series, 21-session blocks, 10,000 draws, default_rng(12)); 2 max drawdown smaller than
-  buy-and-hold SPY's (dividend-adjusted closes); 3 (T1-T4 only) the mean net trade return beats the 95th percentile of
+  buy-and-hold SPY's (dividend-adjusted closes); 3 (the rsi2 family T1-T4 and T10-T12) the mean net trade return beats the 95th percentile of
   1,000 random-entry draws (same symbol, same holding length in sessions, open-to-open, inside FRESH, default_rng(7));
-  4 Sharpe over cash > 0. The deflated Sharpe (report.deflated_sharpe, N = 11,284 + 9, sr_var = the variance of round 12's
-  nine FRESH per-session Sharpes) is reported, not a pass item. A pass earns a forward paper ledger at most.
+  4 Sharpe over cash > 0. The deflated Sharpe (report.deflated_sharpe, N = 11,284 + 12, sr_var = the variance of round 12's
+  twelve FRESH per-session Sharpes) is reported, not a pass item. A pass earns a forward paper ledger at most.
 """
 import math
 import statistics
@@ -65,19 +67,21 @@ WINDOWS = {
 PASS_WINDOW, PASS_COST = "FRESH", "2x"
 COSTS = {"1x": 0.0005, "2x": 0.0010}
 GAP_DAYS = 10
-N_ROUND, N_PRIOR = 9, 11_284
+N_ROUND, N_PRIOR = 12, 11_284
 ALPHA = 0.05 / N_ROUND
 BOOT_DRAWS, BOOT_BLOCK, BOOT_SEED = 10_000, 21, 12
 CTRL_DRAWS, CTRL_SEED, CTRL_PCT = 1_000, 7, 0.95
 TRADE_BOOT_DRAWS, TRADE_BOOT_SEED = 2_000, 29
 SMA_LONG, SMA_SHORT, RSI_MAX = 200, 5, 10.0
-STOPS = {"T2_rsi2_stop3": 0.03, "T3_rsi2_stop5": 0.05, "T4_rsi2_stop8": 0.08}
+STOPS = {"T2_rsi2_stop3": 0.03, "T3_rsi2_stop5": 0.05, "T4_rsi2_stop8": 0.08,
+         "T10_rsi2_trail3": 0.03, "T11_rsi2_trail5": 0.05, "T12_rsi2_trail8": 0.08}
+TRAILING = {"T10_rsi2_trail3", "T11_rsi2_trail5", "T12_rsi2_trail8"}
 VT_TARGET, VT_CAP, VT_BAND, VT_N = 0.10, 1.5, 0.10, 20
 MOM_N, TOP_K = 252, 3
 MA_FAST, MA_SLOW, MA_EXIT = 10, 30, 0.98
 TRIALS = ("T1_rsi2", "T2_rsi2_stop3", "T3_rsi2_stop5", "T4_rsi2_stop8", "T5_trend200", "T6_sector_dualmom",
-          "T7_voltarget", "T8_twoma_2pct", "T9_mix")
-RSI2_TRIALS = TRIALS[:4]
+          "T7_voltarget", "T8_twoma_2pct", "T9_mix", "T10_rsi2_trail3", "T11_rsi2_trail5", "T12_rsi2_trail8")
+RSI2_TRIALS = TRIALS[:4] + TRIALS[9:]
 LABEL = "BACKTEST on Yahoo daily bars (dividend-adjusted returns)"
 
 
@@ -213,8 +217,9 @@ def rsi2_signal(m, sym):
     return sig, above5
 
 
-def sim_rsi2(m, sym, stop, cost, sig=None, above5=None):
-    """F1 on one symbol, optionally with a fixed stop. Returns (daily return on this symbol's capital slice, excluding
+def sim_rsi2(m, sym, stop, cost, sig=None, above5=None, trail=False):
+    """F1 on one symbol, optionally with a stop: fixed (entry fill x (1 - stop)) or trailing (trail=True: the highest
+    of the entry fill and every close since entry, through the prior close, x (1 - stop); it only rises). Returns (daily return on this symbol's capital slice, excluding
     cash; exposure at each close; trades)."""
     if sig is None or above5 is None:
         sig, above5 = rsi2_signal(m, sym)
@@ -223,7 +228,7 @@ def sim_rsi2(m, sym, stop, cost, sig=None, above5=None):
     r = np.zeros(m.n)
     expo = np.zeros(m.n)
     trades = []
-    pos, entry, e_idx = False, math.nan, -1
+    pos, entry, e_idx, peak = False, math.nan, -1, math.nan
     stopped = enter = leave = False
 
     def book(x_idx, px, why):
@@ -243,12 +248,12 @@ def sim_rsi2(m, sym, stop, cost, sig=None, above5=None):
                 book(d, o[d], "signal")
                 pos = False
             elif not pos and enter and np.isfinite(o[d]):
-                pos, entry, e_idx = True, o[d], d
+                pos, entry, e_idx, peak = True, o[d], d, o[d]
                 r[d] -= cost
         if pos:
             hit = None
             if stop is not None:
-                sp = entry * (1.0 - stop)
+                sp = (peak if trail else entry) * (1.0 - stop)
                 if o[d] <= sp:
                     hit = o[d]
                 elif lo[d] <= sp:
@@ -259,6 +264,7 @@ def sim_rsi2(m, sym, stop, cost, sig=None, above5=None):
                 pos, stopped = False, True
             else:
                 r[d] += c[d] / o[d] - 1.0
+                peak = max(peak, c[d])
         if pos and ends[d]:
             r[d] -= cost
             book(d, c[d], "segment end")
@@ -373,7 +379,7 @@ def combine(m, rets, expos, shares):
 
 
 def run_trials(m, cost):
-    """All nine trials at one cost level. Returns {trial: {"r": daily returns, "expo": exposure, "trades": [...]}}."""
+    """All twelve trials at one cost level. Returns {trial: {"r": daily returns, "expo": exposure, "trades": [...]}}."""
     out = {}
     sigs = {s: rsi2_signal(m, s) for s in RSI2_ETFS if m.has(s)}
     share = 1.0 / len(RSI2_ETFS)
@@ -381,7 +387,7 @@ def run_trials(m, cost):
         stop = STOPS.get(name)
         rets, expos, trades = {}, {}, []
         for s, (sig, ab) in sigs.items():
-            rets[s], expos[s], t = sim_rsi2(m, s, stop, cost, sig, ab)
+            rets[s], expos[s], t = sim_rsi2(m, s, stop, cost, sig, ab, trail=name in TRAILING)
             trades.extend(t)
         r, ex = combine(m, rets, expos, {s: share for s in sigs})
         out[name] = {"r": r, "expo": ex, "trades": trades}
@@ -555,7 +561,7 @@ def verdict(name, row, bench):
     if f is None or bench is None:
         return {"pass": False, "items": {}, "why": "no FRESH data"}
     items = {
-        "1 p < 0.05/9": row["pass_inputs"]["p_one_sided"] < ALPHA,
+        f"1 p < 0.05/{N_ROUND}": row["pass_inputs"]["p_one_sided"] < ALPHA,
         "2 drawdown smaller than SPY": f["max_dd"] > bench["max_dd"],
         "4 Sharpe over cash > 0": (f["sharpe"] or 0) > 0,
     }
@@ -584,7 +590,7 @@ def report_md(ev, data_note=""):
         L += [data_note, ""]
     b = ev["benchmark"]["FRESH"]
     L += ["## Verdicts (FRESH, 2x costs)", "",
-          "| Trial | Verdict | p (need < 0.0056) | Sharpe | CAGR | Max DD | Deflated Sharpe | Failed items |",
+          f"| Trial | Verdict | p (need < {ALPHA:.4f}) | Sharpe | CAGR | Max DD | Deflated Sharpe | Failed items |",
           "|---|---|---|---|---|---|---|---|"]
     for name in TRIALS:
         row, v = ev["trials"][name], ev["verdicts"][name]
@@ -610,7 +616,7 @@ def report_md(ev, data_note=""):
     for w, s in ev["benchmark"].items():
         if s:
             L.append(f"| buy and hold | {w} | {s['sessions']} | {_pct(s['cagr'])} | {_f(s['sharpe'])} | {_pct(s['max_dd'])} |")
-    L += ["", "## Random-entry control (T1-T4, FRESH, 2x costs)", "", "| Trial | Trades | Mean net/trade | Random 95th pct | Share of draws below |",
+    L += ["", "## Random-entry control (rsi2 family: T1-T4, T10-T12; FRESH, 2x costs)", "", "| Trial | Trades | Mean net/trade | Random 95th pct | Share of draws below |",
           "|---|---|---|---|---|"]
     for name in RSI2_TRIALS:
         rc = ev["trials"][name].get("random_control")
