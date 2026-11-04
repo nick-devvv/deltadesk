@@ -281,9 +281,9 @@ rotation); P1/P2 combine round 12's T6 and round 14's A2 and RSI2 and are labele
 
 | Trial | Rule | Status |
 |---|---|---|
-| G1 | sector trend-momentum: top 3 of 9 SPDR sectors by 12-month return, only those above their 200-day average | pending Chart run |
-| G2 | Donchian 50/25 channel on 8 multi-asset ETFs, risk-parity slots | pending Chart run |
-| G3 | sector alpha rotation: top 3 positive 1-year CAPM alpha vs SPY | pending Chart run |
-| P1 | 1/3 each T6, A2, RSI2 (SELECTED IN-SAMPLE) | pending Chart run |
-| P2 | P1 with 8% vol target and drawdown brake (SELECTED IN-SAMPLE) | pending Chart run |
-| L1 | one-time confirmation of T6, A2, RSI2, P1, P2 (spec `docs/research/R15_L1_SPEC.md`) | waits for Nick's go |
+| G1 | sector trend-momentum: top 3 of 9 SPDR sectors by 12-month return, only those above their 200-day average | FAIL items 3, 5 (p 0.0051) |
+| G2 | Donchian 50/25 channel on 8 multi-asset ETFs, risk-parity slots | FAIL item 5 (p 0.0090) |
+| G3 | sector alpha rotation: top 3 positive 1-year CAPM alpha vs SPY | FAIL items 1, 2, 3, 5 (p 0.0204) |
+| P1 | 1/3 each T6, A2, RSI2 (SELECTED IN-SAMPLE) | FAIL items 3, 5 (p 0.0006) |
+| P2 | P1 with 8% vol target and drawdown brake (SELECTED IN-SAMPLE) | FAIL items 3, 5 (p 0.0011) |
+| L1 | one-time confirmation of T6, A2, RSI2, P1, P2 (spec `docs/research/R15_L1_SPEC.md`) | held back by Nick until a rule clearly earns it |
