@@ -272,3 +272,18 @@ Pre-registered in SPRINT_PLAN "Round 14 pre-registration" before any pull or run
 | C1-C3 IBS mean reversion | 151 s4.4 and its cited ETF studies | C | Close-location dip buying on SPY/QQQ/IWM/DIA |
 | E1-E2 bond trend | 151 s5 (bond momentum/carry ideas); Faber-style filter | C | TLT/SHY and IEF vs T-bills |
 | F1-F2 walk-forward learner | this desk (selection by trailing 36-month Sharpe; volatility target; drawdown brake) | n/a | Must beat 1,000 random selectors |
+
+## Round 15 (2026-11-04): untested free-data 151-book rules, near-winners as one portfolio, L1 confirmation
+
+Pre-registered in SPRINT_PLAN "Round 15 pre-registration" before any pull or run. Code: `sprint/r15.py`, `tools/sprint_r15.py`.
+Sources: Kakushadze & Serur, *151 Trading Strategies* (2018) s3.15 (Donchian channel), s4.1 (sector momentum), s4.2 (alpha
+rotation); P1/P2 combine round 12's T6 and round 14's A2 and RSI2 and are labeled SELECTED IN-SAMPLE.
+
+| Trial | Rule | Status |
+|---|---|---|
+| G1 | sector trend-momentum: top 3 of 9 SPDR sectors by 12-month return, only those above their 200-day average | pending Chart run |
+| G2 | Donchian 50/25 channel on 8 multi-asset ETFs, risk-parity slots | pending Chart run |
+| G3 | sector alpha rotation: top 3 positive 1-year CAPM alpha vs SPY | pending Chart run |
+| P1 | 1/3 each T6, A2, RSI2 (SELECTED IN-SAMPLE) | pending Chart run |
+| P2 | P1 with 8% vol target and drawdown brake (SELECTED IN-SAMPLE) | pending Chart run |
+| L1 | one-time confirmation of T6, A2, RSI2, P1, P2 (spec `docs/research/R15_L1_SPEC.md`) | waits for Nick's go |

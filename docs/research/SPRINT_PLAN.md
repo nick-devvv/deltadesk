@@ -1543,6 +1543,46 @@ Nick asked to move beyond options, to try the 151-book ideas that fit a small lo
 
 **Trial count:** 12, so N = 11,312 after this round. A pass earns a forward paper ledger on Alpaca paper (automated by the desk) at most, after Nick's yes; real money needs CLAUDE.md step 5 and Nick's explicit request.
 
+## Round 15 pre-registration, 2026-11-04: three untested free-data 151-book rules, the near-winners as one portfolio, and a one-time L1 confirmation (written before any round-15 code, pull or run)
+
+Why: Nick asked to build everything testable before WRDS and to re-test the rules that came closest (T6, A2, rsi2). Re-running
+them on PASS again proves nothing new, so the re-test has two honest parts: (a) the three as ONE portfolio, labeled
+SELECTED IN-SAMPLE because they were picked after seeing PASS, and (b) one confirmation on L1, data nobody has seen.
+
+### Data and engine
+Round 14's files and engine unchanged (sprint/r14.py: Yahoo daily ETF bars, decisions at the close of day t traded at the
+close of t+1, 10 bps per side, cash = 3-month T-bill, indicators restart per segment). PASS 2008-01-02..2024-01-31;
+EARLY and DEV information only.
+
+### Trials (5; alpha 0.05/5 = 0.01)
+- G1 sector trend-momentum (151 s4.1 with a per-asset trend filter): month-end; among the 9 SPDR sectors whose close is
+  above their 200-session SMA, the 3 with the highest 252-session return at 1/3 each; fewer than 3 qualify -> the rest in cash.
+- G2 Donchian channel trend (151 s3.15 style): the 8 round-14 multi-asset ETFs, checked every close: on when the close is
+  at least the highest close of the prior 50 sessions, off when it is at most the lowest close of the prior 25; slot
+  weight = 1/sigma63 / sum over the 8 (A2's slots), fixed at entry; off slots in cash.
+- G3 alpha rotation (151 s4.2): month-end; for each sector, OLS of its daily excess returns on SPY's over the prior 252
+  sessions; the 3 with the highest positive intercept at 1/3 each, the rest in cash.
+- P1 near-winner portfolio: the daily mean of T6 (round 14 engine), A2 and RSI2 (round 14 candidate) net returns, i.e.
+  1/3 each, rebalanced daily without extra cost. SELECTED IN-SAMPLE.
+- P2 = P1 with round 14's F2 risk control (8% vol target, halved below 90% of peak until 95%), cost on exposure changes.
+
+### Pass (all items, PASS, 10 bps)
+1 one-sided block-bootstrap p < 0.01 for mean daily excess over cash > 0. 2 max drawdown smaller than SPY's. 3 G: Sharpe
+above the 95th percentile of 1,000 month-end-shifted versions (G2: its daily on/off states shifted by a random 252+
+sessions inside PASS); P: Sharpe above the 95th percentile of every 3-of-6 equal-weight portfolio of round 14's candidates
+plus A2 (A1 A2 C2 E1 T6 RSI2; 20 portfolios). 4 Sharpe over cash > 0 in 95% of 1,000 noisy runs (G: 0-3 sessions extra
+delay per decision and 0-20 bps extra cost; P: 0-20 bps extra cost on the components' traded weight). 5 keeps 50% of
+PASS excess return without its 10 best months. P1 and P2 additionally report a deflated Sharpe with the cumulative
+trial count; a P pass is still labeled SELECTED IN-SAMPLE and goes to forward paper, never straight to money.
+
+### L1 confirmation (one time, frozen spec)
+docs/research/R15_L1_SPEC.md freezes T6, A2, RSI2, P1, P2 exactly as above. It runs only through
+tools/sprint_r15.py confirm --locked L1 --frozen <sha256 of the committed spec>, which pulls Yahoo bars 2024-08-01..
+2026-10-30 (DEV for warm-up, L1 scored). L1 is about 85 sessions: far too few for a p-value, so this is a "does it
+break" check, not proof. Per rule: OK if L1 excess return over cash > -2% AND L1 max drawdown shallower than -8%.
+BROKE otherwise. Once run, L1 is spent for these daily rules; the result is reported whatever it is and nothing is
+re-tuned on it.
+
 ## Limits
 
 - Backtests only.

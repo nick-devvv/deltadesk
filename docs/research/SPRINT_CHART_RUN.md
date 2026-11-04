@@ -2,6 +2,33 @@
 
 This runs the sprint's backtests on Chart's computer, the only machine that can reach Alpaca's data API. Everything runs in its own folder, `~/sprint`, from branch `sprint/exits`. Nothing touches `~/desk`, its journal or the live desk, and nothing can place an order: the puller only reads `data.alpaca.markets` (market data), and the engine only reads files it pulled.
 
+## Round 15: three new 151-book rules and the near-winners as one portfolio (about 5-15 minutes)
+
+SPRINT_PLAN "Round 15 pre-registration". Five trials: G1 sector trend-momentum, G2 Donchian channel trend, G3 sector alpha rotation, P1 T6 + A2 + RSI2 as one portfolio, P2 = P1 with the vol target and drawdown brake. It runs in `~/sprint15` from branch `sprint/round15` and reads round 14's data files in `~/sprint14/data/r14` (no new download). The L1 confirmation is NOT in this message: it runs once, later, only after Nick says go.
+
+### Message for Chart, round 15 (one paste)
+
+```
+Sprint round 15: research only, about 5-15 minutes. Show me every output.
+Rules: you never place trades, never click buy/sell/order buttons, never enter passwords or keys, never print a key.
+Never touch ~/desk: don't cd into it, don't edit, copy, restart or run anything there. Never pass --locked or --frozen to any command, and never run the "confirm" step.
+Leave ~/sprint, ~/sprint12, ~/sprint13 and ~/sprint14 as they are (round 15 only reads ~/sprint14/data/r14).
+If a step fails, show the error and stop. Don't change any code; re-running the same command once is fine.
+1. Get the round 15 code in its own folder:
+   [ -d ~/sprint15/.git ] || git clone -q --branch sprint/round15 https://github.com/nick-devvv/deltadesk ~/sprint15; cd ~/sprint15 && git fetch -q origin sprint/round15 && git checkout -q sprint/round15 && git reset -q --hard origin/sprint/round15 && git log -1 --oneline
+2. Tests:
+   cd ~/sprint15 && ~/sprint/.venv/bin/python -m pytest -q -p no:cacheprovider tests/test_sprint_r15.py 2>&1 | tail -3
+3. Run the five trials and the luck checks (5-15 minutes):
+   cd ~/sprint15 && mkdir -p data/sprint/logs && ~/sprint/.venv/bin/python tools/sprint_r15.py run --data ~/sprint14/data/r14 > data/sprint/logs/r15_run.log 2>&1; echo "exit $?"; cat data/sprint/logs/r15_run.log
+4. Zip and show the report:
+   cd ~/sprint15 && ~/sprint/.venv/bin/python -m zipfile -c ~/sprint_results15.zip data/sprint/round15_* data/sprint/logs/r15_run.log && cat "$(ls -t data/sprint/round15_2*.md | head -1)"
+   (send Nick ~/sprint_results15.zip)
+```
+
+Checks on the way in:
+- Step 2: 9 round 15 tests pass.
+- Step 3: "Problems" is not printed (the data check passes as in round 14), five `round15 ...: PASS/FAIL` lines and a report path.
+
 ## Round 14: five families from 151 Trading Strategies plus a learner (about 10-20 minutes)
 
 SPRINT_PLAN "Round 14 pre-registration". Twelve trials: multi-asset trend (A1-A3), low-volatility industries (B1-B2), IBS (C1-C3), bond trend (E1-E2) and the walk-forward learner with and without risk control (F1-F2). It runs in a new folder, `~/sprint14`, from branch `sprint/round14`. No key is needed: Yahoo for 21 ETFs and ^IRX (FRED tried first for cash), and the two Ken French files. Only the segments that avoid L1/L2 are requested from Yahoo; French rows after 2024-01-31 are dropped while parsing.
