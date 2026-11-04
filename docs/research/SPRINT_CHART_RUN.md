@@ -2,6 +2,39 @@
 
 This runs the sprint's backtests on Chart's computer, the only machine that can reach Alpaca's data API. Everything runs in its own folder, `~/sprint`, from branch `sprint/exits`. Nothing touches `~/desk`, its journal or the live desk, and nothing can place an order: the puller only reads `data.alpaca.markets` (market data), and the engine only reads files it pulled.
 
+## Round 13: T6's rule on Ken French industry returns, 1927-1997 (about 5 minutes)
+
+SPRINT_PLAN "Round 13 pre-registration" and Addendum 13.1 (luck checks). Three trials (R13 can pass; D1 and D2 are diagnostics) on two free files from the Kenneth R. French Data Library. It runs in a new folder, `~/sprint13`, from branch `sprint/round13`; `~/sprint` and `~/sprint12` are not touched. No key is needed. The files are whole-history downloads: rows after 2024-01-31 are dropped while parsing and the raw download is never saved, so L1 and L2 are never stored.
+
+### Message for Chart, round 13 (one paste)
+
+```
+Sprint round 13: T6's rule on 70 years of free industry data (research only, about 5 minutes). Show me every output.
+Rules: you never place trades, never click buy/sell/order buttons, never enter passwords or keys, never print a key.
+Never touch ~/desk: don't cd into it, don't edit, copy, restart or run anything there. Never pass --locked or --frozen to any command.
+Leave ~/sprint and ~/sprint12 as they are. Round 13 runs in its own folder, ~/sprint13.
+If a step fails, show the error and stop. Don't change any code; re-running the same command once is fine.
+1. Get the round 13 code in its own folder:
+   [ -d ~/sprint13/.git ] || git clone -q --branch sprint/round13 https://github.com/nick-devvv/deltadesk ~/sprint13; cd ~/sprint13 && git fetch -q origin sprint/round13 && git checkout -q sprint/round13 && git reset -q --hard origin/sprint/round13 && git log -1 --oneline
+2. Tests (reuses the sprint venv, read-only):
+   cd ~/sprint13 && ~/sprint/.venv/bin/python -m pytest -q -p no:cacheprovider tests/test_sprint_r13.py 2>&1 | tail -3
+3. Fetch the two Ken French files (under a minute):
+   cd ~/sprint13 && mkdir -p data/sprint/logs && ~/sprint/.venv/bin/python tools/sprint_r13.py fetch > data/sprint/logs/r13_fetch.log 2>&1; echo "exit $?"; cat data/sprint/logs/r13_fetch.log
+4. Data check:
+   cd ~/sprint13 && ~/sprint/.venv/bin/python tools/sprint_r13.py check > data/sprint/logs/r13_check.log 2>&1; echo "exit $?"; cat data/sprint/logs/r13_check.log
+5. Run the three trials and the luck checks (1-3 minutes):
+   cd ~/sprint13 && ~/sprint/.venv/bin/python tools/sprint_r13.py run > data/sprint/logs/r13_run.log 2>&1; echo "exit $?"; cat data/sprint/logs/r13_run.log
+6. Zip and show the verdict:
+   cd ~/sprint13 && ~/sprint/.venv/bin/python tools/sprint_r13.py zip && sed -n '/^## Verdict/,/^## PASS window/p' "$(ls -t data/sprint/round13_2*.md | head -1)"
+   (send Nick both files: ~/sprint_results13.zip and ~/sprint_data13.zip)
+```
+
+Checks on the way in:
+- Step 2: 17 round 13 tests pass.
+- Step 3: two lines, `industries` and `factors`, each about 25,000 rows from 1926-07-01 to 2024-01-31, with a count of later rows dropped. Exit 1 (the site is unreachable from Chart): stop. Nick downloads "10 Industry Portfolios [Daily]" and "Fama/French 3 Factors [Daily]" (CSV) from the data library page and sends the two zips to Claude, who runs the same code.
+- Step 4: "Problems: none". Before 1952 a year has about 290 sessions (Saturdays). 1929-1932 market returns are large negatives, and 1987-10-19 is in the list of days beyond -10%.
+- Step 5: a `round13 R13: PASS/FAIL` line, three trial lines, a market line and a report path.
+
 ## Round 12: daily ETF rules on free 2005-2015 history (about 10-20 minutes)
 
 SPRINT_PLAN "Round 12 pre-registration" and Addenda 12.1-12.2. Thirteen trials on free Yahoo daily bars, judged on 2005-2015. It runs in a new folder, `~/sprint12`, from branch `sprint/round12`, so `~/sprint` (round 11's unpushed commit 657a8f4 and its data) is never touched. No Alpaca key is needed: the data come from Yahoo (yfinance), Stooq and FRED, read-only. Only 1998-01-02..2024-01-31 and 2024-08-01..2026-06-30 are requested, so L1 and L2 are never asked for. It reuses `~/sprint/.venv`'s Python (pandas, numpy, yfinance) and only reads from it.

@@ -251,3 +251,12 @@ Pre-registered in SPRINT_PLAN "Round 12 pre-registration" before any pull or run
 | T8 two moving averages, 2% exit | 151 s3.12 | C | Described, not tested, in the source |
 | T9 50/50 T5 + T1 | this round | n/a | Tests whether two unlike rules smooth each other |
 | T13 GLD Parabolic SAR, long only, 3R target | Wilder 1978, *New Concepts in Technical Trading Systems*; settings from the XAUUSD 4-hour strategy Nick sent (seller's backtest only) | C | A daily-bar, long-only GLD cousin of that strategy; the exact XAUUSD 4-hour version can't be tested or traded on the desk |
+
+## Round 13 (2026-11-04): T6's rule on 1927-1997 US industries
+
+Pre-registered in SPRINT_PLAN "Round 13 pre-registration" before any pull or run. Code: `sprint/r13ff.py`, `tools/sprint_r13.py`.
+
+| Trial | Source | Evidence grade | Note |
+|---|---|---|---|
+| R13 industry momentum (top 3 of 10, 12-month) with a 10-month market trend filter, cash when off | Moskowitz & Grinblatt 1999, "Do Industries Explain Momentum?" (*JF*); Faber 2007; round 12's T6 (near miss) | B | Kenneth R. French Data Library daily industry returns; pass needs a Sharpe above the market's at p < 0.01 |
+| D1 momentum only, D2 trend only | same | n/a | Diagnostics: they show where an edge comes from; they never pass |

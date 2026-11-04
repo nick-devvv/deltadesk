@@ -1456,6 +1456,46 @@ Nick asked about the XAUUSD 4-hour Parabolic SAR strategy he sent (a protected T
 - **After an exit:** flat until the next down-to-up flip. 100% of capital while long; the source's 1%-risk sizing needs leverage shares don't have.
 - **Long only:** the short side is left out (shares are what Nick can trade; round 11's short mirror failed). One trial, so 13 in total; pass item 1 is now p < 0.05/13 = 0.0038, and item 3 (random entries) applies to T13. Buy-and-hold GLD is reported as information; item 2 still compares with SPY, as for every trial.
 
+## Round 13 pre-registration, 2026-11-04: T6's rule on 70 untouched years of US industry returns (written before any round-13 code, pull or run)
+
+Nick asked for this round after round 12 (SPRINT_RESULTS_12.md). T6, sector momentum with a market trend filter, was the near miss: p 0.0052 against 0.0038 on 2005-2015. Eleven years are too short for a modest edge. This round asks the same question on 1927-1997, years no round has touched.
+
+**Data.** Kenneth R. French Data Library (free): "10 Industry Portfolios [Daily]", value-weighted returns (NoDur Durbl Manuf Enrgy HiTec Telcm Shops Hlth Utils Other), and "Fama/French 3 Factors [Daily]" for Mkt-RF and RF; market = Mkt-RF + RF; cash = RF. Percent per day, from 1926-07-01. The files are whole-history downloads, so `tools/sprint_r13.py` drops every row after 2024-01-31 while parsing and saves no raw file: L2, L1 and later are never stored or used. These portfolios are not tradable funds before the 1990s, and trading costs before 1975 were far above the ones used here, so the round asks whether the signal had an edge, not whether a 1930s trader could have captured it. Label: BACKTEST on index-style portfolio returns.
+
+**Rules (calendar months, because the daily file holds Saturday sessions before 1952, so a session count would not mean the same thing in every era):**
+- **R13 (the main trial):** at the close of each month's last session, rank the 10 industries by total return over the prior 12 calendar months (month-end to month-end). If the market's total-return index at that month end is above the mean of its last 10 month-end values (this one included), hold the top 3 at 1/3 each; otherwise T-bills.
+- **Execution:** one full session late. Weights decided at the close of day t are traded at the close of day t+1 and earn returns from day t+2 on (the files have no opens). Weights are held fixed between rebalances. Costs per side on traded weight: 10 bps (pass), 50 bps (stress).
+- **D1, momentum only (diagnostic):** the same top 3, always invested.
+- **D2, trend only (diagnostic):** all 10 industries at 1/10 when the trend filter is on, else T-bills.
+- **Benchmarks (not trials):** the market, held; the 10 industries at 1/10 each, held.
+- **Differences from T6, fixed here before any data:** 10 industries instead of 9 sector SPDRs; T-bills instead of TLT in risk-off (no daily long-bond series in these files, so this tests the momentum + trend core, not the bond leg); calendar months instead of 252 and 200 sessions; a one-session delay instead of the next open.
+
+**Windows.** PASS 1927-07-01..1997-12-31 (the first 12 months feed the indicators). ERAS 1927-07..1949, 1950..1973, 1974..1997. SEEN 1998-01-02..2024-01-31 (round 12's ETF years; information only).
+
+**Pass (R13 only; on PASS at 10 bps; all four):**
+1. R13's Sharpe over cash is above the market's, one-sided p < 0.01: a paired circular block bootstrap of the two daily excess-return series (the same 21-session blocks for both), 10,000 draws, default_rng(13); p = the share of draws where the centered Sharpe difference is at or above the observed one. The bar is 0.01, not 0.05, because R13 was picked as the best of 13 round-12 trials.
+2. Max drawdown smaller than the market's.
+3. Sharpe above the market's in at least 2 of the 3 eras.
+4. Sharpe over cash above 0 at 50 bps a side.
+
+**Also reported (information, Nick's request, before any run):** every trial and benchmark sized with hindsight so its worst drop on PASS is 20%: the size multiple, the exposure it needs (borrowing beyond 1x pays RF; real margin costs more) and the CAGR at that size. It answers "what would this earn at a drawdown a $3,000 account can live with"; it is not a pass item.
+
+D1 and D2 are diagnostics: they show whether an edge comes from momentum, from the trend filter, or from both, and they never pass. The deflated Sharpe (report.deflated_sharpe, N = 11,297 + 3 = 11,300) and CAPM alpha and beta are reported, not pass items. A pass earns a forward paper ledger for the ETF version (T6) at most, after Nick's yes.
+
+**Power.** The pass window is about 70 years, about six times round 12's. Power for a Sharpe difference depends on how closely R13 tracks the market, so it is not stated as one number in advance.
+
+**Trial count:** 3 (R13, D1, D2), so N = 11,300 after this round.
+
+### Addendum 13.1, 2026-11-04: five luck checks (before any round-13 pull or run)
+
+Nick asked that round 13 face a standard five-part luck checklist. Two parts were already in (the multiple-testing bar, and the power note). Round 12's best rules were checked after the fact (SPRINT_RESULTS_12.md): none passed all five, and T6's edge came from its trend filter rather than its sector picks (random picks with the same filter: Sharpe 0.60 vs 0.67). R13 now also needs pass items 5-8, all on PASS at 10 bps:
+5. **Random picks:** its Sharpe above the 95th percentile of 1,000 versions that hold 3 random industries each month (same trend filter, delay and costs; default_rng(131)). This asks whether the momentum ranking adds anything.
+6. **Shifted filter:** its Sharpe above the 95th percentile of 1,000 versions whose month-end trend flags are circularly shifted by a random 12 months or more inside PASS (default_rng(132)). This asks whether the trend filter's timing matters.
+7. **Noise:** its Sharpe above the market's in at least 95% of 1,000 runs where every rebalance is delayed 0-5 extra sessions at random and the costs rise by 0-20 bps a side (default_rng(133)).
+8. **Outliers:** without its 10 best months of excess return over cash (of about 846), it keeps at least 50% of its PASS total.
+
+Items 1-4 are unchanged. The trial count stays 3.
+
 ## Limits
 
 - Backtests only.

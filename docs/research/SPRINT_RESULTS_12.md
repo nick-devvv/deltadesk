@@ -45,3 +45,17 @@ Every trial except T13 passed items 2 (drawdown smaller than SPY's), 3 where it 
 - T6 on a much longer, untouched history: the Kenneth French Data Library's industry portfolios go back to 1926 (free). Seventy years would need a Sharpe of about 0.3 instead of 0.8 to pass. Industry momentum has its own peer-reviewed support (Moskowitz & Grinblatt 1999, *JF*).
 - rsi2: the forward paper ledger `wl50_rsi2` (approved 2026-11-02) still needs its module built.
 - Drop: rsi2 stops (fixed and trailing), T8, T13.
+
+## Luck checks after the result (2026-11-04; information, these years were already seen)
+
+Nick asked for a five-part luck checklist. Checked by Claude on the returned data (`sprint_data12.zip`); T5 and T6 use a vectorized close-to-close engine with a one-session delay (baseline Sharpe 0.67 for T6 vs the report's 0.69; 0.35 for T5 vs 0.42). 1,000 draws each.
+
+| Check | T6 sector dual momentum | T1 rsi2 | T5 trend200 |
+|---|---|---|---|
+| 1 Beats random versions | trend filter: 98.9% of shifted filters; sector picks: 80.6% of random picks (their median Sharpe 0.60) | 100% of random entries | 74% of shifted timings |
+| 2 Multiple testing (p < 0.0038) | p 0.0052, fail | p 0.032, fail | p 0.073, fail |
+| 3 Power | an 11-year window needs Sharpe 0.80; a true 0.5 passes 16% of the time and needs about 49 years for 80% power | same | same |
+| 4 Noise (each rebalance or trade delayed at random; extra costs) | Sharpe above SPY's in 100% of runs (worst 0.46) | mean trade above 0 in 99.3% of runs; PF falls from 1.44 to a median 1.14 | above SPY's Sharpe in 35% |
+| 5 Without the 10 best months / trades | keeps 24% | keeps 77% | below zero |
+
+No rule passes all five. rsi2 passes 1, 5 and most of 4; its edge is real-looking but halves with a one- or two-day delay. T6's extra return comes from the trend filter and the bond leg, concentrated in a few months (2008-09), not from the sector ranking. Round 13 (Addendum 13.1) makes items 1, 4 and 5 pass items.
