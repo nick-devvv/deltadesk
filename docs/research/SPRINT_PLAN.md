@@ -1496,6 +1496,53 @@ Nick asked that round 13 face a standard five-part luck checklist. Two parts wer
 
 Items 1-4 are unchanged. The trial count stays 3.
 
+## Round 14 pre-registration, 2026-11-04: five families from *151 Trading Strategies* plus a walk-forward learner (written before any round-14 code, pull or run)
+
+Nick asked to move beyond options, to try the 151-book ideas that fit a small long-only account, with variations, and for a bot that learns from the market and cuts its losses. Variations are fixed here, before any run, and each counts as a trial. "Learning" means choosing among the round's own strategies by their past results and cutting exposure in volatile or losing stretches, tested walk-forward. The desk's earlier AI layers (the logit filter and AI sizing in the locked exam) lost more than the rules they wrapped, so the learner must beat random selection to count.
+
+**Not in this round:** the Fed-meeting-day rule (151 s19.5). No verified source of historical meeting dates is reachable from the desk's tools yet; it waits for a checked list.
+
+### Data and engine
+- **ETF family:** Yahoo daily bars through `tools/sprint_r12.py`'s fetch functions (same segments: L1 and L2 never requested) for SPY QQQ IWM DIA EFA EEM TLT IEF SHY GLD DBC VNQ XLK XLY XLP XLI XLB XLU XLF XLE XLV, and Yahoo ^IRX as cash (FRED DTB3 if reachable).
+- **Allocation trials (A, E, the learner):** dividend-adjusted closes. Weights decided at the close of day t are traded at the close of day t+1 and earn from day t+2 (one session late; market-on-close orders can automate this). Weights are held fixed between rebalances; 10 bps per side on traded weight; uninvested weight earns cash. Indicators restart in each segment, and no return is earned across the L2 gap.
+- **IBS trials (C):** the round 12 engine (`sprint/r12daily.py` Market): fills at the next open, and returns from dividend-adjusted prices. IBS = (close - low) / (high - low).
+- **Industry family (B):** Ken French daily industries and factors through `tools/sprint_r13.py`'s fetch (rows after 2024-01-31 dropped while parsing).
+
+### Trials (12)
+- **A1, A2, A3: multi-asset trend** (151 s4.6; Faber 2007). Universe SPY EFA EEM TLT IEF GLD DBC VNQ. At each month's last close, an asset is on if its 252-session return is above 0 and its close is above its 200-session SMA. A1: each on asset gets 1/8; off slots sit in cash. A2: inverse-volatility slots (w proportional to 1 / 63-session stdev, normalized over all eight); off slots sit in cash. A3: among on assets, w proportional to 252-session return / 63-session stdev (151 eq. 372), normalized to 1, capped at 0.5 each; none on means cash. An asset without data counts as off.
+- **B1, B2: low-volatility industries** (151 s3.4; Ang, Hodrick, Xing & Zhang 2006; Baker, Bradley & Wurgler 2011). On the 10 French industries, at each month's last session, rank by the stdev of daily returns over the prior 12 calendar months and hold the 3 lowest at 1/3 each, one session late, at 10 bps. B2 holds them only while round 13's market trend filter is on; otherwise T-bills.
+- **C1, C2, C3: IBS mean reversion** (151 s4.4), long only, on SPY QQQ IWM DIA at 1/4 of capital each. C1: IBS < 0.2 at the close; buy at the next open, sell at that day's close. C2: IBS < 0.2; buy at the next open; sell at the open after the first close with IBS > 0.8, or after 5 sessions held. C3: C2, entering only when the close is above its 200-session SMA.
+- **E1, E2: bond trend** (151 s5; Faber-style). E1: TLT while TLT's close is above its 200-session SMA, else SHY. E2: IEF while its 252-session return is above the T-bill's over the same span, else cash.
+- **F1, F2: the learner** (walk-forward). Candidates: A1, C2, E1, T6 (round 12's rule on this engine) and rsi2 (F1 of Amendment 12, round 12 engine). At each month's last close, a candidate with at least 24 months of history is scored by the annualized Sharpe of its daily excess returns over the prior 36 calendar months. F1 holds the top 2 at 1/2 each (one fewer than 2 eligible: the rest in cash), one session late, paying 10 bps on switches. F2 is F1 with risk control: exposure = min(1, 8% / its 63-session realized volatility), halved while F2's equity is more than 10% below its running peak, and restored once it is back within 5%. Exposure changes cost 10 bps on the change. Controls, not trials: F0 (all eligible candidates, equal weight) and F0r (F0 with F2's risk control).
+
+### Windows
+- **ETF family PASS:** 2008-01-02..2024-01-31 (16 years, 2008 included; new rules, but SPY/TLT/GLD's years overlap round 12).
+- **Information:** 2000-2007 where data exist, and DEV.
+- **B PASS:** 1927-07-01..1997-12-31, with round 13's eras.
+
+### Pass (all items, at 10 bps)
+- **A, C, E, F:**
+  1. one-sided p < 0.05/12 = 0.0042 that the mean daily return over cash is above 0 (circular block bootstrap, 21-session blocks, 10,000 draws);
+  2. max drawdown smaller than buy-and-hold SPY's on PASS;
+  3. luck: A and E beat the 95th percentile of 1,000 versions whose month-end decisions are circularly shifted by a random 12+ months inside PASS. C's mean net trade return beats the 95th percentile of 1,000 random-entry draws (same symbol and holding length). F beats the 95th percentile of 1,000 random selectors (2 random eligible candidates each month; F2's draws get F2's risk control);
+  4. noise: Sharpe over cash above 0 in at least 95% of 1,000 runs with random delays (A, E, F: each rebalance 0-3 extra sessions; C: each entry and exit 0-1 session later) and 0-20 bps extra cost per side for the run;
+  5. outliers: keeps at least 50% of its PASS excess return without its 10 best months (C: 50% of net trade P/L without its 10 best trades).
+- **B:** round 13's items with a bar of 0.0042:
+  1. Sharpe above the market's (paired block bootstrap);
+  2. smaller drawdown than the market's;
+  3. 2 of 3 eras;
+  4. Sharpe above 0 at 50 bps;
+  5. beats 95% of random 3-industry picks;
+  6. B2 only: beats 95% of shifted trend filters;
+  7. Sharpe above the market's in 95% of noisy runs;
+  8. keeps 50% without its 10 best months.
+
+**Information:** each trial sized to a -20% worst drop on PASS (hindsight), CAPM, the controls F0/F0r, and the deflated Sharpe at N = 11,312 (caveat as in SPRINT_RESULTS_13: it is unreliable when the trial spread comes from a few similar trials).
+
+**Power:** PASS_ETF is 16 years; one-sided z 2.64 needs an annualized Sharpe of about 0.66.
+
+**Trial count:** 12, so N = 11,312 after this round. A pass earns a forward paper ledger on Alpaca paper (automated by the desk) at most, after Nick's yes; real money needs CLAUDE.md step 5 and Nick's explicit request.
+
 ## Limits
 
 - Backtests only.

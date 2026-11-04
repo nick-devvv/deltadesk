@@ -260,3 +260,15 @@ Pre-registered in SPRINT_PLAN "Round 13 pre-registration" before any pull or run
 |---|---|---|---|
 | R13 industry momentum (top 3 of 10, 12-month) with a 10-month market trend filter, cash when off | Moskowitz & Grinblatt 1999, "Do Industries Explain Momentum?" (*JF*); Faber 2007; round 12's T6 (near miss) | B | Kenneth R. French Data Library daily industry returns; pass needs a Sharpe above the market's at p < 0.01 |
 | D1 momentum only, D2 trend only | same | n/a | Diagnostics: they show where an edge comes from; they never pass |
+
+## Round 14 (2026-11-04): five 151-book families plus a walk-forward learner
+
+Pre-registered in SPRINT_PLAN "Round 14 pre-registration" before any pull or run. Code: `sprint/r14.py`, `tools/sprint_r14.py`.
+
+| Trials | Source | Evidence grade | Note |
+|---|---|---|---|
+| A1-A3 multi-asset trend | Kakushadze & Serur 2018 s4.6; Faber 2007 | B | Long-only diversifier: stocks, bonds, gold, commodities, REITs |
+| B1-B2 low-volatility industries | 151 s3.4; Ang, Hodrick, Xing & Zhang 2006 (*JF*); Baker, Bradley & Wurgler 2011 (*FAJ*) | B | Tested on 1927-1997 French industries |
+| C1-C3 IBS mean reversion | 151 s4.4 and its cited ETF studies | C | Close-location dip buying on SPY/QQQ/IWM/DIA |
+| E1-E2 bond trend | 151 s5 (bond momentum/carry ideas); Faber-style filter | C | TLT/SHY and IEF vs T-bills |
+| F1-F2 walk-forward learner | this desk (selection by trailing 36-month Sharpe; volatility target; drawdown brake) | n/a | Must beat 1,000 random selectors |

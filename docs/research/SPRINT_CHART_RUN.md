@@ -2,6 +2,39 @@
 
 This runs the sprint's backtests on Chart's computer, the only machine that can reach Alpaca's data API. Everything runs in its own folder, `~/sprint`, from branch `sprint/exits`. Nothing touches `~/desk`, its journal or the live desk, and nothing can place an order: the puller only reads `data.alpaca.markets` (market data), and the engine only reads files it pulled.
 
+## Round 14: five families from 151 Trading Strategies plus a learner (about 10-20 minutes)
+
+SPRINT_PLAN "Round 14 pre-registration". Twelve trials: multi-asset trend (A1-A3), low-volatility industries (B1-B2), IBS (C1-C3), bond trend (E1-E2) and the walk-forward learner with and without risk control (F1-F2). It runs in a new folder, `~/sprint14`, from branch `sprint/round14`. No key is needed: Yahoo for 21 ETFs and ^IRX (FRED tried first for cash), and the two Ken French files. Only the segments that avoid L1/L2 are requested from Yahoo; French rows after 2024-01-31 are dropped while parsing.
+
+### Message for Chart, round 14 (one paste)
+
+```
+Sprint round 14: 151-book strategies and a learning bot (research only, about 10-20 minutes). Show me every output.
+Rules: you never place trades, never click buy/sell/order buttons, never enter passwords or keys, never print a key.
+Never touch ~/desk: don't cd into it, don't edit, copy, restart or run anything there. Never pass --locked or --frozen to any command.
+Leave ~/sprint, ~/sprint12 and ~/sprint13 as they are. Round 14 runs in its own folder, ~/sprint14.
+If a step fails, show the error and stop. Don't change any code; re-running the same command once is fine (the fetch resumes).
+1. Get the round 14 code in its own folder:
+   [ -d ~/sprint14/.git ] || git clone -q --branch sprint/round14 https://github.com/nick-devvv/deltadesk ~/sprint14; cd ~/sprint14 && git fetch -q origin sprint/round14 && git checkout -q sprint/round14 && git reset -q --hard origin/sprint/round14 && git log -1 --oneline
+2. Tests (reuses the sprint venv, read-only):
+   cd ~/sprint14 && ~/sprint/.venv/bin/python -m pytest -q -p no:cacheprovider tests/test_sprint_r14.py 2>&1 | tail -3
+3. Fetch the data (3-10 minutes, safe to re-run):
+   cd ~/sprint14 && mkdir -p data/sprint/logs && ~/sprint/.venv/bin/python tools/sprint_r14.py fetch > data/sprint/logs/r14_fetch.log 2>&1; echo "exit $?"; tail -30 data/sprint/logs/r14_fetch.log
+4. Data check:
+   cd ~/sprint14 && ~/sprint/.venv/bin/python tools/sprint_r14.py check > data/sprint/logs/r14_check.log 2>&1; echo "exit $?"; head -40 data/sprint/logs/r14_check.log
+5. Run the twelve trials and the luck checks (3-10 minutes):
+   cd ~/sprint14 && ~/sprint/.venv/bin/python tools/sprint_r14.py run > data/sprint/logs/r14_run.log 2>&1; echo "exit $?"; cat data/sprint/logs/r14_run.log
+6. Zip and show the verdicts:
+   cd ~/sprint14 && ~/sprint/.venv/bin/python tools/sprint_r14.py zip && sed -n '/^## Verdicts/,/^## The learner/p' "$(ls -t data/sprint/round14_2*.md | head -1)"
+   (send Nick both files: ~/sprint_results14.zip and ~/sprint_data14.zip)
+```
+
+Checks on the way in:
+- Step 2: 15 round 14 tests pass.
+- Step 3: 21 ETF lines plus IRX, then the two French lines. DBC starts in 2006-02, SHY/TLT/IEF in 2002-07, EFA in 2001-08, VNQ in 2004-09, GLD in 2004-11. "FRED DTB3 unavailable" is allowed (^IRX is used).
+- Step 4: "Problems: none"; the French check as in round 13.
+- Step 5: twelve `round14 ...: PASS/FAIL` lines and a report path.
+
 ## Round 13: T6's rule on Ken French industry returns, 1927-1997 (about 5 minutes)
 
 SPRINT_PLAN "Round 13 pre-registration" and Addendum 13.1 (luck checks). Three trials (R13 can pass; D1 and D2 are diagnostics) on two free files from the Kenneth R. French Data Library. It runs in a new folder, `~/sprint13`, from branch `sprint/round13`; `~/sprint` and `~/sprint12` are not touched. No key is needed. The files are whole-history downloads: rows after 2024-01-31 are dropped while parsing and the raw download is never saved, so L1 and L2 are never stored.
