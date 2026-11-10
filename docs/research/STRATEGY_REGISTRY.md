@@ -187,6 +187,7 @@ Each ledger's exact rules, parameters, cost model and version id are frozen in i
 | `otm_bounce` (sprint forward test, WATCH-ONLY) | 2026-11-02.v4-sprint_paper1 | `sprint_paper.py` | sprint backtest otm_v1-042 (in-sample, 44 trades, one episode) | as `fb_or`, calls |
 
 | `etf10_rsi2` (held overnight, swing book; approved 2026-11-10) | 2026-11-10.etf10-rsi2-1 | `etf10_rsi2.py` | Connors & Alvarez 2008 RSI(2) family, desk variant rsi2 F1 = T6 R2 (B: BACKTEST research 1997-2021 and sealed 2022-2025 passed on WRDS CRSP) | 10 ETFs in shares: ask + $0.01 / bid - $0.01, 3 x $1,000 slots |
+| `nbs_spy_ls`, `nbs_spy_long` (intraday, trend book; 2026-11-10) | 2026-11-10.nbs-1 | `nb_shares.py` | Zarattini, Aziz & Barbon 2024 noise band, base rules unlevered = T12a / T12b (B: BACKTEST research 2003-2021 and sealed 2022-2025 passed on WRDS TAQ) | SPY shares: ask / bid + $0.0035 per share per side, $3,000 notional, flat 15:59 |
 
 Variants tried before the forward test: none run on data yet. Count every later variant for the deflated Sharpe. (`etf10_rsi2` is the exception: T6 R2 was tested before its forward test; see the section below.)
 
@@ -213,3 +214,14 @@ Nick said yes on 2026-10-31. These are paper-only twins of the sprint's best nea
 - **Evidence (BACKTEST, WRDS CRSP daily, survivorship-free, $0.02/share per side at 2x costs).** Research 1997-2021: 1,491 trades, +0.381% per trade, PF 1.77, 90% CI +0.25 to +0.51%, 5 of 5 sub-periods positive, above the 90th percentile of random entries. Sealed 2022-2025, run once (corrected 2026-11-10 for a CRSP format-junction bug, rules unchanged): 270 trades, +0.38% per trade, PF 1.74, 90% CI +0.11 to +0.64%. Portfolio of 3 x $1,000: Sharpe 0.72 (research) and 0.71 (sealed).
 - **Trials.** 19 WRDS trials run so far (variants-tried rows 51-69; T9-T11 all failed or showed no practical edge) (Nick's TradingVault `Ledger/variants-tried.md`); T6 R2 is one of them.
 - **Forward test.** PAPER from the first session after deploy. Rules, deviations and what it measures: `docs/STRATEGY_PLAN.md` section 8.
+
+## SPY noise band shares ledgers `nbs_spy_ls` / `nbs_spy_long` (registered 2026-11-10, before any forward trade)
+
+- **Source.** Zarattini, Aziz & Barbon (2024), the base noise-band rules on SPY shares, unlevered. This is the same paper as the `noise` reference ledger, which trades options and stays unchanged.
+- **Pre-registration.** T12 (T12a long/short, T12b long only), approved by Nick on 2026-11-10 with the rules locked before any data (Nick's TradingVault `Research/2026-11-10-t12-prereg`). The sealed-window criterion was fixed in the same note.
+- **Evidence (BACKTEST, WRDS TAQ NBBO + trades; fills at the bid/ask of the first quote at or after the check + 1 s, plus $0.0035 per share per side):**
+  - Research 2003-2021: T12a +1.76 bp/day (90% CI +0.78 to +2.80), Sharpe 0.60. T12b +0.98 bp/day (CI +0.39 to +1.56), Sharpe 0.55. All 4 checks pass for both, including beating random-direction trades.
+  - Sealed 2022-2025, run once: T12a +2.18 bp/day (CI +0.40 to +4.14), Sharpe 0.80. T12b +1.10 bp/day, Sharpe 0.62.
+- **Caveats.** Half the research edge is 2008. 2012-2021 and 2024-2025 were about flat. Deflated Sharpe probability 0.75 / 0.68 at the 21 WRDS trials (0.42 / 0.33 counting the whole noise-band family). The desk's 2016-2026 options exam found no edge over random direction.
+- **Desk fit.** Correlation with `etf10_rsi2` is about 0. The equal-risk blend Sharpe is 0.96 (research) and 1.04 (sealed), the first pair at the desk's 1.0 floor.
+- **Forward test.** PAPER from the first session after deploy. Rules and deviations: `docs/STRATEGY_PLAN.md` section 9.

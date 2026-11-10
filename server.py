@@ -883,6 +883,11 @@ if __name__ == "__main__":
         print("v4 ETF swing ledger (etf10_rsi2, paper, held overnight):", "started" if etf10_rsi2.start() else "off", flush=True)
     except Exception as e:
         print("ETF swing ledger not started:", e, flush=True)
+    try:                                           # the SPY noise band shares ledgers (paper, intraday; own thread and risk book)
+        import nb_shares
+        print("v4 SPY trend ledgers (nb_shares, paper, intraday):", "started" if nb_shares.start() else "off", flush=True)
+    except Exception as e:
+        print("SPY trend ledgers not started:", e, flush=True)
     try:                                           # v3.5: journal/learning tables + the preregistered hypotheses
         import learning
         learning.migrate()

@@ -13,6 +13,8 @@ GET  /api/v4/positions?status=&ledger=&day=   v4 paper positions with a one-line
 GET  /api/v4/decisions?day=&ledger=&kind=     every v4 decision (checks, entries, skips, risk blocks, rankings)
 GET  /api/v4/swing            the ETF swing ledger (etf10_rsi2, held overnight): PAPER (simulated fills), today's plan
                               (signals from the last finished daily bar, exits due), switch, status
+GET  /api/v4/trend            the SPY noise band shares ledgers (nb_shares: nbs_spy_ls, nbs_spy_long): PAPER (simulated
+                              fills), today's prep (sigma, prior close), checks done, pending orders, status
 GET  /api/v4/sprint           the sprint forward-test ledgers (fb_or, otm_put, otm_bounce, otm_h): PAPER (simulated fills), their
                               source backtest runs and numbers (in-sample), the rules read from the pinned specs, switches,
                               deviations from the backtest
@@ -49,6 +51,9 @@ def get(path, q):
         st = _one(q, "status")
         rows = S.positions(status=st if st in ("OPEN", "CLOSED", "VOID") else None, ledger=_one(q, "ledger"), day=_one(q, "day"))
         return [view(p) for p in rows][-500:]
+    if path == "/api/v4/trend":
+        import nb_shares
+        return nb_shares.status()
     if path == "/api/v4/swing":
         import etf10_rsi2
         return etf10_rsi2.status()

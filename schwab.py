@@ -498,6 +498,18 @@ def quotes(tickers):
     return out, err
 
 
+def dividend(ticker):
+    """(ex-date 'YYYY-MM-DD', per-payment amount) of the latest dividend from the quote's fundamental block, or
+    (None, None). Market data only; cached 6 hours. Used by nb_shares to adjust the prior close on ex-dividend days."""
+    def f():
+        j, _ = _get("/marketdata/v1/quotes", {"symbols": ticker.upper(), "fields": "fundamental"})
+        fu = ((j or {}).get(ticker.upper()) or {}).get("fundamental") or {}
+        ex = str(fu.get("divExDate") or "")[:10] or None
+        amt = _num(fu.get("divPayAmount"))
+        return (ex, amt) if ex and amt else (None, None)
+    return _cached(("div", ticker), 6 * 3600, f)
+
+
 def quotes_full(tickers):
     """{ticker: {last, open, prev, high, low, volume, bid, ask, quote_ms}} for up to ~100 symbols per call (scanner)."""
     out, err = {}, None

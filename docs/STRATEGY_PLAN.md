@@ -206,3 +206,44 @@ Added 2026-11-10. Nick said "go" to a paper forward test of the first strategy t
 **Deviations from the backtest.** Schwab daily bars instead of CRSP; the first fresh quote after 09:30 instead of the official opening print; a fixed $1,000 per slot instead of min($1,000, cash); dividends are not credited to paper P/L; the $90 daily stop can block an entry the backtest would take (every block is recorded).
 
 **What the forward test measures.** Fill cost vs the backtest's $0.02 per share per side, missed opens, and after 40 trades the same metrics as every ledger plus the mean % per trade next to the backtest's +0.38%. Promotion needs CLAUDE.md step 5. Live sizing for real money (risk framework: a 3-sigma day on the whole sleeve <= 1.5% of equity, the drawdown throttle and the kill rules) is set at promotion, not here.
+
+## 9. SPY noise band in shares: `nbs_spy_ls` and `nbs_spy_long` (forward test, intraday)
+
+Added 2026-11-10 after Nick said yes to a paper forward test of T12. **Not promoted.** Intraday, flat at the close, in its own isolated `trend` risk book. The `noise` reference ledger (options) is unchanged.
+
+**Labels.**
+- Forward results: **PAPER (simulated fills)** on live Schwab bars and quotes.
+- Backtest numbers: **BACKTEST** on WRDS TAQ tick data, run on Nick's computer. The notes are in Nick's TradingVault (`Research/2026-11-10-t12-prereg`, `-t12-result`, `-t12-sealed-result`).
+
+**Rules (frozen as T12; nothing tuned).**
+- **Checks:** at 10:00, 10:30, ..., 15:30 ET.
+- **Signal price:** the close of the finished 1-minute bar ending at the check.
+- **Band:** sigma(t) = the average over the prior 14 full sessions of |close(t) / open - 1|.
+  - Upper = max(open, prior close) x (1 + sigma).
+  - Lower = min(open, prior close) x (1 - sigma).
+  - The prior close is reduced by the dividend on ex-dividend days.
+- **At each check, in this order:**
+  1. A long exits below max(upper, session VWAP); a short exits above min(lower, VWAP).
+  2. Then, if flat: above upper -> buy; below lower -> short (`nbs_spy_ls` only).
+- **Flat at 15:59.**
+- **Fills:**
+  - The first fresh quote after the check: buy at the ask, sell at the bid, + $0.0035/share per side. That is the backtest's cost model (execution model `nbspy1`). The desk's generic shares model would add $0.01 per side, about the size of the whole edge.
+  - Entries without a fresh quote within 180 s are MISSED. Exits are never dropped.
+- **Missed checks:** a check whose bar isn't available within 120 s, or that passed while the desk was down, is recorded as NO DATA, with no catch-up trading. Early-close days are skipped, as in the backtest.
+- **Size:** $3,000 notional per ledger (1x Nick's account), fractional shares.
+
+| Window | T12a long/short, per day after costs | T12b long only, per day after costs |
+|---|---|---|
+| BACKTEST research 2003-2021 | +1.76 bp (CI +0.78 to +2.80), Sharpe 0.60 | +0.98 bp (CI +0.39 to +1.56), Sharpe 0.55 |
+| BACKTEST sealed 2022-2025 (run once) | +2.18 bp (CI +0.40 to +4.14), Sharpe 0.80 | +1.10 bp (CI -0.01 to +2.29), Sharpe 0.62 |
+
+**Read with care.**
+- The edge comes from volatile years (2008, 2022-23). 2012-2021 and 2024-2025 were about flat.
+- Deflated Sharpe probability: 0.75 / 0.68 at 21 trials.
+- Paired with `etf10_rsi2` (correlation about 0), the equal-risk desk blend is 0.96 (research) and 1.04 (sealed).
+
+**Risk book `trend`** (`v4risk.py` risk5, isolated): at most 2 open (one per ledger), the v4 kill switch and pauses, and the risk framework's -$90 daily stop on new entries. Exits are never blocked. A leftover position from an earlier session closes at the next valid quote (a day ledger).
+
+**Practical.** For a $3k live account, the pattern-day-trader rule caps margin accounts under $25k at 3 day trades per 5 days. The long-only version fits a cash account; long/short would need puts or more capital. This is decided at promotion, not here.
+
+**Deviations from the backtest.** 1-minute bar closes instead of the NBBO mid at the second; bar VWAP instead of trade VWAP; the flat uses the first quote after 15:59:00.
