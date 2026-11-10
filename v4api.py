@@ -11,6 +11,8 @@ GET  /api/v4/tracking?start=&account=   the fresh-start view: each strategy as i
                               config/v4.json "tracking": Nov 2 2026, $10,000), P/L and % return since then, books, desk
 GET  /api/v4/positions?status=&ledger=&day=   v4 paper positions with a one-line description and the last mark
 GET  /api/v4/decisions?day=&ledger=&kind=     every v4 decision (checks, entries, skips, risk blocks, rankings)
+GET  /api/v4/swing            the ETF swing ledger (etf10_rsi2, held overnight): PAPER (simulated fills), today's plan
+                              (signals from the last finished daily bar, exits due), switch, status
 GET  /api/v4/sprint           the sprint forward-test ledgers (fb_or, otm_put, otm_bounce, otm_h): PAPER (simulated fills), their
                               source backtest runs and numbers (in-sample), the rules read from the pinned specs, switches,
                               deviations from the backtest
@@ -47,6 +49,9 @@ def get(path, q):
         st = _one(q, "status")
         rows = S.positions(status=st if st in ("OPEN", "CLOSED", "VOID") else None, ledger=_one(q, "ledger"), day=_one(q, "day"))
         return [view(p) for p in rows][-500:]
+    if path == "/api/v4/swing":
+        import etf10_rsi2
+        return etf10_rsi2.status()
     if path == "/api/v4/sprint":
         import sprint_paper
         return sprint_paper.status()
@@ -61,8 +66,14 @@ def view(p):
     """A position for the page: one-line description, the last mark and what happens next."""
     pl = p.get("plan") or {}
     if p["kind"] == "shares":
-        desc = f"{p['side']} {int(p['qty'])} sh"
-        nxt = f"stop {pl.get('stop')}, flat 15:55" if p["status"] == "OPEN" else p.get("exit_reason")
+        q = float(p["qty"] or 0)
+        desc = f"{p['side']} {int(q) if q.is_integer() else q:g} sh"
+        if p["status"] != "OPEN":
+            nxt = p.get("exit_reason")
+        elif pl.get("exit_rule"):                   # the swing book (etf10_rsi2): no stop, no 15:55 flat
+            nxt = pl["exit_rule"]
+        else:
+            nxt = f"stop {pl.get('stop')}, flat 15:55"
     elif p["kind"] == "spread":
         desc = " / ".join(f"{'-' if l.get('action') == 'sell' else '+'}{l.get('label')}" for l in p["legs"])
         nxt = (f"max loss ${p.get('max_loss')}; " + (pl.get("stop") or pl.get("exit_rule") or "15:25")) if p["status"] == "OPEN" else p.get("exit_reason")

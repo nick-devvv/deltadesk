@@ -268,3 +268,27 @@ Nick asked for a clean page that still shows everything from before. Only `index
 ```
 Update the desk: run ~/desk/deploy/update.sh and show me the whole output.
 ```
+
+## 13. ETF swing ledger: update on Chart (added 2026-11-10)
+
+**What's new.** One PAPER (simulated fills) ledger, `etf10_rsi2`, in a new isolated `swing` book. It buys ETF shares at the open after an RSI(2) pullback signal and **holds overnight** until the open after a close above the 5-day average (rules and evidence: `docs/STRATEGY_PLAN.md` section 8). Nick approved the overnight hold on 2026-11-10. Not promoted.
+- Code: `etf10_rsi2.py` (its own worker thread `v4swing`, started by `server.py`), `v4risk.py` risk4 (the `swing` book and the multi-day daily stop), `v4report.py` (the swing book row with the backtest numbers), `v4api.py` (`GET /api/v4/swing`), `index.html`, `health.py`, `release.py` (release `2026-11-10.v4-swing`), `config/v4.json` (`etf10_rsi2` switch, on).
+- Tests: `tests/test_etf10_rsi2.py` (rules, RSI parity with the backtest, fills at the open, slots, no look-ahead, restart, risk isolation, the daily stop across sessions, kill switch, switch, no overnight sweep). The book lists in `tests/test_v4_report.py` and `tests/test_sprint_paper.py` now include `swing`.
+- Unchanged: the frozen files (`strategy.py`, `exits.py`, `optionmath.py`, `config/policy.json`), every Chart-only file, every existing ledger's rules. The `swing` book is isolated: its positions never count toward another ledger's caps, and other books' positions never count toward it. No day ledger's overnight sweep can touch it (each sweep only reads its own ledgers).
+
+**Update.** Once the pull request is merged into `main`, Nick sends Chart this after 4:15 PM ET:
+
+```
+Update the desk: run ~/desk/deploy/update.sh and show me the whole output.
+```
+
+**First-session checks** (Chart, after 09:45 ET on the next trading day; the token stays in the variable):
+
+```
+K=$(cat ~/desk/DESK_TOKEN.txt); B=http://127.0.0.1:8765
+curl -s "$B/api/v4/swing?k=$K" | python3 -m json.tool | head -80                          # plan: asof = previous session, entries, exits, no last_error
+curl -s "$B/api/v4/decisions?k=$K&ledger=etf10_rsi2" | python3 -m json.tool | head -60     # 10 checks (SIGNAL / NO SIGNAL / HOLDING) and any ORDER / MISSED
+curl -s "$B/api/v4/positions?k=$K&ledger=etf10_rsi2" | python3 -m json.tool | head -40
+```
+
+What to send Nick: the plan's `asof` date (must be the previous session), every `last_error`, and each ORDER / MISSED / NO SLOT / BLOCKED-RISK with its reason. Every number is PAPER (simulated fills), not real money.

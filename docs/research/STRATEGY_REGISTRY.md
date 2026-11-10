@@ -186,7 +186,9 @@ Each ledger's exact rules, parameters, cost model and version id are frozen in i
 | `otm_put` (sprint forward test, not promoted) | 2026-11-02.v4-sprint_paper1 | `sprint_paper.py` | sprint backtest otm_v1-011 (in-sample; idea from Option Alpha's Top Backtests, heavily selected) | as `fb_or`, puts |
 | `otm_bounce` (sprint forward test, WATCH-ONLY) | 2026-11-02.v4-sprint_paper1 | `sprint_paper.py` | sprint backtest otm_v1-042 (in-sample, 44 trades, one episode) | as `fb_or`, calls |
 
-Variants tried before the forward test: none run on data yet. Count every later variant for the deflated Sharpe.
+| `etf10_rsi2` (held overnight, swing book; approved 2026-11-10) | 2026-11-10.etf10-rsi2-1 | `etf10_rsi2.py` | Connors & Alvarez 2008 RSI(2) family, desk variant rsi2 F1 = T6 R2 (B: BACKTEST research 1997-2021 and sealed 2022-2025 passed on WRDS CRSP) | 10 ETFs in shares: ask + $0.01 / bid - $0.01, 3 x $1,000 slots |
+
+Variants tried before the forward test: none run on data yet. Count every later variant for the deflated Sharpe. (`etf10_rsi2` is the exception: T6 R2 was tested before its forward test; see the section below.)
 
 ## Sprint paper ledgers: forward tests of in-sample backtests (registered 2026-11-02, before any forward trade)
 
@@ -204,3 +206,10 @@ Nick said yes on 2026-10-31. These are paper-only twins of the sprint's best nea
 - **Deviations from the backtest:** SPY+QQQ only (no IWM snapshot); Schwab bars, chain mids and live bid/ask instead of Alpaca bars, last trades and a modeled spread; VIXY from Schwab; the v4 risk layer can block entries (recorded).
 - **2016-2023 history check (pre-registered 2026-10-31, before any HIST pull or run):** `docs/research/SPRINT_PLAN.md` Amendment 5. The same rules on HIST = 2016-01-04 to 2024-01-31 (data they were never tuned on): Layer 1 on the stock signal alone, Layer 2 with MODELED (BS, calibrated IV) option prices validated against the real DEV runs first. Pass bars are fixed there. It cannot promote anything; it decides whether each ledger carries a "failed HIST" note.
 
+## ETF swing ledger `etf10_rsi2` (registered 2026-11-10, before any forward trade)
+
+- **Source.** Connors & Alvarez (2008), *Short Term Trading Strategies That Work*: buy 2-period RSI pullbacks while the close is above its 200-day average, sell on a close above the 5-day average. The desk's frozen variant (rsi2 F1) also requires close < SMA(5) at entry and fills at the next open.
+- **Pre-registration.** T6 R2, approved by Nick on 2026-11-09 with the rules locked before any result (Nick's TradingVault `Research/2026-11-09-t56-prereg`, including the sealed-window criterion fixed before that data was downloaded).
+- **Evidence (BACKTEST, WRDS CRSP daily, survivorship-free, $0.02/share per side at 2x costs).** Research 1997-2021: 1,491 trades, +0.381% per trade, PF 1.77, 90% CI +0.25 to +0.51%, 5 of 5 sub-periods positive, above the 90th percentile of random entries. Sealed 2022-2025, run once: 267 trades, +0.38% per trade, PF 1.72, 90% CI +0.10 to +0.64%. Portfolio of 3 x $1,000: Sharpe 0.72 (research) and 0.69 (sealed).
+- **Trials.** 17 versions run in the WRDS program so far (Nick's TradingVault `Ledger/variants-tried.md`); T6 R2 is one of them.
+- **Forward test.** PAPER from the first session after deploy. Rules, deviations and what it measures: `docs/STRATEGY_PLAN.md` section 8.

@@ -688,7 +688,7 @@ def test_sprint_book_is_isolated_from_the_existing_ledgers_caps(env):
                          "entry_px": 1.0, "entry_t": "x", "legs": [{"symbol": f"I{i}", "action": "buy", "qty": 1}], "plan": {}})
     assert "index book cap" in v4risk.admit("noise_v2", "index", "SPY", "long")
     st = v4risk.status()
-    assert st["limits"]["isolated_books"] == ["sprint"] and st["open"]["by_book"]["sprint"] == cap
+    assert st["limits"]["isolated_books"] == ["sprint", "swing"] and st["open"]["by_book"]["sprint"] == cap
 
 
 def test_report_api_and_view_label_the_forward_tests(env):
@@ -699,7 +699,7 @@ def test_report_api_and_view_label_the_forward_tests(env):
     S.close_position(pid, 1.90, "test", 0.65)
     d = v4report.overview("2026-11-02")
     books = {b["book"]: b for b in d["books"]}
-    assert list(books) == ["index", "premium", "stocks", "catalyst", "sprint"]
+    assert list(books) == ["index", "premium", "stocks", "catalyst", "sprint", "swing"]
     rows = {r["ledger"]: r for r in books["sprint"]["ledgers"]}
     assert set(rows) == {"fb_or", "otm_put", "otm_bounce", "otm_h"}
     fb = rows["fb_or"]

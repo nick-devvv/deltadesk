@@ -8,6 +8,8 @@ SAME entries; share ledgers also show matched random entries (same stock, day, s
 entered at a random bar's next open, $0.02/share, 50 paths, fixed seed), scored after the close by score_controls().
 The `noise` reference ledger and the `old` ledger (legacy forward test, not from a published source; Nick kept it
 active) live in the v3 positions table, unchanged, and are shown in the index book with the same metrics.
+The swing book (etf10_rsi2.py, held overnight) row carries its evidence label, the T6 R2 backtest numbers (research and
+sealed windows, labeled BACKTEST) and the forward mean % per trade in the same unit.
 The sprint book (sprint_paper.py) rows also carry their evidence label ("PAPER (simulated fills)"), status ("forward
 test of an in-sample backtest (not promoted)"), the source backtest run id and that backtest's own numbers (labeled
 BACKTEST in-sample), split SPY vs QQQ.
@@ -28,6 +30,8 @@ BOOKS = [
     ("catalyst", "Catalysts: earnings-day breakouts and the news-drift event study", ["earn_day"]),
     ("sprint", "Sprint forward tests: PAPER (simulated fills) twins of sprint backtests (in-sample; otm_h out-of-sample), SPY / QQQ 0DTE options, not promoted",
      ["fb_or", "otm_put", "otm_bounce", "otm_h"]),
+    ("swing", "ETF swing (held overnight, approved 2026-11-10): PAPER (simulated fills) RSI(2) pullbacks on 10 ETFs in shares; "
+              "BACKTEST research and sealed out-of-sample windows passed; forward test, not promoted", ["etf10_rsi2"]),
 ]
 SPRINT_LEDGERS = ("fb_or", "otm_put", "otm_bounce", "otm_h")
 LEGACY_TABLE = ("noise", "old")             # ledgers kept in the v3 positions table, read-only here
@@ -39,7 +43,8 @@ LABELS = {"old": "Old rules (Oct 28): legacy forward test (not from a published 
           "fb_or": "Failed-break calls, opening-range lows (forward test of setups_v2-012)",
           "otm_put": "Far-OTM 10:30 puts, calm up days (forward test of otm_v1-011)",
           "otm_bounce": "Far-OTM 11:00 calls, stressed down days (forward test of otm_v1-042, WATCH-ONLY)",
-          "otm_h": "Far-OTM 11:00 calls, busy days: rule H (forward test of otm_v1-040 + f_rvol >= 1.06)"}
+          "otm_h": "Far-OTM 11:00 calls, busy days: rule H (forward test of otm_v1-040 + f_rvol >= 1.06)",
+          "etf10_rsi2": "ETF RSI(2) swing, 10 ETFs, 3 x $1k (forward test of T6 R2)"}
 SHARE_LEDGERS = ("sip_orb5", "sip_orb5_x", "sip_orb15", "earn_day")
 
 
@@ -113,6 +118,12 @@ def ledger_row(ledger, book, since):
             row.update({k: v for k, v in sprint_paper.report_meta(ledger).items() if k != "label"})
         except Exception as e:
             row["sprint_error"] = type(e).__name__
+    if ledger == "etf10_rsi2":                      # evidence labels + the backtest numbers in the same unit (% per trade)
+        try:
+            import etf10_rsi2
+            row.update({k: v for k, v in etf10_rsi2.report_meta(tr).items() if k != "label"}, evidence=etf10_rsi2.LABEL)
+        except Exception as e:
+            row["swing_error"] = type(e).__name__
     if book in ("index", "premium", "sprint"):
         tick = sorted({t["ticker"] for t in tr} | {"SPY", "QQQ"})
         row["by_ticker"] = {t: metrics(get(ledger, since, t)) for t in tick}
@@ -187,11 +198,16 @@ def overview(since="2026-11-02"):
     except Exception as e:
         idx = {"error": type(e).__name__}
     try:
+        import etf10_rsi2
+        swing = etf10_rsi2.status()
+    except Exception as e:
+        swing = {"error": type(e).__name__}
+    try:
         trk = tracking()
     except Exception as e:
         trk = {"error": type(e).__name__}
     return {"since": since, "books": books, "tracking": trk, "risk": v4risk.status(), "news_drift": nd, "chains": ch, "stocks_worker": sip,
-            "index_engine": idx,
+            "index_engine": idx, "swing_worker": swing,
             "retired": {"list": retire.retired_list(), "ledgers": retired_rows("2000-01-01")},
             "void": [{k: p[k] for k in ("id", "ledger", "date", "exit_reason")} for p in S.positions(status="VOID")],
             "note": ("Paper only: simulated fills on live Schwab quotes, never real money. Under 30 trades is not evidence. "
