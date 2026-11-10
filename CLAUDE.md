@@ -9,6 +9,7 @@ DeltaDesk is Nick's paper-trading desk for **day trading**: 0DTE SPY/QQQ options
 - **Any liquid US stock or ETF** may be day-traded in shares, or in options of any expiry that are opened and closed the same session. Option liquidity filters are part of every rule: a stock signal that works can still lose money in options (wide spreads, implied-volatility crush after earnings).
 - **Nick's account is long options only** (no spread approval), so credit-spread and iron-condor ledgers are paper research only.
 - Out of scope unless Nick asks in that conversation: overnight or multi-day holds, holding options through an earnings report, and any rule that isn't written down and tested.
+- **One approved exception (Nick, 2026-11-10):** the `etf10_rsi2` paper ledger (`etf10_rsi2.py`, risk book `swing`) holds ETF shares overnight under the frozen T6 R2 rules (RSI(2) pullbacks on 10 ETFs; backtest research 1997-2021 and sealed 2022-2025 windows both passed, evidence in Nick's TradingVault). Paper only. It must never call `v4exec.overnight()`, and the day-trading ledgers keep their same-session rule. Any other multi-day ledger still needs Nick's explicit yes.
 - The current ledgers, what is retired and what replaces them: `docs/STRATEGY_PLAN.md`; the v4 build: `docs/V4_REPORT.md`.
 
 ## How strategies get onto the desk

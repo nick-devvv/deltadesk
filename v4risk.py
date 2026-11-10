@@ -13,6 +13,10 @@ comparison shares vs options is never biased by a cap) but are closed by the kil
 Isolated books (the "sprint" book of sprint_paper.py, added 2026-11-02): their positions count only inside their own book
 (book cap, per-symbol cap, same-direction cap, daily loss) plus the desk cap for their own entries; no other ledger's
 check ever counts them, so adding them changes nothing for the ledgers that were already running.
+Multi-day books (the "swing" book of etf10_rsi2.py, added 2026-11-10, isolated too): positions are held across sessions,
+so "today's P/L" for check 6 is realized on positions closed today plus open marks, each measured from the position's
+previous-session mark (plan "day_base", set at its first mark of the day; 0 for a position entered today). The
+single-day books keep their original measure unchanged.
 
 The limits are circuit breakers sized so they rarely bind on a normal day (each ledger is a separate forward
 experiment and shared caps would distort the comparison); every block is recorded as a decision with its reason, so
@@ -23,15 +27,17 @@ import store
 import v4common as C
 import v4store as S
 
-VERSION = "2026-11-02.v4-risk3"   # risk3: sprint book caps 6 -> 8 for its fourth ledger (otm_h)
+VERSION = "2026-11-10.v4-risk4"   # risk4: isolated multi-day "swing" book (etf10_rsi2); risk3: sprint caps 6 -> 8 (otm_h)
 LIMITS = {
     "desk_max_open": 50,
-    "book_max_open": {"index": 4, "premium": 6, "stocks": 40, "catalyst": 8, "sprint": 8},
+    "book_max_open": {"index": 4, "premium": 6, "stocks": 40, "catalyst": 8, "sprint": 8, "swing": 10},
     "symbol_max_open": 4,
-    "book_max_same_direction": {"index": 4, "premium": 4, "stocks": 25, "catalyst": 6, "sprint": 8},
-    "book_daily_loss_usd": {"index": 600.0, "premium": 800.0, "stocks": 2000.0, "catalyst": 800.0, "sprint": 600.0},
+    "book_max_same_direction": {"index": 4, "premium": 4, "stocks": 25, "catalyst": 6, "sprint": 8, "swing": 10},
+    "book_daily_loss_usd": {"index": 600.0, "premium": 800.0, "stocks": 2000.0, "catalyst": 800.0, "sprint": 600.0,
+                            "swing": 90.0},          # swing: the approved risk framework's daily stop (-3% of $3,000)
     "selling_ledgers": ("orb_credit", "ic_20d"),
-    "isolated_books": ("sprint",),
+    "isolated_books": ("sprint", "swing"),
+    "multi_day_books": ("swing",),
 }
 
 
@@ -43,9 +49,35 @@ def _primary_open():
     return [p for p in S.positions(status="OPEN") if not is_shadow(p["ledger"])]
 
 
+def day_base(p, day):
+    """A multi-day position's mark at the start of `day`: plan day_base when set today, 0 if entered today, else its
+    last mark (from the previous session)."""
+    pl = p.get("plan") or {}
+    if pl.get("day_base_day") == day:
+        return float(pl.get("day_base") or 0.0)
+    if str(p.get("date")) == day:
+        return 0.0
+    return float(pl.get("mtm") or 0.0)
+
+
+def _multi_day_pnl_today(book, day):
+    tot = 0.0
+    for p in S.positions(book=book):
+        if is_shadow(p["ledger"]):
+            continue
+        if p["status"] == "OPEN":
+            tot += float((p.get("plan") or {}).get("mtm") or 0.0) - day_base(p, day)
+        elif p["status"] == "CLOSED" and str(p.get("exit_t") or "")[:10] == day:
+            tot += float(p["realized"] or 0.0) - day_base(p, day)
+    return round(tot, 2)
+
+
 def book_pnl_today(book, now=None):
-    """Realized today (closed) + the last mark of open positions, primary ledgers of the book only."""
+    """Realized today (closed) + the last mark of open positions, primary ledgers of the book only. Multi-day books:
+    the change since each position's previous-session mark (see the module docstring)."""
     day = C.day_str(now)
+    if book in LIMITS.get("multi_day_books", ()):
+        return _multi_day_pnl_today(book, day)
     tot = 0.0
     for p in S.positions(book=book, day=day):
         if is_shadow(p["ledger"]):

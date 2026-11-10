@@ -608,6 +608,30 @@
    "rank": "C",
    "rank_why": "Its backtester fills at the signal bar's close and checks stops on the close.",
    "next": "None; borrow exit-rule ideas only."
+  },
+  {
+   "name": "RSI(2) pullbacks on ETFs (Connors & Alvarez 2008), desk variant rsi2 F1 = T6 R2",
+   "url": null,
+   "kind": "book + desk backtest",
+   "inspected_commit": null,
+   "commit_date": null,
+   "source_version": "Connors & Alvarez (2008), Short Term Trading Strategies That Work (TradingMarkets); desk pre-registration T6 R2 (2026-11-09) in Nick's TradingVault",
+   "license": "book: author copyright; desk code: this repo",
+   "what": "Mean reversion inside an uptrend: buy a sharp 2-day pullback in an ETF that is above its 200-day average, sell on the first close back above the 5-day average.",
+   "entry": "On the last finished daily bar: close > SMA(200), close < SMA(5), Wilder RSI(2) < 10. Buy at the next open.",
+   "exit": "The next open after a daily close > SMA(5) (the entry day's close counts). No stop.",
+   "sizing": "Desk: 3 slots of $1,000, one position per symbol.",
+   "instruments": "SPY QQQ IWM DIA XLF XLE XLV EEM GLD TLT (shares)",
+   "timeframe": "daily; held 1 to several sessions (overnight)",
+   "data": "WRDS CRSP daily open/close, split-adjusted, survivorship-free (desk backtest on Nick's computer)",
+   "reported": "BACKTEST research 1997-2021: 1,491 trades, +0.381%/trade after 2x costs, PF 1.77, 90% CI +0.25 to +0.51%. Sealed 2022-2025 (out-of-sample, run once): 267 trades, +0.38%/trade, PF 1.72, 90% CI +0.10 to +0.64%. 3 x $1k portfolio Sharpe 0.72 / 0.69.",
+   "evidence": "B: pre-registered, survivorship-free, research and sealed windows both passed, random-entry baseline beaten; 17 versions tried in the program (deflated Sharpe to be applied at promotion).",
+   "risks": "Edge smallest in 2017-2021 (+0.22%); portfolio Sharpe below the desk's 1.0 target on its own; gap risk overnight (no stop); Schwab daily bars and opening quotes differ from CRSP opens.",
+   "reusable": "rules only (implemented in etf10_rsi2.py)",
+   "fit": "First desk strategy with an out-of-sample pass; held overnight, so it runs only as Nick's approved exception (CLAUDE.md scope).",
+   "rank": null,
+   "rank_why": "not ranked with the intraday repos; tested on the desk's own WRDS data",
+   "next": "Forward paper test (etf10_rsi2 ledger) to 40 trades; then promotion review per CLAUDE.md step 5."
   }
  ]
 }

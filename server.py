@@ -878,6 +878,11 @@ if __name__ == "__main__":
         print("v4 option-chain logger (data/chains, research budget):", "started" if chain_logger.start() else "off", flush=True)
     except Exception as e:
         print("Scanner not started:", e, flush=True)
+    try:                                           # the ETF swing ledger (paper, held overnight; own thread and risk book)
+        import etf10_rsi2
+        print("v4 ETF swing ledger (etf10_rsi2, paper, held overnight):", "started" if etf10_rsi2.start() else "off", flush=True)
+    except Exception as e:
+        print("ETF swing ledger not started:", e, flush=True)
     try:                                           # v3.5: journal/learning tables + the preregistered hypotheses
         import learning
         learning.migrate()

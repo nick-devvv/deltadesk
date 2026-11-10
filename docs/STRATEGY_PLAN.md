@@ -5,7 +5,7 @@ Written 2026-10-31. Source document: "DeltaDesk 0DTE quant rebuild" (Claude Docs
 **Scope (v4, from 2026-10-31): day trading in general.** Everything opens and closes in the same session.
 - **Core:** 0DTE SPY and QQQ options.
 - **Everything else:** any liquid US stock or ETF, day-traded in shares, or in options of any expiry that are opened and closed the same session.
-- **Never:** futures, or anything held overnight.
+- **Never:** futures, or anything held overnight. **Exception (Nick, 2026-11-10):** the `etf10_rsi2` paper ledger (section 8) holds ETF shares across sessions in its own isolated `swing` book.
 
 **Four books, one engine, one risk layer.** Index momentum (SPY, QQQ, IWM, XSP; liquid ETFs as research candidates), index premium selling (SPX/XSP first, then SPY/QQQ), stocks in play (the day's top stocks by opening relative volume, option-liquid only), and catalysts (any stock with a verified news/earnings/filing catalyst and a measured reaction). Each strategy x instrument x timeframe x version is its own ledger. Each family runs on its published timeframe plus at most two alternates chosen before testing; every alternate counts as a trial for the deflated Sharpe.
 
@@ -178,3 +178,29 @@ An unknown input (no VIXY bars, no VIXY daily closes, no prior close, or an unkn
 - No rule changes during the test. A change ships as a new versioned ledger, and this one keeps running.
 
 **Risk book `sprint`** (`v4risk.py`): at most 6 open, at most 6 in one direction, and a $600 daily paper loss limit. The book is **isolated**: its positions never count toward any other ledger's caps, so the existing ledgers behave exactly as before. The v4 kill switch blocks its entries; exits are never blocked.
+
+## 8. ETF swing ledger `etf10_rsi2` (forward test, held overnight)
+
+Added 2026-11-10. Nick said "go" to a paper forward test of the first strategy that passed both a research window and a sealed out-of-sample window. **Not promoted.** It is the only v4 ledger that holds positions overnight.
+
+**Labels.** Forward results are **PAPER (simulated fills)** on live Schwab quotes. Backtest numbers are **BACKTEST** on WRDS CRSP daily data (split-adjusted, survivorship-free), run on Nick's computer; the notes are in Nick's TradingVault (`Research/2026-11-09-t56-prereg`, `-t56-result`, `-t6-sealed-result`).
+
+**Rules (frozen as T6 R2, pre-registered 2026-11-09 before any result).**
+- Universe: SPY QQQ IWM DIA XLF XLE XLV EEM GLD TLT. Long only, shares.
+- Signal on the last finished daily bar: close > SMA(200), close < SMA(5), RSI(2) < 10 (Wilder, EWM alpha 1/2).
+- Entry: the next open (first fresh quote after 09:30 ET, ask + $0.01). No fill by 09:40 is recorded as MISSED.
+- Exit: the next open after any daily close > SMA(5), counting the entry day's close (bid - $0.01). No stop.
+- One position per symbol; 3 slots of $1,000 notional (fractional shares); same-day signals in the universe order; exits at an open free their slot before that open's entries.
+
+| Window | Trades | Win | Mean per trade, 2x costs | 90% CI | PF | 3 x $1k portfolio |
+|---|---|---|---|---|---|---|
+| BACKTEST research 1997-2021 | 1,491 | 69% | +0.381% | +0.25 to +0.51% | 1.77 | Sharpe 0.72, max DD -5% |
+| BACKTEST sealed 2022-2025 (out-of-sample, run once) | 267 | 68% | +0.38% | +0.10 to +0.64% | 1.72 | CAGR 8.6%, Sharpe 0.69, max DD -7% |
+
+**Trials.** T6 is 2 of the 17 versions run so far (TradingVault `Ledger/variants-tried.md`). The rule itself is the published Connors & Alvarez (2008) family plus the desk's frozen F1 entry filter; the 10-ETF universe was fixed before testing.
+
+**Risk book `swing`** (`v4risk.py` risk4, isolated like `sprint`): at most 10 open (the strategy's 3 slots bind first), the v4 kill switch and pauses, and the approved risk framework's daily stop: no new entries after -$90 today. For a multi-day book, "today" is realized on positions closed today plus open marks, each measured from the position's previous-session mark. Exits are never blocked. Each position's `risk_usd` is a 3-sigma one-day move on its notional (20-day sigma).
+
+**Deviations from the backtest.** Schwab daily bars instead of CRSP; the first fresh quote after 09:30 instead of the official opening print; a fixed $1,000 per slot instead of min($1,000, cash); dividends are not credited to paper P/L; the $90 daily stop can block an entry the backtest would take (every block is recorded).
+
+**What the forward test measures.** Fill cost vs the backtest's $0.02 per share per side, missed opens, and after 40 trades the same metrics as every ledger plus the mean % per trade next to the backtest's +0.38%. Promotion needs CLAUDE.md step 5. Live sizing for real money (risk framework: a 3-sigma day on the whole sleeve <= 1.5% of equity, the drawdown throttle and the kill rules) is set at promotion, not here.
