@@ -195,9 +195,11 @@ Added 2026-11-10. Nick said "go" to a paper forward test of the first strategy t
 | Window | Trades | Win | Mean per trade, 2x costs | 90% CI | PF | 3 x $1k portfolio |
 |---|---|---|---|---|---|---|
 | BACKTEST research 1997-2021 | 1,491 | 69% | +0.381% | +0.25 to +0.51% | 1.77 | Sharpe 0.72, max DD -5% |
-| BACKTEST sealed 2022-2025 (out-of-sample, run once) | 267 | 68% | +0.38% | +0.10 to +0.64% | 1.72 | CAGR 8.6%, Sharpe 0.69, max DD -7% |
+| BACKTEST sealed 2022-2025 (out-of-sample, run once; corrected 2026-11-10*) | 270 | 68% | +0.38% | +0.11 to +0.64% | 1.74 | CAGR 8.8%, Sharpe 0.71, max DD -7% |
 
-**Trials.** T6 is 2 of the 17 versions run so far (TradingVault `Ledger/variants-tried.md`). The rule itself is the published Connors & Alvarez (2008) family plus the desk's frozen F1 entry filter; the 10-ETF universe was fixed before testing.
+\* CRSP switched data formats in 2025, and the two formats adjust for splits differently, so a 2025 split looked like a -50% drop (XLE in this universe). The fix rescales the older data at the junction; rules and verdict are unchanged. The first run showed 267 trades, PF 1.72, Sharpe 0.69.
+
+**Trials.** T6 is 2 of the 19 WRDS trials run so far (rows 51-69) (TradingVault `Ledger/variants-tried.md`). The rule itself is the published Connors & Alvarez (2008) family plus the desk's frozen F1 entry filter; the 10-ETF universe was fixed before testing.
 
 **Risk book `swing`** (`v4risk.py` risk4, isolated like `sprint`): at most 10 open (the strategy's 3 slots bind first), the v4 kill switch and pauses, and the approved risk framework's daily stop: no new entries after -$90 today. For a multi-day book, "today" is realized on positions closed today plus open marks, each measured from the position's previous-session mark. Exits are never blocked. Each position's `risk_usd` is a 3-sigma one-day move on its notional (20-day sigma).
 
