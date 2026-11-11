@@ -247,3 +247,39 @@ Added 2026-11-10 after Nick said yes to a paper forward test of T12. **Not promo
 **Practical.** For a $3k live account, the pattern-day-trader rule caps margin accounts under $25k at 3 day trades per 5 days. The long-only version fits a cash account; long/short would need puts or more capital. This is decided at promotion, not here.
 
 **Deviations from the backtest.** 1-minute bar closes instead of the NBBO mid at the second; bar VWAP instead of trade VWAP; the flat uses the first quote after 15:59:00.
+
+## 10. Post-earnings drift: `pead_t21` (forward test, held overnight)
+
+Added 2026-11-11. Nick widened the desk's scope to any holding period and said yes to a paper forward test of T21 the same day. **Not promoted.** Multi-day (20 sessions), in its own isolated `pead` risk book.
+
+**Labels.**
+- Forward results: **PAPER (simulated fills)** on live Schwab quotes.
+- Backtest numbers: **BACKTEST** on WRDS CRSP daily data (survivorship-free) and I/B/E/S announcement dates and times, run on Nick's computer. The notes are in Nick's TradingVault (`Research/2026-11-11-t21-t22-prereg`, `-t21-t22-result`).
+
+**Rules (frozen as T21, pre-registered 2026-11-11 before any result).**
+- **Universe:** S&P 500 (`config/sp500.json`, a dated snapshot). Long only, shares.
+- **Event:** an SEC 8-K (not an amendment) listing Item 2.02, from EDGAR's submissions API. Reaction day = the acceptance day if before 16:00 ET and a session, else the next session.
+- **EAR:** the stock's close-to-close return minus SPY's, from the close 2 sessions before the reaction day to the close 1 session after it (the signal day).
+- **Cutoff:** the 90th percentile of every S&P 500 EAR with a signal day in the prior 365 calendar days (strictly before). At least 200 are needed.
+- **Entry:** EAR >= cutoff -> buy at the next open (first fresh quote after 09:30 ET, ask + $0.01). No fill by 09:40 is MISSED.
+- **Exit:** 5 minutes before the close of the 20th session after the entry day, at bid - $0.01. A missed close exit fills at the next open (LATE). No stop, no target. Exits come from each position's stored exit day, never from the morning plan.
+- **Positions:** one per symbol, at most 5; same-day signals in ticker order.
+- **Size:** $600 per slot, cut so a 3-sigma day (20-day sigma) is at most $45 (the risk framework's swing-book rule).
+
+| Window | Trades | Mean per trade after costs | 90% CI | PF | $3k view (5 x $600) |
+|---|---|---|---|---|---|
+| BACKTEST research 1997-2021 | 4,717 | +1.69% (2x costs +1.49%) | +1.23 to +2.16% | 1.57 | CAGR 6.1%, worst drop -28% |
+| BACKTEST sealed 2022-2025 (run once) | 852 | +1.24% (2x costs +1.04%) | +0.29 to +2.08% | 1.49 | CAGR 7.95%, worst drop -15% |
+
+**Read with care.**
+- It beats buying the same stocks on random days in both windows (research p90 +0.98%, sealed median +0.53%).
+- But in 2022-2025 it only matched SPY over the same days (market-adjusted -0.03% per trade). Most of its money is market exposure while invested.
+- Research 2007-2011 was negative (-1.20% per trade). 36 WRDS trials so far.
+
+**Risk book `pead`** (`v4risk.py` risk6, isolated, multi-day like `swing`): at most 5 open, the v4 kill switch and pauses, and the -$90 daily stop on new entries ("today" measured from each position's previous-session mark). Exits are never blocked. `risk_usd` = 3 x 20-day sigma x notional.
+
+**Data the ledger keeps.** Each morning from 05:00 ET it refreshes every S&P 500 company's EDGAR filings (one request each, about 5 a second) and computes the EAR of every event in the cutoff window from Schwab daily bars (the first run seeds a full year). EDGAR's `acceptanceDateTime` ends in "Z"; the ledger decides whether that is Eastern or UTC from the hours (EDGAR accepts filings 06:00-22:00 ET only) and shows its choice in `/api/v4/pead` (`data.edgar_time_zone`).
+
+**Deviations from the backtest.** SEC 8-K Item 2.02 acceptance time instead of the I/B/E/S announcement time (a late 8-K shifts the window by a day; a mid-quarter 2.02 counts as an event); today's S&P 500 list for every event in the window instead of membership on the reaction day; Schwab daily closes (no dividends) instead of CRSP total returns; class shares only if Schwab serves the symbol; the first quote after 09:30 instead of the official open; 5 minutes before the close at the bid instead of the official close; the $45 risk cap (the backtest always used $600); dividends are not credited to paper P/L.
+
+**What the forward test measures.** Fill costs vs the backtest's 10 bp per side, missed opens and closes, how often the risk cap shrinks a position, and after 40 trades the mean % per trade next to the backtest's +1.24% (sealed), with SPY over the same days alongside. Promotion needs CLAUDE.md step 5.

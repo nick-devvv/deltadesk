@@ -317,3 +317,30 @@ curl -s "$B/api/v4/decisions?k=$K&ledger=nbs_spy_ls" | python3 -m json.tool | he
 ```
 
 What to send Nick: `prep.sessions`, `prep.prev_close_adj`, `checks_done`, any `last_error`, and each ORDER / MISSED / NO DATA with its reason. Every number is PAPER (simulated fills), not real money.
+
+## 15. Post-earnings drift ledger: update on Chart (added 2026-11-11)
+
+**What's new.** One PAPER (simulated fills) multi-day ledger, `pead_t21`, in a new isolated `pead` book. It is the forward test of T21 (`docs/STRATEGY_PLAN.md` section 10): S&P 500 shares bought after a top-10% earnings reaction and sold at the close 20 sessions later.
+- **Code:**
+  - `pead_t21.py`: own worker thread `v4pead`, started by `server.py`. Market data only (Schwab daily bars and quotes) plus SEC EDGAR's public submissions API.
+  - `config/sp500.json`: the S&P 500 list with SEC CIKs (snapshot 2026-11-05).
+  - `v4risk.py` risk6 (the `pead` book, isolated and multi-day), `v4report.py`, `v4api.py` (`GET /api/v4/pead`), `index.html`, `health.py`.
+  - `release.py`: release `2026-11-11.v4-pead`.
+  - `config/v4.json`: the `pead_t21` switch, on.
+- **Tests:** `tests/test_pead_t21.py`. The book lists in four existing tests now include `pead`.
+- **Unchanged:** every existing ledger's rules, the frozen files, every Chart-only file.
+- **SEC access:** EDGAR asks for a User-Agent naming the app and a contact. The desk sends `SEC_USER_AGENT` if set (already used by the catalysts feed). `GET /api/health` shows `sec_user_agent_set`.
+
+**Update.** Once the pull request is merged, after 4:15 PM ET: "Update the desk: run ~/desk/deploy/update.sh and show me the whole output."
+
+**First morning.** From 05:00 ET the ledger refreshes 503 companies' EDGAR filings (about 5 minutes), then computes a year of earnings reactions from Schwab daily bars (about 5-10 minutes). The plan is made from 08:00 once both are done. If they aren't done by 09:30, it plans with what it has and says so.
+
+**First-session checks** (Chart, after 09:45 ET):
+
+```
+K=$(cat ~/desk/DESK_TOKEN.txt); B=http://127.0.0.1:8765
+curl -s "$B/api/v4/pead?k=$K" | python3 -m json.tool | head -80                            # data: edgar_fresh_today 503, ears_usable >= 200, edgar_time_zone; plan: asof, cutoff, n_window, entries; no last_error
+curl -s "$B/api/v4/decisions?k=$K&ledger=pead_t21" | python3 -m json.tool | head -60       # one check per event (EAR vs cutoff), entries, exits
+```
+
+What to send Nick: `data` (all five numbers), the plan's `asof` (must be the previous session), `cutoff` and `n_window`, every `last_error`, and each ORDER / MISSED / NO SLOT / NO CUTOFF / BLOCKED-RISK with its reason. Every number is PAPER (simulated fills), not real money.

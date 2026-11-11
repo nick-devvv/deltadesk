@@ -188,6 +188,7 @@ Each ledger's exact rules, parameters, cost model and version id are frozen in i
 
 | `etf10_rsi2` (held overnight, swing book; approved 2026-11-10) | 2026-11-10.etf10-rsi2-1 | `etf10_rsi2.py` | Connors & Alvarez 2008 RSI(2) family, desk variant rsi2 F1 = T6 R2 (B: BACKTEST research 1997-2021 and sealed 2022-2025 passed on WRDS CRSP) | 10 ETFs in shares: ask + $0.01 / bid - $0.01, 3 x $1,000 slots |
 | `nbs_spy_ls`, `nbs_spy_long` (intraday, trend book; 2026-11-10) | 2026-11-10.nbs-1 | `nb_shares.py` | Zarattini, Aziz & Barbon 2024 noise band, base rules unlevered = T12a / T12b (B: BACKTEST research 2003-2021 and sealed 2022-2025 passed on WRDS TAQ) | SPY shares: ask / bid + $0.0035 per share per side, $3,000 notional, flat 15:59 |
+| `pead_t21` (held overnight, pead book; 2026-11-11) | 2026-11-11.pead-t21-1 | `pead_t21.py` | Bernard & Thomas 1989; Chan, Jegadeesh & Lakonishok 1996; Brandt et al. 2008 earnings-announcement-return drift = T21 (B: BACKTEST research 1997-2021 and sealed 2022-2025 passed on WRDS CRSP + I/B/E/S) | S&P 500 shares: ask + $0.01 / bid - $0.01, 5 x $600 (risk-capped at $45 per 3-sigma day), 20 sessions |
 
 Variants tried before the forward test: none run on data yet. Count every later variant for the deflated Sharpe. (`etf10_rsi2` is the exception: T6 R2 was tested before its forward test; see the section below.)
 
@@ -225,3 +226,13 @@ Nick said yes on 2026-10-31. These are paper-only twins of the sprint's best nea
 - **Caveats.** Half the research edge is 2008. 2012-2021 and 2024-2025 were about flat. Deflated Sharpe probability 0.75 / 0.68 at the 21 WRDS trials (0.42 / 0.33 counting the whole noise-band family). The desk's 2016-2026 options exam found no edge over random direction.
 - **Desk fit.** Correlation with `etf10_rsi2` is about 0. The equal-risk blend Sharpe is 0.96 (research) and 1.04 (sealed), the first pair at the desk's 1.0 floor.
 - **Forward test.** PAPER from the first session after deploy. Rules and deviations: `docs/STRATEGY_PLAN.md` section 9.
+
+## Post-earnings drift ledger `pead_t21` (registered 2026-11-11, before any forward trade)
+
+- **Source.** Bernard & Thomas (1989); Chan, Jegadeesh & Lakonishok (1996); Brandt, Kishore, Santa-Clara & Venkatachalam (2008): stocks keep drifting for weeks after a large earnings-announcement return.
+- **Pre-registration.** T21, approved by Nick on 2026-11-11 with the rules and the sealed criterion locked before any result (Nick's TradingVault `Research/2026-11-11-t21-t22-prereg`).
+- **Evidence (BACKTEST, WRDS CRSP daily + I/B/E/S dates, 10 bp per side):**
+  - Research 1997-2021: 4,717 trades, +1.69% per trade (CI +1.23 to +2.16), PF 1.57, 4 of 5 sub-periods positive (2007-11 negative), above the 90th percentile of random entries in the same stocks (+0.98%). All 4 checks pass.
+  - Sealed 2022-2025, run once: 852 trades, +1.24% per trade (CI +0.29 to +2.08), PF 1.49, above the random median (+0.53%).
+- **Caveats.** Market-adjusted, the sealed window is about 0 (-0.03% per trade): it matched SPY over the same days. As a $3k sleeve it made less than holding SPY in both windows. 36 WRDS trials so far.
+- **Forward test.** PAPER from the first session after deploy. Rules and deviations: `docs/STRATEGY_PLAN.md` section 10.
