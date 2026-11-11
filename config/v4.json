@@ -18,6 +18,10 @@
  "etf10_rsi2_why": "Nick, 2026-11-10 (\"go\"): paper forward test of T6 R2 (rsi2 F1 on 10 ETFs; BACKTEST research 1997-2021 and sealed 2022-2025 both passed). The only v4 ledger that holds overnight (swing book). Simulated fills on live quotes, never real money; promotion needs 40 forward trades (CLAUDE.md step 5). false stops new entries; open positions still exit by rule.",
  "nb_shares": true,
  "nb_shares_why": "Nick, 2026-11-10 (\"sure we can do that\"): paper forward test of T12a/T12b, the noise band on SPY shares (BACKTEST research 2003-2021 and sealed 2022-2025 both passed). Intraday, flat at the close. Simulated fills on live quotes, never real money; promotion needs 40 forward trades per ledger. false stops new entries; open positions still exit by rule.",
+ "pead_t21": true,
+ "pead_t21_why": "Nick, 2026-11-11 (\"yes\"): paper forward test of T21, post-earnings drift on S&P 500 shares (BACKTEST research 1997-2021 and sealed 2022-2025 both passed; sealed market-adjusted about 0). Multi-day (pead book, 20 sessions). Simulated fills on live quotes, never real money; promotion needs 40 forward trades. false stops new entries; open positions still exit by rule.",
+ "pead_t21_tp": true,
+ "pead_t21_tp_why": "Nick, 2026-11-11 (\"do whatever you think is best\"; take profits instead of waiting for a date): paper forward test of T23a = T21 + a take-profit at fill x (1 + sigma20 x sqrt(20)) near the close (BACKTEST research and sealed both passed, and made more dollars than T21 in both). Runs beside pead_t21 (unchanged) in the pead book, its own 5 slots. Simulated fills, never real money; promotion needs 40 forward trades.",
  "fomc_decision_days": ["2026-01-28", "2026-03-18", "2026-04-29", "2026-06-17", "2026-07-29", "2026-09-16", "2026-10-28", "2026-12-09"],
  "fomc_source": "Federal Reserve 2026 FOMC meeting calendar (second day of each meeting = statement day). Used only when config/events.json has no calendar for the day. Verify against federalreserve.gov before relying on it."
 }

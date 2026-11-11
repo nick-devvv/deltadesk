@@ -34,6 +34,9 @@ BOOKS = [
               "BACKTEST research and sealed out-of-sample windows passed; forward test, not promoted", ["etf10_rsi2"]),
     ("trend", "Intraday trend: PAPER (simulated fills) noise band on SPY shares (T12a long/short, T12b long only), flat at the "
               "close; BACKTEST research 2003-2021 and sealed 2022-2025 passed; forward test, not promoted", ["nbs_spy_ls", "nbs_spy_long"]),
+    ("pead", "Earnings drift (held overnight, approved 2026-11-11): PAPER (simulated fills) S&P 500 shares after a top-10% earnings "
+             "reaction, held 20 sessions (pead_t21_tp also takes profit); BACKTEST research 1997-2021 and sealed 2022-2025 passed; forward test, "
+             "not promoted", ["pead_t21", "pead_t21_tp"]),
 ]
 SPRINT_LEDGERS = ("fb_or", "otm_put", "otm_bounce", "otm_h")
 LEGACY_TABLE = ("noise", "old")             # ledgers kept in the v3 positions table, read-only here
@@ -48,7 +51,9 @@ LABELS = {"old": "Old rules (Oct 28): legacy forward test (not from a published 
           "otm_h": "Far-OTM 11:00 calls, busy days: rule H (forward test of otm_v1-040 + f_rvol >= 1.06)",
           "etf10_rsi2": "ETF RSI(2) swing, 10 ETFs, 3 x $1k (forward test of T6 R2)",
           "nbs_spy_ls": "Noise band, SPY shares, long + short, $3k (forward test of T12a)",
-          "nbs_spy_long": "Noise band, SPY shares, long only, $3k (forward test of T12b)"}
+          "nbs_spy_long": "Noise band, SPY shares, long only, $3k (forward test of T12b)",
+          "pead_t21": "Post-earnings drift, S&P 500 shares, 5 x $600, 20 sessions (forward test of T21)",
+          "pead_t21_tp": "Post-earnings drift + take-profit, S&P 500 shares, 5 x $600 (forward test of T23a)"}
 SHARE_LEDGERS = ("sip_orb5", "sip_orb5_x", "sip_orb15", "earn_day")
 
 
@@ -128,6 +133,13 @@ def ledger_row(ledger, book, since):
             row.update({k: v for k, v in etf10_rsi2.report_meta(tr).items() if k != "label"}, evidence=etf10_rsi2.LABEL)
         except Exception as e:
             row["swing_error"] = type(e).__name__
+    if book == "pead":                              # evidence labels + the T21 backtest numbers (% per trade)
+        try:
+            import pead_t21
+            meta = pead_t21.report_meta(tr, ledger)
+            row.update({k: v for k, v in meta.items() if k != "label"}, evidence=meta["label"])
+        except Exception as e:
+            row["pead_error"] = type(e).__name__
     if book == "trend":                             # evidence labels + the T12 backtest numbers (bp per trade day)
         try:
             import nb_shares

@@ -888,6 +888,11 @@ if __name__ == "__main__":
         print("v4 SPY trend ledgers (nb_shares, paper, intraday):", "started" if nb_shares.start() else "off", flush=True)
     except Exception as e:
         print("SPY trend ledgers not started:", e, flush=True)
+    try:                                           # the post-earnings drift ledger (paper, multi-day; own thread and risk book)
+        import pead_t21
+        print("v4 earnings drift ledger (pead_t21, paper, held overnight):", "started" if pead_t21.start() else "off", flush=True)
+    except Exception as e:
+        print("Earnings drift ledger not started:", e, flush=True)
     try:                                           # v3.5: journal/learning tables + the preregistered hypotheses
         import learning
         learning.migrate()
