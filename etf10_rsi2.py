@@ -13,9 +13,11 @@ Source and evidence (labels: BACKTEST = historical simulation, PAPER = this ledg
   before any result). Data: WRDS CRSP daily (split-adjusted open/close), survivorship-free.
     BACKTEST research 1997-2021: 1,491 trades, win 69%, +0.381%/trade after 2x costs, PF 1.77, 90% CI +0.25 to +0.51%,
       5/5 sub-periods positive, random-entry 90th percentile +0.12%. Portfolio (3 x $1k): Sharpe 0.72, max DD -5%.
-    BACKTEST sealed 2022-2025 (out-of-sample, run once, pass criterion fixed before download): 267 trades, win 68%,
-      +0.38%/trade after 2x costs, 90% CI +0.10 to +0.64%, PF 1.72. Portfolio (3 x $1k): CAGR 8.6%, Sharpe 0.69, max DD -7%.
-  Trials counted for the deflated Sharpe: TradingVault Ledger/variants-tried.md (T6 = 2 rows of the 17 run so far).
+    BACKTEST sealed 2022-2025 (out-of-sample, run once, pass criterion fixed before download): 270 trades, win 68%,
+      +0.38%/trade after 2x costs, 90% CI +0.11 to +0.64%, PF 1.74. Portfolio (3 x $1k): CAGR 8.8%, Sharpe 0.71, max DD -7%.
+      (Corrected 2026-11-10 for a CRSP old/v2 price-factor junction bug; rules unchanged, verdict unchanged. Was 267
+      trades, PF 1.72, Sharpe 0.69.)
+  Trials counted for the deflated Sharpe: TradingVault Ledger/variants-tried.md (T6 = 2 of the 19 WRDS trials, rows 51-69).
 
 Rules (frozen; any change ships as a new ledger version and the forward count starts over)
   Universe   SPY QQQ IWM DIA XLF XLE XLV EEM GLD TLT (T6 R2's 10 ETFs). Long only.
@@ -57,7 +59,7 @@ import v4risk
 import v4store as S
 
 LEDGER, BOOK = "etf10_rsi2", "swing"
-VERSION = "2026-11-10.etf10-rsi2-1"
+VERSION = "2026-11-10.etf10-rsi2-1"   # rules version; evidence text corrected 2026-11-10 (no rule change)
 SYMBOLS = ("SPY", "QQQ", "IWM", "DIA", "XLF", "XLE", "XLV", "EEM", "GLD", "TLT")
 SMA_LONG, SMA_SHORT, RSI_MAX = 200, 5, 10.0
 SLOTS, SLOT_USD = 3, 1000.0
@@ -69,9 +71,9 @@ LABEL = "PAPER (simulated fills); rules = T6 R2, BACKTEST research 1997-2021 pas
 BACKTEST = {"research_1997_2021": {"label": "BACKTEST (research window)", "trades": 1491, "win_rate": 69.0,
                                    "mean_pct_2x_cost": 0.381, "profit_factor": 1.77, "ci90_pct": [0.25, 0.51],
                                    "portfolio_3x1k": {"sharpe": 0.72, "max_dd_pct": -5.0}},
-            "sealed_2022_2025": {"label": "BACKTEST (sealed, out-of-sample, run once)", "trades": 267, "win_rate": 68.0,
-                                 "mean_pct_2x_cost": 0.38, "profit_factor": 1.72, "ci90_pct": [0.10, 0.64],
-                                 "portfolio_3x1k": {"cagr_pct": 8.6, "sharpe": 0.69, "max_dd_pct": -7.0}}}
+            "sealed_2022_2025": {"label": "BACKTEST (sealed, out-of-sample, run once; corrected 2026-11-10)", "trades": 270,
+                                 "win_rate": 68.1, "mean_pct_2x_cost": 0.38, "profit_factor": 1.74, "ci90_pct": [0.11, 0.64],
+                                 "portfolio_3x1k": {"cagr_pct": 8.8, "sharpe": 0.71, "max_dd_pct": -7.1}}}
 _state = {"status": "idle", "last_error": None, "thread": None, "stop": False, "step_s": None, "mark_t": None, "plan_try": None}
 _lock = threading.RLock()
 
