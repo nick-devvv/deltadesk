@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 RELEASE = "4.0"
-RELEASE_ID = "2026-11-11.v4-core"   # adds core_spy (T30b SPY core + account view, paper); v4-pead added the earnings drift ledgers
+RELEASE_ID = "2026-11-12.v4-core-pead-prep"   # pead data prep runs overnight and seeds while refreshing; v4-core added core_spy
 HERE = Path(__file__).resolve().parent
 SOURCE_GLOBS = ("*.py", "index.html", "config/*.json", "grok/*.md", "grok/*.json")
 

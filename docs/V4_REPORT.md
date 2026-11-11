@@ -370,3 +370,25 @@ curl -s "$B/api/v4/decisions?k=$K&ledger=core_spy" | python3 -m json.tool | head
 ```
 
 What to send Nick: the ORDER (fill and size) or the reason it didn't fill, the account view (equity, target, overnight gross, margin warning), and any `last_error`. Every number is PAPER (simulated fills), not real money.
+
+## 17. Post-earnings drift data prep fix: update on Chart (added 2026-11-12)
+
+**What went wrong.** On the first live morning (2026-11-11) `pead_t21` made its plan with no cutoff: `ears_stored` 2, `ears_seeded` false, `edgar_fresh_today` 144/503. Data work ran only from 05:00 ET until the plan, refreshed 8 tickers per step, and seeding waited for all 503 to be fresh. The refresh was cut off at the plan and started again the next day, so seeding would never have started. No trades were affected (none were due), and no rule changed.
+- **Code (`pead_t21.py` only):**
+  - Data work also runs after the close (from 16:30 ET) and from midnight (was 05:00) until the plan is made.
+  - Each step does one EDGAR batch (25 tickers, was 8) and one seeding batch (20 tickers, was 10). Seeding no longer waits for the refresh to finish; it uses the filings already stored.
+  - `/api/v4/pead` shows `data.edgar_time_zone` from the morning plan after a restart (it was null until the next refresh).
+  - `release.py`: release `2026-11-12.v4-core-pead-prep`.
+- **Unchanged:** the T21 and T23a rules (entry, cutoff, exit, size), every other ledger, the frozen files, every Chart-only file. SEC requests stay under 10 a second.
+- **Tests:** three new tests in `tests/test_pead_t21.py` (seeding starts before the refresh is complete; evening and overnight work; time zone after a restart).
+
+**Update.** Once the pull request is merged, after 4:15 PM ET: "Update the desk: run ~/desk/deploy/update.sh and show me the whole output."
+
+**Checks** (Chart, the evening of the update, about 30 minutes after it, and again after 08:00 ET the next session):
+
+```
+K=$(cat ~/desk/DESK_TOKEN.txt); B=http://127.0.0.1:8765
+curl -s "$B/api/v4/pead?k=$K" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(json.dumps({"data": d.get("data"), "last_error": d.get("last_error"), "cutoff": (d.get("plan") or {}).get("cutoff"), "n_window": (d.get("plan") or {}).get("n_window"), "entries": (d.get("plan") or {}).get("entries")}, indent=2))'
+```
+
+Evening: `edgar_fresh_today` 503/503 and `ears_stored` climbing past 200 (a full year of S&P 500 reports is about 2,000). Next morning: `ears_usable` 200 or more, a numeric `cutoff`, `n_window` 200 or more, `edgar_time_zone` "UTC", no `last_error`. Every number is PAPER (simulated fills), not real money.
