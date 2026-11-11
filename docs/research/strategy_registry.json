@@ -650,7 +650,7 @@
    "data": "WRDS TAQ millisecond NBBO + trades 2003-2025 (desk backtest on Nick's computer)",
    "reported": "BACKTEST research 2003-2021: T12a +1.76 bp/day after costs (CI +0.78 to +2.80), Sharpe 0.60; T12b +0.98 bp/day, Sharpe 0.55. Sealed 2022-2025 (run once): T12a +2.18 bp/day, Sharpe 0.80; T12b +1.10 bp/day, Sharpe 0.62.",
    "evidence": "B: pre-registered, 18 years of tick data with real bid/ask fills, sealed window passed, beats random direction; edge concentrated in volatile years (2008, 2022-23); deflated Sharpe probability 0.75 at 21 trials.",
-   "risks": "Flat in calm years; much of the edge from crises; the paper's sample (2007-2024) overlaps ours; pattern-day-trader limits under $25k for the long/short version.",
+   "risks": "Flat in calm years; much of the edge from crises; the paper's sample (2007-2024) overlaps ours; the long/short version needs a margin account (the PDT rule was replaced 2026-06-04, FINRA RN 26-10).",
    "reusable": "rules only (implemented in nb_shares.py)",
    "fit": "Uncorrelated with etf10_rsi2; together the first pair at the desk's 1.0 Sharpe floor (backtest).",
    "rank": null,
