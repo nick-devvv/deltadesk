@@ -77,6 +77,16 @@ class SchwabFetch:
         import schwab
         return schwab.bars_range(t, start, end, 5)
 
+    def m1(self, t, start, end):
+        """Regular-hours 1-minute bars between two datetimes (Schwab keeps about 48 days): nb_shares' 14-session history."""
+        import schwab
+        return schwab.bars_range(t, start, end, 1)
+
+    def dividend(self, t):
+        """(ex-date 'YYYY-MM-DD', amount per share) from Schwab fundamentals, or (None, None)."""
+        import schwab
+        return schwab.dividend(t)
+
     def m1_today(self, t, day):
         import schwab
         s = datetime.combine(day, datetime.min.time(), core.ET).replace(hour=9, minute=30)

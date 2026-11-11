@@ -32,6 +32,8 @@ BOOKS = [
      ["fb_or", "otm_put", "otm_bounce", "otm_h"]),
     ("swing", "ETF swing (held overnight, approved 2026-11-10): PAPER (simulated fills) RSI(2) pullbacks on 10 ETFs in shares; "
               "BACKTEST research and sealed out-of-sample windows passed; forward test, not promoted", ["etf10_rsi2"]),
+    ("trend", "Intraday trend: PAPER (simulated fills) noise band on SPY shares (T12a long/short, T12b long only), flat at the "
+              "close; BACKTEST research 2003-2021 and sealed 2022-2025 passed; forward test, not promoted", ["nbs_spy_ls", "nbs_spy_long"]),
 ]
 SPRINT_LEDGERS = ("fb_or", "otm_put", "otm_bounce", "otm_h")
 LEGACY_TABLE = ("noise", "old")             # ledgers kept in the v3 positions table, read-only here
@@ -44,7 +46,9 @@ LABELS = {"old": "Old rules (Oct 28): legacy forward test (not from a published 
           "otm_put": "Far-OTM 10:30 puts, calm up days (forward test of otm_v1-011)",
           "otm_bounce": "Far-OTM 11:00 calls, stressed down days (forward test of otm_v1-042, WATCH-ONLY)",
           "otm_h": "Far-OTM 11:00 calls, busy days: rule H (forward test of otm_v1-040 + f_rvol >= 1.06)",
-          "etf10_rsi2": "ETF RSI(2) swing, 10 ETFs, 3 x $1k (forward test of T6 R2)"}
+          "etf10_rsi2": "ETF RSI(2) swing, 10 ETFs, 3 x $1k (forward test of T6 R2)",
+          "nbs_spy_ls": "Noise band, SPY shares, long + short, $3k (forward test of T12a)",
+          "nbs_spy_long": "Noise band, SPY shares, long only, $3k (forward test of T12b)"}
 SHARE_LEDGERS = ("sip_orb5", "sip_orb5_x", "sip_orb15", "earn_day")
 
 
@@ -124,6 +128,12 @@ def ledger_row(ledger, book, since):
             row.update({k: v for k, v in etf10_rsi2.report_meta(tr).items() if k != "label"}, evidence=etf10_rsi2.LABEL)
         except Exception as e:
             row["swing_error"] = type(e).__name__
+    if book == "trend":                             # evidence labels + the T12 backtest numbers (bp per trade day)
+        try:
+            import nb_shares
+            row.update({k: v for k, v in nb_shares.report_meta(ledger, tr).items() if k != "label"}, evidence=nb_shares.LABEL)
+        except Exception as e:
+            row["trend_error"] = type(e).__name__
     if book in ("index", "premium", "sprint"):
         tick = sorted({t["ticker"] for t in tr} | {"SPY", "QQQ"})
         row["by_ticker"] = {t: metrics(get(ledger, since, t)) for t in tick}

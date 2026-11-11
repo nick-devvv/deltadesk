@@ -292,3 +292,28 @@ curl -s "$B/api/v4/positions?k=$K&ledger=etf10_rsi2" | python3 -m json.tool | he
 ```
 
 What to send Nick: the plan's `asof` date (must be the previous session), every `last_error`, and each ORDER / MISSED / NO SLOT / BLOCKED-RISK with its reason. Every number is PAPER (simulated fills), not real money.
+
+## 14. SPY noise band shares ledgers: update on Chart (added 2026-11-10)
+
+**What's new.** Two PAPER (simulated fills) intraday ledgers, `nbs_spy_ls` and `nbs_spy_long`, in a new isolated `trend` book. They are the forward test of T12 (`docs/STRATEGY_PLAN.md` section 9).
+- **Code:**
+  - `nb_shares.py`: own worker thread `v4trend`, started by `server.py`.
+  - `scanner.py`: `m1` and `dividend` fetchers.
+  - `schwab.py`: `dividend()`, market data only.
+  - `v4risk.py` risk5, `v4report.py`, `v4api.py` (`GET /api/v4/trend`), `index.html`, `health.py`.
+  - `release.py`: release `2026-11-11.v4-trend`.
+  - `config/v4.json`: the `nb_shares` switch, on.
+- **Tests:** `tests/test_nb_shares.py`. The book lists in three existing tests now include `trend`.
+- **Unchanged:** `noiseband.py` and the `noise` ledger, the frozen files, every Chart-only file, every existing ledger's rules.
+
+**Update.** Once the pull request is merged, after 4:15 PM ET: "Update the desk: run ~/desk/deploy/update.sh and show me the whole output."
+
+**First-session checks** (Chart, after 10:05 ET):
+
+```
+K=$(cat ~/desk/DESK_TOKEN.txt); B=http://127.0.0.1:8765
+curl -s "$B/api/v4/trend?k=$K" | python3 -m json.tool | head -60                           # prep: sessions 14, prior close, checks_done incl. 10:00, no last_error
+curl -s "$B/api/v4/decisions?k=$K&ledger=nbs_spy_ls" | python3 -m json.tool | head -40     # one decision per check: price, band, VWAP
+```
+
+What to send Nick: `prep.sessions`, `prep.prev_close_adj`, `checks_done`, any `last_error`, and each ORDER / MISSED / NO DATA with its reason. Every number is PAPER (simulated fills), not real money.

@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 RELEASE = "4.0"
-RELEASE_ID = "2026-11-10.v4-swing"   # adds the etf10_rsi2 swing ledger (held overnight, paper)
+RELEASE_ID = "2026-11-11.v4-trend"   # adds the nb_shares SPY noise band shares ledgers (paper); v4-swing added etf10_rsi2
 HERE = Path(__file__).resolve().parent
 SOURCE_GLOBS = ("*.py", "index.html", "config/*.json", "grok/*.md", "grok/*.json")
 
@@ -44,7 +44,7 @@ def component_versions():
                        ("retire", ("VERSION",)), ("noise_v2", ("VERSION",)), ("noise_trend", ("VERSION",)),
                        ("orb_credit", ("VERSION",)), ("ic_20d", ("VERSION",)), ("sip_orb", ("VERSION",)),
                        ("news_drift", ("VERSION",)), ("chain_logger", ("VERSION",)), ("v4risk", ("VERSION",)),
-                       ("sprint_paper", ("VERSION", "SPRINT_VERSION")), ("etf10_rsi2", ("VERSION",))):
+                       ("sprint_paper", ("VERSION", "SPRINT_VERSION")), ("etf10_rsi2", ("VERSION",)), ("nb_shares", ("VERSION",))):
         try:
             m = __import__(mod)
             for a in attrs:

@@ -2344,7 +2344,7 @@ const V4SINCE = "2026-11-02";
 const v4num = x => x != null ? money(x) : "—";
 const chipP = '<span class="chip paper">PAPER</span>';
 const fmtDay = s => { if (!s) return "—"; const d = new Date(String(s).slice(0, 10) + "T12:00:00"); return isNaN(d) ? String(s) : d.toLocaleDateString("en-US", {month: "short", day: "numeric"}); };
-const BOOK_SHORT = {index: "Index 0DTE", premium: "Premium selling", stocks: "Stocks in play", catalyst: "Catalysts", sprint: "Sprint tests", swing: "ETF swing"};
+const BOOK_SHORT = {index: "Index 0DTE", premium: "Premium selling", stocks: "Stocks in play", catalyst: "Catalysts", sprint: "Sprint tests", swing: "ETF swing", trend: "SPY trend"};
 const bookName = b => BOOK_SHORT[b] || b;
 function v4cells(m, rnd){
   m = m || {};

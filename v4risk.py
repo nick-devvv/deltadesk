@@ -13,6 +13,7 @@ comparison shares vs options is never biased by a cap) but are closed by the kil
 Isolated books (the "sprint" book of sprint_paper.py, added 2026-11-02): their positions count only inside their own book
 (book cap, per-symbol cap, same-direction cap, daily loss) plus the desk cap for their own entries; no other ledger's
 check ever counts them, so adding them changes nothing for the ledgers that were already running.
+The intraday "trend" book (nb_shares.py, added 2026-11-10) is isolated too: the noise band on SPY shares, two ledgers.
 Multi-day books (the "swing" book of etf10_rsi2.py, added 2026-11-10, isolated too): positions are held across sessions,
 so "today's P/L" for check 6 is realized on positions closed today plus open marks, each measured from the position's
 previous-session mark (plan "day_base", set at its first mark of the day; 0 for a position entered today). The
@@ -27,16 +28,16 @@ import store
 import v4common as C
 import v4store as S
 
-VERSION = "2026-11-10.v4-risk4"   # risk4: isolated multi-day "swing" book (etf10_rsi2); risk3: sprint caps 6 -> 8 (otm_h)
+VERSION = "2026-11-10.v4-risk5"   # risk5: isolated intraday "trend" book (nb_shares); risk4: "swing" book; risk3: sprint caps
 LIMITS = {
     "desk_max_open": 50,
-    "book_max_open": {"index": 4, "premium": 6, "stocks": 40, "catalyst": 8, "sprint": 8, "swing": 10},
+    "book_max_open": {"index": 4, "premium": 6, "stocks": 40, "catalyst": 8, "sprint": 8, "swing": 10, "trend": 2},
     "symbol_max_open": 4,
-    "book_max_same_direction": {"index": 4, "premium": 4, "stocks": 25, "catalyst": 6, "sprint": 8, "swing": 10},
+    "book_max_same_direction": {"index": 4, "premium": 4, "stocks": 25, "catalyst": 6, "sprint": 8, "swing": 10, "trend": 2},
     "book_daily_loss_usd": {"index": 600.0, "premium": 800.0, "stocks": 2000.0, "catalyst": 800.0, "sprint": 600.0,
-                            "swing": 90.0},          # swing: the approved risk framework's daily stop (-3% of $3,000)
+                            "swing": 90.0, "trend": 90.0},   # swing/trend: the risk framework's daily stop (-3% of $3,000)
     "selling_ledgers": ("orb_credit", "ic_20d"),
-    "isolated_books": ("sprint", "swing"),
+    "isolated_books": ("sprint", "swing", "trend"),
     "multi_day_books": ("swing",),
 }
 

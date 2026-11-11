@@ -16,6 +16,8 @@
  "sprint_paper_why": "Nick, 2026-10-31: paper-only forward tests of the sprint's near-miss backtests (fb_or = setups_v2-012, otm_put = otm_v1-011, otm_bounce = otm_v1-042, watch-only). Nick, 2026-11-01: add otm_h = rule H (FIN-H: otm_v1-040 taken only when f_rvol >= 1.06), out-of-sample tested, not promoted. Simulated fills on live quotes, never real money. Not promoted: promotion needs CLAUDE.md step 5. false stops a ledger's new entries; open trades are still managed to their exit.",
  "etf10_rsi2": true,
  "etf10_rsi2_why": "Nick, 2026-11-10 (\"go\"): paper forward test of T6 R2 (rsi2 F1 on 10 ETFs; BACKTEST research 1997-2021 and sealed 2022-2025 both passed). The only v4 ledger that holds overnight (swing book). Simulated fills on live quotes, never real money; promotion needs 40 forward trades (CLAUDE.md step 5). false stops new entries; open positions still exit by rule.",
+ "nb_shares": true,
+ "nb_shares_why": "Nick, 2026-11-10 (\"sure we can do that\"): paper forward test of T12a/T12b, the noise band on SPY shares (BACKTEST research 2003-2021 and sealed 2022-2025 both passed). Intraday, flat at the close. Simulated fills on live quotes, never real money; promotion needs 40 forward trades per ledger. false stops new entries; open positions still exit by rule.",
  "fomc_decision_days": ["2026-01-28", "2026-03-18", "2026-04-29", "2026-06-17", "2026-07-29", "2026-09-16", "2026-10-28", "2026-12-09"],
  "fomc_source": "Federal Reserve 2026 FOMC meeting calendar (second day of each meeting = statement day). Used only when config/events.json has no calendar for the day. Verify against federalreserve.gov before relying on it."
 }
