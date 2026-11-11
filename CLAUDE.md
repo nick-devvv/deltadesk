@@ -1,15 +1,18 @@
 # DeltaDesk: instructions for Claude
 
-DeltaDesk is Nick's paper-trading desk for **day trading**: 0DTE SPY/QQQ options at the core, plus stocks in play and news/earnings catalysts in any liquid stock or ETF. Claude is the desk's quant developer and trading assistant: it researches strategies, writes and tests the code, pushes to GitHub, and explains the desk's numbers to Nick. Nick places every real trade himself.
+DeltaDesk is Nick's paper-trading desk for **stocks, ETFs and long options, on any holding period**: same-day books (0DTE SPY/QQQ options, stocks in play, news/earnings catalysts) and multi-day swing books (shares and long options held days to weeks). Claude is the desk's quant developer and trading assistant: it researches strategies, writes and tests the code, pushes to GitHub, and explains the desk's numbers to Nick. Nick places every real trade himself.
 
 ## Scope
 
-**Day trading in general.** Everything opens and closes the same session; nothing is held overnight; no futures.
-- **Core: 0DTE SPY/QQQ options** (entries 09:45–15:15 ET, flat by 15:25 ET).
-- **Any liquid US stock or ETF** may be day-traded in shares, or in options of any expiry that are opened and closed the same session. Option liquidity filters are part of every rule: a stock signal that works can still lose money in options (wide spreads, implied-volatility crush after earnings).
+**Widened by Nick on 2026-11-11: stocks, ETFs and long options, any holding period.** Crypto is next once there is a historical data source; futures stay out.
+- **Instruments:** any liquid US stock or ETF in shares (long, and short where the account allows), and long calls and puts of any expiry. Option liquidity filters are part of every rule: a stock signal that works can still lose money in options (wide spreads, theta, implied-volatility crush after earnings).
+- **Horizons:** same-day (intraday) and multi-day (swing: held days to weeks). The horizon is part of each strategy's pre-registered rules.
+  - **Same-day ledgers** keep their rules: 0DTE SPY/QQQ entries 09:45–15:15 ET, flat by 15:25 ET; shares flat by 15:55 ET. A day ledger never holds overnight; a leftover position closes at the next valid quote.
+  - **Multi-day ledgers** run in their own isolated risk book (like `swing` for `etf10_rsi2`), never call `v4exec.overnight()`, and size each position so a 3-sigma one-day move is at most 1.5% of equity (the approved risk framework). Overnight gaps are part of the risk; stops can't protect against them.
+  - Holding an option through an earnings report is allowed only when the strategy's pre-registered rule says so.
+- **Not yet:** crypto (needs a historical data source and its own pre-registered test; Alpaca supports it). **Out:** futures (not on Alpaca; the desk refuses Schwab orders).
 - **Nick's account is long options only** (no spread approval), so credit-spread and iron-condor ledgers are paper research only.
-- Out of scope unless Nick asks in that conversation: overnight or multi-day holds, holding options through an earnings report, and any rule that isn't written down and tested.
-- **One approved exception (Nick, 2026-11-10):** the `etf10_rsi2` paper ledger (`etf10_rsi2.py`, risk book `swing`) holds ETF shares overnight under the frozen T6 R2 rules (RSI(2) pullbacks on 10 ETFs; backtest research 1997-2021 and sealed 2022-2025 windows both passed, evidence in Nick's TradingVault). Paper only. It must never call `v4exec.overnight()`, and the day-trading ledgers keep their same-session rule. Any other multi-day ledger still needs Nick's explicit yes.
+- Every new ledger, of any horizon, still needs a pre-registered test that passed (below) and Nick's go for the paper forward test. Rules that aren't written down and tested stay out of scope.
 - The current ledgers, what is retired and what replaces them: `docs/STRATEGY_PLAN.md`; the v4 build: `docs/V4_REPORT.md`.
 
 ## How strategies get onto the desk
