@@ -2,10 +2,11 @@
 
 Written 2026-10-31. Source document: "DeltaDesk 0DTE quant rebuild" (Claude Docs). All rules below are provisional, frozen before testing, and unvalidated until they pass the gates in section 5.
 
-**Scope (v4, from 2026-10-31): day trading in general.** Everything opens and closes in the same session.
-- **Core:** 0DTE SPY and QQQ options.
-- **Everything else:** any liquid US stock or ETF, day-traded in shares, or in options of any expiry that are opened and closed the same session.
-- **Never:** futures, or anything held overnight. **Exception (Nick, 2026-11-10):** the `etf10_rsi2` paper ledger (section 8) holds ETF shares across sessions in its own isolated `swing` book.
+**Scope (widened 2026-11-11 by Nick): stocks, ETFs and long options, any holding period.** Earlier v4 scope (2026-10-31) was day trading only; the sections below that say "same session" describe the day ledgers, which keep that rule.
+- **Same-day books:** 0DTE SPY and QQQ options at the core; any liquid US stock or ETF in shares, or in options opened and closed the same session.
+- **Multi-day books:** shares and long options held days to weeks, each in its own isolated risk book (like `swing` for `etf10_rsi2`, section 8), sized so a 3-sigma day is at most 1.5% of equity.
+- **Not yet:** crypto (needs a data source and a pre-registered test). **Never:** futures.
+- Every ledger still needs a pre-registered pass and Nick's go for paper. See `CLAUDE.md` Scope.
 
 **Four books, one engine, one risk layer.** Index momentum (SPY, QQQ, IWM, XSP; liquid ETFs as research candidates), index premium selling (SPX/XSP first, then SPY/QQQ), stocks in play (the day's top stocks by opening relative volume, option-liquid only), and catalysts (any stock with a verified news/earnings/filing catalyst and a measured reaction). Each strategy x instrument x timeframe x version is its own ledger. Each family runs on its published timeframe plus at most two alternates chosen before testing; every alternate counts as a trial for the deflated Sharpe.
 
