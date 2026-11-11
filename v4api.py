@@ -17,6 +17,8 @@ GET  /api/v4/trend            the SPY noise band shares ledgers (nb_shares: nbs_
                               fills), today's prep (sigma, prior close), checks done, pending orders, status
 GET  /api/v4/pead             the post-earnings drift ledgers (pead_t21, pead_t21_tp; held overnight): PAPER (simulated fills), today's
                               plan (8-K Item 2.02 events, EARs, the trailing cutoff, exits due), data status, switch
+GET  /api/v4/core             the T30b SPY core (core_spy, held): PAPER (simulated fills), the T30b account view (equity,
+                              P/L by ledger, margin interest, overnight gross, margin warning), the interest log, switch
 GET  /api/v4/sprint           the sprint forward-test ledgers (fb_or, otm_put, otm_bounce, otm_h): PAPER (simulated fills), their
                               source backtest runs and numbers (in-sample), the rules read from the pinned specs, switches,
                               deviations from the backtest
@@ -53,6 +55,9 @@ def get(path, q):
         st = _one(q, "status")
         rows = S.positions(status=st if st in ("OPEN", "CLOSED", "VOID") else None, ledger=_one(q, "ledger"), day=_one(q, "day"))
         return [view(p) for p in rows][-500:]
+    if path == "/api/v4/core":
+        import core_spy
+        return core_spy.status()
     if path == "/api/v4/pead":
         import pead_t21
         return pead_t21.status()

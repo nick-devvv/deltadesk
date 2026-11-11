@@ -338,7 +338,7 @@ def test_swing_book_is_isolated_both_ways(env, monkeypatch):
                          "legs": [{"symbol": "DIA", "action": "buy", "qty": 1}], "plan": {"mtm": -5000.0}})
     monkeypatch.setitem(v4risk.LIMITS, "book_max_open", dict(v4risk.LIMITS["book_max_open"], swing=10))
     assert v4risk.admit(E.LEDGER, "swing", "DIA", "long") is None                      # 4 DIA stock trades + a huge stocks loss
-    assert v4risk.status()["limits"]["isolated_books"] == ["sprint", "swing", "trend", "pead"]
+    assert v4risk.status()["limits"]["isolated_books"] == ["sprint", "swing", "trend", "pead", "core"]
 
 
 def test_daily_stop_counts_only_todays_change_across_sessions(env):

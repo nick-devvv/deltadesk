@@ -344,3 +344,29 @@ curl -s "$B/api/v4/decisions?k=$K&ledger=pead_t21" | python3 -m json.tool | head
 ```
 
 What to send Nick: `data` (all five numbers), the plan's `asof` (must be the previous session), `cutoff` and `n_window`, every `last_error`, and each ORDER / MISSED / NO SLOT / NO CUTOFF / BLOCKED-RISK with its reason (both ledgers; `curl -s "$B/api/v4/decisions?k=$K&ledger=pead_t21_tp"` for the twin, including its daily TAKE PROFIT / HOLD checks). Every number is PAPER (simulated fills), not real money.
+
+## 16. SPY core ledger: update on Chart (added 2026-11-11)
+
+**What's new.** One PAPER (simulated fills) ledger, `core_spy`, in a new isolated `core` book: the T30b SPY core (`docs/STRATEGY_PLAN.md` section 11). It holds SPY sized to the T30b account (core + `nbs_spy_ls` + `etf10_rsi2`, minus 6.5% margin interest), rebalances on the first session of each month if more than 5% off, and never sells otherwise.
+- **Code:**
+  - `core_spy.py`: own worker thread `v4core`, started by `server.py`. Market data only (Schwab quotes for SPY).
+  - `v4risk.py` risk7 (the `core` book: isolated, multi-day, 1 position, no daily stop), `v4report.py` (core row + `core_account` in the overview), `v4api.py` (`GET /api/v4/core`), `index.html`, `health.py`.
+  - `release.py`: release `2026-11-11.v4-core`.
+  - `config/v4.json`: the `core_spy` switch, on.
+  - `CLAUDE.md`: the core exception under Scope (paper only).
+- **Tests:** `tests/test_core_spy.py`. The book lists in four existing tests now include `core`.
+- **Unchanged:** every existing ledger's rules, the frozen files, every Chart-only file.
+
+**Update.** Once the pull request is merged, after 4:15 PM ET: "Update the desk: run ~/desk/deploy/update.sh and show me the whole output."
+
+**First session.** At the first open after the update the core buys about $3,000 of SPY; that day is START for the account view. Margin interest is recorded after each close (the first nights: about $1,000-3,000 of debit when the swing book holds positions, so cents to about 50 cents a night).
+
+**First-session checks** (Chart, after 09:45 ET):
+
+```
+K=$(cat ~/desk/DESK_TOKEN.txt); B=http://127.0.0.1:8765
+curl -s "$B/api/v4/core?k=$K" | python3 -m json.tool | head -60       # open: one core_spy position; account: start = today, equity about 3000, target, overnight_gross; no last_error
+curl -s "$B/api/v4/decisions?k=$K&ledger=core_spy" | python3 -m json.tool | head -20   # ORDER at the open (or MISSED with the reason)
+```
+
+What to send Nick: the ORDER (fill and size) or the reason it didn't fill, the account view (equity, target, overnight gross, margin warning), and any `last_error`. Every number is PAPER (simulated fills), not real money.

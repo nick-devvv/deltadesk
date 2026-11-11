@@ -680,6 +680,26 @@
    "rank": null,
    "rank_why": "tested on the desk's own WRDS data",
    "next": "Forward paper test (pead_t21 and its take-profit twin pead_t21_tp = T23a) to 40 trades each; then promotion review per CLAUDE.md step 5."
+  },
+  {
+   "name": "SPY core + tested sleeves on margin = T30b",
+   "url": null,
+   "kind": "desk portfolio test",
+   "inspected_commit": null,
+   "commit_date": null,
+   "source_version": "desk pre-registration T30 (2026-11-11); components T12a (Zarattini, Aziz & Barbon 2024), T6 R2 (Connors & Alvarez 2008)",
+   "license": "desk code: this repo",
+   "what": "Hold SPY at 1x of the account; run the noise band (T12a) intraday and the ETF RSI(2) swing (T6 R2) overnight on top, on margin.",
+   "entry": "Core: buy SPY at the first open; rebalance on the first session of each month if more than 5% off the account equity.",
+   "exit": "Core: none (no stop). Satellites: their own rules.",
+   "sizing": "Core = account equity (below $2,000: no borrowing); satellites at $3,000 intraday and 3 x $1,000 overnight; 6.5% margin interest on the overnight debit.",
+   "instruments": "SPY shares (+ the satellites' SPY shares and 10 ETFs)",
+   "timeframe": "held (core); intraday and multi-day (satellites)",
+   "data": "WRDS CRSP daily + TAQ (desk backtests on Nick's computer), 2003-09..2025",
+   "reported": "BACKTEST (in-sample portfolio arithmetic): CAGR 18.2% (2003-21) / 20.6% (2022-25) vs SPY 10.9% / 11.1%; worst drop -37.6% / -26.3% vs SPY -55.2% / -24.5%; still above SPY at 13% margin and 2x costs.",
+   "evidence": "B-: pre-registered checks, but every component stream had already been tested and seen (in-sample by construction); forward paper test is the real check",
+   "reusable": "rules only (implemented in core_spy.py; account view in core_spy.account)",
+   "next": "Forward paper test of the account view vs SPY alone; review after 40 weeks. Real money needs CLAUDE.md step 5 and Nick's explicit ask."
   }
  ]
 }

@@ -10,6 +10,8 @@ The `noise` reference ledger and the `old` ledger (legacy forward test, not from
 active) live in the v3 positions table, unchanged, and are shown in the index book with the same metrics.
 The swing book (etf10_rsi2.py, held overnight) row carries its evidence label, the T6 R2 backtest numbers (research and
 sealed windows, labeled BACKTEST) and the forward mean % per trade in the same unit.
+The core book (core_spy.py, the T30b SPY core) row carries its evidence label, the T30 backtest numbers (labeled BACKTEST
+in-sample) and the T30b account view (equity, margin interest, overnight gross); the overview repeats the account view.
 The sprint book (sprint_paper.py) rows also carry their evidence label ("PAPER (simulated fills)"), status ("forward
 test of an in-sample backtest (not promoted)"), the source backtest run id and that backtest's own numbers (labeled
 BACKTEST in-sample), split SPY vs QQQ.
@@ -37,6 +39,9 @@ BOOKS = [
     ("pead", "Earnings drift (held overnight, approved 2026-11-11): PAPER (simulated fills) S&P 500 shares after a top-10% earnings "
              "reaction, held 20 sessions (pead_t21_tp also takes profit); BACKTEST research 1997-2021 and sealed 2022-2025 passed; forward test, "
              "not promoted", ["pead_t21", "pead_t21_tp"]),
+    ("core", "SPY core (T30b, held, 2026-11-11): PAPER (simulated fills) SPY sized to the T30b account (core + noise band + ETF "
+             "swing, minus 6.5% margin interest); BACKTEST in-sample portfolio arithmetic beat SPY alone; forward test, not promoted",
+     ["core_spy"]),
 ]
 SPRINT_LEDGERS = ("fb_or", "otm_put", "otm_bounce", "otm_h")
 LEGACY_TABLE = ("noise", "old")             # ledgers kept in the v3 positions table, read-only here
@@ -53,7 +58,8 @@ LABELS = {"old": "Old rules (Oct 28): legacy forward test (not from a published 
           "nbs_spy_ls": "Noise band, SPY shares, long + short, $3k (forward test of T12a)",
           "nbs_spy_long": "Noise band, SPY shares, long only, $3k (forward test of T12b)",
           "pead_t21": "Post-earnings drift, S&P 500 shares, 5 x $600, 20 sessions (forward test of T21)",
-          "pead_t21_tp": "Post-earnings drift + take-profit, S&P 500 shares, 5 x $600 (forward test of T23a)"}
+          "pead_t21_tp": "Post-earnings drift + take-profit, S&P 500 shares, 5 x $600 (forward test of T23a)",
+          "core_spy": "SPY core = T30b account equity, held, monthly rebalance (forward test of T30b)"}
 SHARE_LEDGERS = ("sip_orb5", "sip_orb5_x", "sip_orb15", "earn_day")
 
 
@@ -140,6 +146,12 @@ def ledger_row(ledger, book, since):
             row.update({k: v for k, v in meta.items() if k != "label"}, evidence=meta["label"])
         except Exception as e:
             row["pead_error"] = type(e).__name__
+    if book == "core":                              # evidence label, the T30 backtest numbers and the T30b account view
+        try:
+            import core_spy
+            row.update({k: v for k, v in core_spy.report_meta(tr).items() if k != "label"}, evidence=core_spy.LABEL)
+        except Exception as e:
+            row["core_error"] = type(e).__name__
     if book == "trend":                             # evidence labels + the T12 backtest numbers (bp per trade day)
         try:
             import nb_shares
@@ -228,8 +240,13 @@ def overview(since="2026-11-02"):
         trk = tracking()
     except Exception as e:
         trk = {"error": type(e).__name__}
+    try:
+        import core_spy
+        core_acct = core_spy.account()
+    except Exception as e:
+        core_acct = {"error": type(e).__name__}
     return {"since": since, "books": books, "tracking": trk, "risk": v4risk.status(), "news_drift": nd, "chains": ch, "stocks_worker": sip,
-            "index_engine": idx, "swing_worker": swing,
+            "index_engine": idx, "swing_worker": swing, "core_account": core_acct,
             "retired": {"list": retire.retired_list(), "ledgers": retired_rows("2000-01-01")},
             "void": [{k: p[k] for k in ("id", "ledger", "date", "exit_reason")} for p in S.positions(status="VOID")],
             "note": ("Paper only: simulated fills on live Schwab quotes, never real money. Under 30 trades is not evidence. "

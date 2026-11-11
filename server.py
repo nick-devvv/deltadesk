@@ -893,6 +893,11 @@ if __name__ == "__main__":
         print("v4 earnings drift ledger (pead_t21, paper, held overnight):", "started" if pead_t21.start() else "off", flush=True)
     except Exception as e:
         print("Earnings drift ledger not started:", e, flush=True)
+    try:                                           # the T30b SPY core (paper, multi-day; own thread and risk book)
+        import core_spy
+        print("v4 SPY core (core_spy, paper, held):", "started" if core_spy.start() else "off", flush=True)
+    except Exception as e:
+        print("SPY core ledger not started:", e, flush=True)
     try:                                           # v3.5: journal/learning tables + the preregistered hypotheses
         import learning
         learning.migrate()
