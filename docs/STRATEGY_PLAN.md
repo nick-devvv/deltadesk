@@ -244,6 +244,6 @@ Added 2026-11-10 after Nick said yes to a paper forward test of T12. **Not promo
 
 **Risk book `trend`** (`v4risk.py` risk5, isolated): at most 2 open (one per ledger), the v4 kill switch and pauses, and the risk framework's -$90 daily stop on new entries. Exits are never blocked. A leftover position from an earlier session closes at the next valid quote (a day ledger).
 
-**Practical.** For a $3k live account, the pattern-day-trader rule caps margin accounts under $25k at 3 day trades per 5 days. The long-only version fits a cash account; long/short would need puts or more capital. This is decided at promotion, not here.
+**Practical.** (Corrected 2026-11-11.) The pattern-day-trader rule no longer applies: FINRA Regulatory Notice 26-10 replaced it with intraday margin standards on 2026-06-04, and Alpaca needs $2,000 (not $25,000) for intraday margin. Brokers may phase the change in until 2027-10-20, so check the broker. The long/short version needs a margin account (short side); the long-only version also fits a cash account. Live sizing is decided at promotion, not here.
 
 **Deviations from the backtest.** 1-minute bar closes instead of the NBBO mid at the second; bar VWAP instead of trade VWAP; the flat uses the first quote after 15:59:00.
