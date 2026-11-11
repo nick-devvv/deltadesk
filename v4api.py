@@ -15,7 +15,7 @@ GET  /api/v4/swing            the ETF swing ledger (etf10_rsi2, held overnight):
                               (signals from the last finished daily bar, exits due), switch, status
 GET  /api/v4/trend            the SPY noise band shares ledgers (nb_shares: nbs_spy_ls, nbs_spy_long): PAPER (simulated
                               fills), today's prep (sigma, prior close), checks done, pending orders, status
-GET  /api/v4/pead             the post-earnings drift ledger (pead_t21, held overnight): PAPER (simulated fills), today's
+GET  /api/v4/pead             the post-earnings drift ledgers (pead_t21, pead_t21_tp; held overnight): PAPER (simulated fills), today's
                               plan (8-K Item 2.02 events, EARs, the trailing cutoff, exits due), data status, switch
 GET  /api/v4/sprint           the sprint forward-test ledgers (fb_or, otm_put, otm_bounce, otm_h): PAPER (simulated fills), their
                               source backtest runs and numbers (in-sample), the rules read from the pinned specs, switches,

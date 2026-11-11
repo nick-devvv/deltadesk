@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 RELEASE = "4.0"
-RELEASE_ID = "2026-11-11.v4-pead"   # adds the pead_t21 earnings drift ledger (paper, multi-day); v4-trend added nb_shares
+RELEASE_ID = "2026-11-11.v4-pead"   # adds the pead_t21 + pead_t21_tp earnings drift ledgers (paper, multi-day); v4-trend added nb_shares
 HERE = Path(__file__).resolve().parent
 SOURCE_GLOBS = ("*.py", "index.html", "config/*.json", "grok/*.md", "grok/*.json")
 
@@ -44,7 +44,7 @@ def component_versions():
                        ("retire", ("VERSION",)), ("noise_v2", ("VERSION",)), ("noise_trend", ("VERSION",)),
                        ("orb_credit", ("VERSION",)), ("ic_20d", ("VERSION",)), ("sip_orb", ("VERSION",)),
                        ("news_drift", ("VERSION",)), ("chain_logger", ("VERSION",)), ("v4risk", ("VERSION",)),
-                       ("sprint_paper", ("VERSION", "SPRINT_VERSION")), ("etf10_rsi2", ("VERSION",)), ("nb_shares", ("VERSION",)), ("pead_t21", ("VERSION",))):
+                       ("sprint_paper", ("VERSION", "SPRINT_VERSION")), ("etf10_rsi2", ("VERSION",)), ("nb_shares", ("VERSION",)), ("pead_t21", ("VERSION", "TP_VERSION"))):
         try:
             m = __import__(mod)
             for a in attrs:

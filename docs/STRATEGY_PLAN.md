@@ -283,3 +283,12 @@ Added 2026-11-11. Nick widened the desk's scope to any holding period and said y
 **Deviations from the backtest.** SEC 8-K Item 2.02 acceptance time instead of the I/B/E/S announcement time (a late 8-K shifts the window by a day; a mid-quarter 2.02 counts as an event); today's S&P 500 list for every event in the window instead of membership on the reaction day; Schwab daily closes (no dividends) instead of CRSP total returns; class shares only if Schwab serves the symbol; the first quote after 09:30 instead of the official open; 5 minutes before the close at the bid instead of the official close; the $45 risk cap (the backtest always used $600); dividends are not credited to paper P/L.
 
 **What the forward test measures.** Fill costs vs the backtest's 10 bp per side, missed opens and closes, how often the risk cap shrinks a position, and after 40 trades the mean % per trade next to the backtest's +1.24% (sealed), with SPY over the same days alongside. Promotion needs CLAUDE.md step 5.
+
+**Take-profit twin `pead_t21_tp` (T23a, added 2026-11-11).** Nick asked for take-profits instead of waiting for a date. The twin takes the same signals in its own 5 slots, and also sells once the bid in the last 5 minutes reaches fill x (1 + sigma20 x sqrt(20)) (one 20-day standard move; checked once a day, the entry day included). The parent runs unchanged beside it, so paper trading compares them directly. The `pead` book cap is 10 (5 + 5).
+
+| BACKTEST (same run, $3k = 5 x $600) | T21 per trade | T23a per trade | T21 $/yr | T23a $/yr | Worst drop T21 / T23a |
+|---|---|---|---|---|---|
+| Research 1997-2021 | +1.69% | +1.76% | $184 | $206 | -28% / -22% |
+| Sealed 2022-2025 (run once) | +1.24% | +1.21% | $239 | $253 | -15% / -15% |
+
+The target averages about +15% (+13% sealed) and is hit in 12-15% of trades; the extra dollars come mostly from freeing slots sooner. The same take-profit on the noise band failed for long/short (T23b, less money) and helped long-only by only about $4 a year (T23c, about 5 exits a year), so it isn't on the noise band ledgers.

@@ -312,13 +312,13 @@ def test_no_cutoff_without_200_ears_and_the_switch_stops_entries_only(env):
     run(clock, ENTRY, "05:00", "08:01", step_s=30)
     plan = store.kv_get(P._pkey(ENTRY))
     assert plan["entries"] == [] and plan["rows"]["AAA"]["state"] == "NO CUTOFF"
-    env[0].setattr(P, "switch_on", lambda: False)
+    env[0].setattr(P, "switch_on", lambda lg=None: False)
     store.kv_set(P._pkey(ENTRY), None)
     store.kv_set("pead:ears", history_ears())
     P._state["plan_try"] = None
     run(clock, ENTRY, "08:05", "08:06", step_s=30)
     run(clock, ENTRY, "09:30", "09:30:10")
-    assert entry(ENTRY, "AAA") == "SWITCH OFF" and not S.positions(ledger=P.LEDGER)
+    assert entry(ENTRY, "AAA") == "SWITCH OFF" and not S.positions(ledgers=P.LEDGERS)
 
 
 def test_a_missed_close_exit_waits_for_the_next_open(env):
@@ -370,7 +370,11 @@ def test_report_api_and_release_list_the_ledger(env):
     assert row["ledger"] == "pead_t21" and row["open"] == 1 and row["evidence"].startswith("PAPER")
     st = v4api.get("/api/v4/pead", {})
     assert st["version"] == P.VERSION and st["data"]["universe"] == 3 and st["data"]["edgar_time_zone"] == "ET"
-    assert release.component_versions()["pead_t21.VERSION"] == P.VERSION
+    assert set(st["open"]) == set(P.LEDGERS) and len(st["open"][P.TP_LEDGER]) == 1
+    rows = {r["ledger"]: r for r in books["pead"]["ledgers"]}
+    assert set(rows) == {"pead_t21", "pead_t21_tp"} and rows["pead_t21_tp"]["evidence"].startswith("PAPER") and "T23a" in rows["pead_t21_tp"]["evidence"]
+    cv = release.component_versions()
+    assert cv["pead_t21.VERSION"] == P.VERSION and cv["pead_t21.TP_VERSION"] == P.TP_VERSION
 
 
 def test_the_ledger_has_no_order_path_and_never_closes_for_being_overnight():
@@ -391,3 +395,48 @@ def test_desk_down_on_the_exit_day_sells_at_the_next_open_late_and_frees_the_slo
     run(clock, nxt, "09:30", "09:30:10")
     c = S.get(pid)
     assert c["status"] == "CLOSED" and "LATE" in c["exit_reason"]
+
+
+# ================================================================ the take-profit twin (T23a)
+def tp_entry(day, t):
+    r = [d for d in S.decisions(ledger=P.TP_LEDGER, kind="entry") if d["id"] == f"{P.TP_LEDGER}:{day}-{t}"]
+    return r[0]["decision"] if r else None
+
+
+def test_tp_target_is_one_20_day_standard_move():
+    assert P.tp_target(50.0, 0.02) == pytest.approx(round(50 * (1 + 0.02 * math.sqrt(20)), 4))
+    assert P.tp_target(50.0, None) is None and P.tp_target(None, 0.02) is None
+
+
+def test_tp_twin_takes_the_same_signal_in_its_own_slots_and_sells_at_the_target(env):
+    f, clock = world(env)
+    run(clock, ENTRY, "05:00", "08:01", step_s=30)
+    run(clock, ENTRY, "09:30", "09:30:10")
+    assert entry(ENTRY, "AAA") == "ORDER" and tp_entry(ENTRY, "AAA") == "ORDER"
+    par = S.positions(ledger=P.LEDGER, status="OPEN")[0]
+    tw = S.positions(ledger=P.TP_LEDGER, status="OPEN")[0]
+    assert tw["book"] == "pead" and tw["plan"]["exit_day"] == par["plan"]["exit_day"] == str(EXIT)
+    tpx = tw["plan"]["tp_px"]
+    assert tpx == pytest.approx(P.tp_target(tw["entry_px"], tw["plan"]["signal"]["sigma20"])) and par["plan"]["tp_px"] is None
+    d1 = date(2026, 11, 9)
+    f.px["AAA"] = tpx - 1.0                                                   # below the target: HOLD, recorded once
+    run(clock, d1, "15:55", "15:56")
+    assert S.get(tw["id"])["status"] == "OPEN"
+    dec = [d for d in S.decisions(ledger=P.TP_LEDGER, kind="exit") if d["id"] == f"{P.TP_LEDGER}:tp:{d1}-{tw['id']}"]
+    assert len(dec) == 1 and dec[0]["decision"] == "HOLD"
+    f.px["AAA"] = tpx + 5.0                                                   # later the same day: no second look
+    run(clock, d1, "15:57", "15:58")
+    assert S.get(tw["id"])["status"] == "OPEN"
+    d2 = date(2026, 11, 10)                                                   # next day at the target: sold; the parent holds
+    run(clock, d2, "15:55", "15:55:10")
+    c = S.get(tw["id"])
+    assert c["status"] == "CLOSED" and "TAKE PROFIT" in c["exit_reason"] and c["exit_px"] == pytest.approx(round(round(tpx + 5.0 - 0.01, 2) - 0.01, 4))
+    assert S.get(par["id"])["status"] == "OPEN"
+
+
+def test_tp_twin_has_its_own_switch(env):
+    f, clock = world(env)
+    env[0].setattr(P, "switch_on", lambda lg=P.LEDGER: lg == P.LEDGER)
+    run(clock, ENTRY, "05:00", "08:01", step_s=30)
+    run(clock, ENTRY, "09:30", "09:30:10")
+    assert entry(ENTRY, "AAA") == "ORDER" and tp_entry(ENTRY, "AAA") == "SWITCH OFF"

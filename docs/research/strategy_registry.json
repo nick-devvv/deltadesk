@@ -672,14 +672,14 @@
    "instruments": "S&P 500 shares",
    "timeframe": "daily; held 20 sessions (overnight)",
    "data": "WRDS CRSP daily + I/B/E/S announcement dates/times 1995-2025 (desk backtest on Nick's computer)",
-   "reported": "BACKTEST research 1997-2021: 4,717 trades, +1.69%/trade after costs, CI +1.23 to +2.16%, PF 1.57. Sealed 2022-2025 (run once): 852 trades, +1.24%/trade, CI +0.29 to +2.08%, PF 1.49; market-adjusted -0.03%/trade.",
+   "reported": "BACKTEST research 1997-2021: 4,717 trades, +1.69%/trade after costs, CI +1.23 to +2.16%, PF 1.57. Sealed 2022-2025 (run once): 852 trades, +1.24%/trade, CI +0.29 to +2.08%, PF 1.49; market-adjusted -0.03%/trade. T23a (T21 + take-profit at fill x (1 + sigma20 x sqrt(20))): research $206/yr vs $184 on $3k, sealed $253/yr vs $239.",
    "evidence": "B: pre-registered, survivorship-free, research and sealed windows both passed, random-entry baseline beaten; 36 WRDS trials in the program.",
    "risks": "Most of the return is market exposure (sealed market-adjusted about 0); 2007-2011 negative; overnight gaps; SEC 8-K timing differs from I/B/E/S in a few cases.",
    "reusable": "rules only (implemented in pead_t21.py)",
    "fit": "Correlation with etf10_rsi2 about 0.3, with the noise band about 0; slightly lowers the equal-risk desk blend in backtest (information).",
    "rank": null,
    "rank_why": "tested on the desk's own WRDS data",
-   "next": "Forward paper test (pead_t21) to 40 trades; then promotion review per CLAUDE.md step 5."
+   "next": "Forward paper test (pead_t21 and its take-profit twin pead_t21_tp = T23a) to 40 trades each; then promotion review per CLAUDE.md step 5."
   }
  ]
 }
