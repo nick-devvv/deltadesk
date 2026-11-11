@@ -16,6 +16,9 @@ check ever counts them, so adding them changes nothing for the ledgers that were
 The intraday "trend" book (nb_shares.py, added 2026-11-10) is isolated too: the noise band on SPY shares, two ledgers.
 The multi-day "pead" book (pead_t21.py, added 2026-11-11) is isolated too: post-earnings drift on S&P 500 shares (T21 and
 its take-profit twin T23a, 5 slots each).
+The multi-day "core" book (core_spy.py, added 2026-11-11) is isolated too: the T30b SPY core, one position held across
+sessions. Under the core rule (Nick delegated the call on 2026-11-11, paper only) it has no daily loss stop: holding the
+market through a bad day is the tested rule. The kill switch and pauses still apply.
 Multi-day books (the "swing" book of etf10_rsi2.py, added 2026-11-10, isolated too): positions are held across sessions,
 so "today's P/L" for check 6 is realized on positions closed today plus open marks, each measured from the position's
 previous-session mark (plan "day_base", set at its first mark of the day; 0 for a position entered today). The
@@ -30,17 +33,17 @@ import store
 import v4common as C
 import v4store as S
 
-VERSION = "2026-11-11.v4-risk6"   # risk6: isolated multi-day "pead" book (pead_t21); risk5: "trend" book; risk4: "swing" book
+VERSION = "2026-11-11.v4-risk7"   # risk7: isolated multi-day "core" book (core_spy, no daily stop); risk6: "pead"; risk5: "trend"; risk4: "swing"
 LIMITS = {
     "desk_max_open": 50,
-    "book_max_open": {"index": 4, "premium": 6, "stocks": 40, "catalyst": 8, "sprint": 8, "swing": 10, "trend": 2, "pead": 10},
+    "book_max_open": {"index": 4, "premium": 6, "stocks": 40, "catalyst": 8, "sprint": 8, "swing": 10, "trend": 2, "pead": 10, "core": 1},
     "symbol_max_open": 4,
-    "book_max_same_direction": {"index": 4, "premium": 4, "stocks": 25, "catalyst": 6, "sprint": 8, "swing": 10, "trend": 2, "pead": 10},
+    "book_max_same_direction": {"index": 4, "premium": 4, "stocks": 25, "catalyst": 6, "sprint": 8, "swing": 10, "trend": 2, "pead": 10, "core": 1},
     "book_daily_loss_usd": {"index": 600.0, "premium": 800.0, "stocks": 2000.0, "catalyst": 800.0, "sprint": 600.0,
                             "swing": 90.0, "trend": 90.0, "pead": 90.0},   # swing/trend/pead: the risk framework's daily stop (-3% of $3,000)
     "selling_ledgers": ("orb_credit", "ic_20d"),
-    "isolated_books": ("sprint", "swing", "trend", "pead"),
-    "multi_day_books": ("swing", "pead"),
+    "isolated_books": ("sprint", "swing", "trend", "pead", "core"),
+    "multi_day_books": ("swing", "pead", "core"),
 }
 
 

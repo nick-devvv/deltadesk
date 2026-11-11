@@ -306,7 +306,7 @@ def test_trend_book_is_isolated_kill_switch_closes_it_and_overnight_leftovers_cl
     run(clock, D, "10:00:00", "10:00:15")
     assert v4risk.admit("sip_orb5", "stocks", "SPY", "long") is None          # stocks never count the trend book
     assert "trend book cap" in v4risk.admit("nbs_other", "trend", "QQQ", "long")
-    assert v4risk.status()["limits"]["isolated_books"] == ["sprint", "swing", "trend", "pead"]
+    assert v4risk.status()["limits"]["isolated_books"] == ["sprint", "swing", "trend", "pead", "core"]
     r = v4risk.kill("test")
     assert r["closed"] == 2 and not [p for p in S.positions(status="OPEN") if p["book"] == "trend"]
     store.kv_set("v4_enabled", True)

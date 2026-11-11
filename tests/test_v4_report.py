@@ -73,7 +73,7 @@ def test_overview_groups_books_splits_tickers_and_pairs_shadows(env):
     S.decide("sip_orb5_opt:x", "sip_orb5_opt", "AMD", "NO CONTRACT", ["no qualifying contract: delta outside 0.6-0.8 3"], {}, "entry")
     d = RP.overview("2026-11-02")
     books = {b["book"]: b for b in d["books"]}
-    assert list(books) == ["index", "premium", "stocks", "catalyst", "sprint", "swing", "trend", "pead"]       # pead: pead_t21 (held overnight); trend: nb_shares; swing: etf10_rsi2 (held overnight); sprint: paper forward tests (sprint_paper.py)
+    assert list(books) == ["index", "premium", "stocks", "catalyst", "sprint", "swing", "trend", "pead", "core"]       # core: core_spy (T30b); pead: pead_t21 (held overnight); trend: nb_shares; swing: etf10_rsi2 (held overnight); sprint: paper forward tests (sprint_paper.py)
     idx = {l["ledger"]: l for l in books["index"]["ledgers"]}
     assert set(idx) == {"noise", "noise_v2", "noise_trend", "old"}
     assert idx["noise_v2"]["by_ticker"]["SPY"]["net"] == 120.0 and idx["noise_v2"]["by_ticker"]["QQQ"]["net"] == -40.0
@@ -138,7 +138,7 @@ def test_v4_api_over_http(env, monkeypatch):
     try:
         with _local_open(base + "/api/v4?since=2026-11-02") as r:
             d = json.loads(r.read())
-        assert [b["book"] for b in d["books"]] == ["index", "premium", "stocks", "catalyst", "sprint", "swing", "trend", "pead"] and "retired" in d
+        assert [b["book"] for b in d["books"]] == ["index", "premium", "stocks", "catalyst", "sprint", "swing", "trend", "pead", "core"] and "retired" in d
         with _local_open(base + "/api/v4/sprint") as r:                         # the sprint forward tests (sprint_paper.py)
             sp = json.loads(r.read())
         assert sp["label"] == "PAPER (simulated fills)" and set(sp["ledgers"]) == {"fb_or", "otm_put", "otm_bounce", "otm_h"}

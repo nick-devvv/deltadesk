@@ -293,3 +293,32 @@ Added 2026-11-11. Nick widened the desk's scope to any holding period and said y
 | Sealed 2022-2025 (run once) | +1.24% | +1.21% | $239 | $253 | -15% / -15% |
 
 The target averages about +15% (+13% sealed) and is hit in 12-15% of trades; the extra dollars come mostly from freeing slots sooner. The same take-profit on the noise band failed for long/short (T23b, less money) and helped long-only by only about $4 a year (T23c, about 5 exits a year), so it isn't on the noise band ledgers.
+
+## 11. SPY core: `core_spy` (T30b, forward test, held)
+
+Added 2026-11-11. After 46 WRDS trials, most of the money in the desk's backtests was market exposure, and Nick wants the most money. He chose "option 1" (hold the market as the core, with the tested strategies on top, using margin) and left the risk-rule call to Claude ("u do whats best"). **Paper only. Not promoted.**
+
+**Labels.** Forward results: **PAPER (simulated fills)** on live Schwab quotes. Backtest numbers: **BACKTEST, in-sample portfolio arithmetic**. Every component (SPY, the T12a noise band, the T6 R2 ETF swing) had already been tested and seen in both windows, so T30 is not new evidence of an edge; this forward test is the real check. Notes: Nick's TradingVault `Research/2026-11-11-t30-prereg`, `-t30-result`.
+
+**The T30b account (on paper).** $3,000 at the first core fill (START), plus the P/L since START of `core_spy`, `nbs_spy_ls` (the noise band, $3,000 intraday) and `etf10_rsi2` (3 x $1,000 overnight), minus margin interest. `GET /api/v4/core` and the Research page show it.
+
+**Rules (frozen).**
+- **Target:** SPY notional = account equity (1x). Below Alpaca's $2,000 margin minimum: equity minus the swing book's open notional (no borrowing).
+- **Entry:** the first session open with no core position, at ask + $0.01 (first fresh quote after 09:30 ET; none by 09:40 = MISSED, retried the next session). Fractional shares.
+- **Rebalance:** the first session of each month at the open, only if the position is more than 5% off target: sell it all at bid - $0.01 and buy the new target.
+- **Exit:** none. No stop, no target. The v4 kill switch closes it like everything else.
+- **Margin interest:** each session after the close, debit = max(0, core + swing book marks - equity), charged at 6.5% / 360 per calendar day to the next session (Alpaca's non-elite rate). A missed evening is caught up the next morning.
+- **Margin warning:** the view flags equity / overnight gross below 0.40 (Alpaca maintenance is about 25-30%; the backtest never went below 0.50).
+
+| BACKTEST ($3k start each window) | T30b CAGR | SPY alone | Worst drop T30b / SPY | Desk now (50/50) |
+|---|---|---|---|---|
+| 2003-09-10..2021-12-31 | 18.2% (about $545/yr) | 10.9% ($326) | -37.6% / -55.2% | 5.0% ($151), -4.5% |
+| 2022-01-03..2025-12-31 | 20.6% (about $619/yr) | 11.1% ($332) | -26.3% / -24.5% | 9.2% ($276), -4.5% |
+
+Still above SPY with the margin rate doubled (13%) and component costs doubled. 2026 to Nov 9 (information): SPY + band +8.1% vs SPY +11.2% (the band's weak year).
+
+**The core rule (Claude's call, delegated 2026-11-11).** The core breaks two approved risk rules: the multi-day size rule (a 3-sigma day <= 1.5% of equity) and the account throttle (-8% half size, -15% stop). Within paper only, the core is exempt from both and has no daily stop: holding the market through bad days is what was tested. Expect SPY-sized drops (about -25% in 2022, -38% at the worst since 2003). Isolated `core` book (`v4risk.py` risk7), one position. The satellites keep their own rules.
+
+**Deviations from the backtest.** The satellites keep fixed sizes ($3,000; 3 x $1,000) instead of scaling with equity daily; the core is rebalanced monthly instead of daily; dividends are not credited (SPY yields about 1.2% a year, so the paper core understates T30b by about that); Schwab quotes instead of CRSP closes.
+
+**What the forward test measures.** The account view against SPY alone over the same days, margin interest actually charged, and whether the satellites keep adding on top of the core. Review after 40 weeks; real money needs CLAUDE.md step 5 and Nick asking for it.
