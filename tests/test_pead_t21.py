@@ -440,3 +440,41 @@ def test_tp_twin_has_its_own_switch(env):
     run(clock, ENTRY, "05:00", "08:01", step_s=30)
     run(clock, ENTRY, "09:30", "09:30:10")
     assert entry(ENTRY, "AAA") == "ORDER" and tp_entry(ENTRY, "AAA") == "SWITCH OFF"
+
+
+# ================================================================ data prep timing (2026-11-12 fix)
+def test_seeding_starts_before_the_edgar_refresh_is_complete(env):
+    """First live day: 144/503 tickers refreshed before the open and seeding never began. Now each prep step refreshes a
+    batch AND seeds from the filings already stored."""
+    f, clock = world(env)
+    env[0].setattr(P, "EDGAR_BATCH", 1)
+    store.kv_set("pead:edgar", {})
+    store.kv_set("pead:ears", {})
+    run(clock, ENTRY, "05:00", "05:00")                       # one step: one ticker refreshed (AAA), then a seed batch
+    eg = store.kv_get("pead:edgar")
+    assert set(eg) == {"AAA"}
+    assert f"AAA|{REACT}" in store.kv_get("pead:ears")         # seeded although BBB and CCC aren't refreshed yet
+    run(clock, ENTRY, "05:00:05", "05:00:15")
+    assert set(store.kv_get("pead:edgar")) == {"AAA", "BBB", "CCC"}
+    assert {f"BBB|{REACT}", "CCC|2026-08-05"} <= set(store.kv_get("pead:ears"))
+
+
+def test_data_work_also_runs_in_the_evening_and_overnight(env):
+    f, clock = world(env)
+    store.kv_set("pead:edgar", {})
+    store.kv_set("pead:ears", {})
+    run(clock, SIG, "13:00", "13:00:10")                       # market hours: no data work
+    assert env[3] == [] and store.kv_get("pead:edgar") == {}
+    run(clock, SIG, "17:00", "17:00:10")                       # after the close: refresh and seed
+    assert set(store.kv_get("pead:edgar")) == {"AAA", "BBB", "CCC"} and len(env[3]) == 3
+    assert "CCC|2026-08-05" in store.kv_get("pead:ears")
+    calls = len(env[3])
+    run(clock, ENTRY, "01:00", "01:00:10")                     # overnight on the next day: a new day's refresh
+    assert len(env[3]) == calls + 3
+
+
+def test_status_reports_the_time_zone_from_the_plan_after_a_restart(env):
+    f, clock = world(env)
+    run(clock, ENTRY, "05:00", "08:01", step_s=30)
+    P._state["tz_mode"] = None                                 # a restart before events() runs again
+    assert P.status()["data"]["edgar_time_zone"] in ("UTC", "ET")

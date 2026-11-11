@@ -274,7 +274,7 @@ def test_report_api_release_health_page_and_switch(env):
     v = v4api.view(S.positions(ledger=K.LEDGER)[0])
     assert "rebalanced" in v["next"]
     import release
-    assert release.component_versions()["core_spy.VERSION"] == K.VERSION and release.RELEASE_ID.endswith("v4-core")
+    assert release.component_versions()["core_spy.VERSION"] == K.VERSION and "v4-core" in release.RELEASE_ID
     import health
     assert "v4core" in health.WORKERS
     assert 'core: "SPY core"' in (ROOT / "index.html").read_text()

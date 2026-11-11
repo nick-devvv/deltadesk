@@ -91,12 +91,13 @@ TP_K = math.sqrt(20.0)
 HOLD, PCT, MIN_N, WINDOW_DAYS = 20, 90.0, 200, 365
 SLOTS, SLOT_USD, RISK_CAP_USD = 5, 600.0, 45.0
 SIGMA_DAYS = 20
-WORK_FROM, PLAN_FROM, OPEN, FILL_LATE = "05:00", "08:00", "09:30", "09:40"
+WORK_FROM, PLAN_FROM, OPEN, FILL_LATE = "00:00", "08:00", "09:30", "09:40"
+EVENING_FROM = "16:30"                          # off-hours data work also runs after the close (2026-11-12 fix)
 EXIT_BEFORE_CLOSE_S, EXIT_GIVE_UP_S = 300, 30
 QUOTE_MAX_AGE_S = 20
 MARK_EVERY_S = 60
-EDGAR_BATCH, EDGAR_PAUSE_S, EDGAR_KEEP_DAYS = 8, 0.15, 450
-SEED_BATCH = 10
+EDGAR_BATCH, EDGAR_PAUSE_S, EDGAR_KEEP_DAYS = 25, 0.15, 450
+SEED_BATCH = 20
 SP500_FILE = core.HERE / "config" / "sp500.json"
 SUBMISSIONS = "https://data.sec.gov/submissions/CIK{cik:010d}.json"
 LABEL = "PAPER (simulated fills); rules = T21, BACKTEST research 1997-2021 pass + sealed 2022-2025 pass (out-of-sample)"
@@ -322,8 +323,9 @@ def events(day):
     return uniq
 
 
-def refresh_edgar(day, budget=EDGAR_BATCH):
+def refresh_edgar(day, budget=None):
     """One batch of EDGAR submissions refreshes (each ticker once per day). Returns True when every ticker is fresh."""
+    budget = EDGAR_BATCH if budget is None else budget
     uni = universe()
     eg = _edgar()
     todo = [(t, c) for t, c in uni if (eg.get(t) or {}).get("day") != str(day)]
@@ -346,9 +348,10 @@ def _ear_key(t, react):
     return f"{t}|{react}"
 
 
-def seed_ears(day, budget=SEED_BATCH):
+def seed_ears(day, budget=None):
     """Compute and store EARs for events whose signal day is in the cutoff window (and before `day`) and that aren't
     stored yet, a few tickers per call. Returns (done, tickers_left)."""
+    budget = SEED_BATCH if budget is None else budget
     lo = day - timedelta(days=WINDOW_DAYS + 7)
     ev = [e for e in events(day) if lo <= next_session(e["react"]) < day]
     have = _ears()
@@ -648,12 +651,14 @@ def manage(now, quotes=None):
 
 # ================================================================ worker
 def _prep(day, hm):
-    """Off-hours data work: today's EDGAR refresh, then EAR seeding for the cutoff window."""
+    """Off-hours data work, one batch of each per step: today's EDGAR refresh and EAR seeding for the cutoff window.
+    Seeding no longer waits for a complete refresh (2026-11-12 fix): the cutoff history only needs filings already
+    stored, and on the first live day the full 503-ticker refresh never finished before the open, so seeding never
+    started and the next morning began again."""
     eg = _edgar()
     uni = universe()
     if any((eg.get(t) or {}).get("day") != str(day) for t, _ in uni):
         refresh_edgar(day)
-        return
     seed_ears(day)
 
 
@@ -673,7 +678,7 @@ def step(now=None):
     hm = now.strftime("%H:%M")
     close = sess.get("close", "16:00")
     plan = store.kv_get(_pkey(day))
-    if WORK_FROM <= hm < OPEN and not plan:
+    if (WORK_FROM <= hm < OPEN and not plan) or hm >= EVENING_FROM:
         try:
             with schwab.priority("normal"):
                 _prep(day, hm)
@@ -773,4 +778,4 @@ def status():
             "data": {"universe": len(uni), "edgar_fresh_today": sum(1 for t, _ in uni if (eg.get(t) or {}).get("day") == str(day)),
                      "events_stored": sum(len(v.get("f", [])) for v in eg.values()), "ears_stored": len(ears),
                      "ears_usable": sum(1 for v in ears.values() if v.get("ear") is not None),
-                     "edgar_time_zone": _state.get("tz_mode")}}
+                     "edgar_time_zone": _state.get("tz_mode") or (store.kv_get(_pkey(day)) or {}).get("tz_mode")}}
