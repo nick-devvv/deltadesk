@@ -700,6 +700,25 @@
    "evidence": "B-: pre-registered checks, but every component stream had already been tested and seen (in-sample by construction); forward paper test is the real check",
    "reusable": "rules only (implemented in core_spy.py; account view in core_spy.account)",
    "next": "Forward paper test of the account view vs SPY alone; review after 40 weeks. Real money needs CLAUDE.md step 5 and Nick's explicit ask."
+  },
+  {
+   "name": "Trend core: 50/50 SSO + QLD on 200-day trend = T47",
+   "url": null,
+   "kind": "desk portfolio test",
+   "inspected_commit": null,
+   "commit_date": null,
+   "source_version": "Gayed & Bilello (2016) 'Leverage for the Long Run'; desk pre-registrations T44 (2026-11-11), T46, T47 (2026-11-12)",
+   "license": "desk code: this repo",
+   "what": "Hold half the account in SSO while SPY is in its 200-day uptrend and half in QLD while QQQ is (in above 1.04 x SMA200, out below 0.97 x); cash otherwise; noise band and ETF RSI(2) swing on top, on margin.",
+   "entry": "Per half: buy near the close the session after a finished close turns the state IN.",
+   "exit": "Per half: sell near the close the session after a finished close below 0.97 x SMA200. No stop.",
+   "sizing": "Each half 0.5 x the T47 account equity while IN (below $2,000: no borrowing); monthly rebalance if more than 5% off; 6.5% margin interest on the overnight debit.",
+   "instruments": "SSO and QLD shares (+ the satellites' SPY shares and 10 ETFs)",
+   "timeframe": "held (core, trend switches about once a year per half); intraday and multi-day (satellites)",
+   "data": "WRDS CRSP daily (real SSO and QLD returns; S&P 500 level from CRSP/Compustat), 2003-09..2025",
+   "reported": "BACKTEST: T47 2022-25 sealed 27.5% CAGR, worst -28.1% vs T44 22.9% / -28.2% and T30b 20.6% / -26.3%; 2003-21 (seen) 25.7% / -36.1%.",
+   "evidence": "B-: sealed window passed once; research window seen and the Nasdaq choice made with QQQ's 2022-25 path public; lead mostly from 2023",
+   "reusable": "rules only (implemented in core_trend.py; account view; tests in tests/test_core_trend.py)"
   }
  ]
 }

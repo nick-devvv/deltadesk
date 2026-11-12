@@ -322,3 +322,34 @@ Still above SPY with the margin rate doubled (13%) and component costs doubled. 
 **Deviations from the backtest.** The satellites keep fixed sizes ($3,000; 3 x $1,000) instead of scaling with equity daily; the core is rebalanced monthly instead of daily; dividends are not credited (SPY yields about 1.2% a year, so the paper core understates T30b by about that); Schwab quotes instead of CRSP closes.
 
 **What the forward test measures.** The account view against SPY alone over the same days, margin interest actually charged, and whether the satellites keep adding on top of the core. Review after 40 weeks; real money needs CLAUDE.md step 5 and Nick asking for it.
+
+## 12. Trend core: `core_trend` (T47, forward test, held)
+
+Added 2026-11-12. T44 (a 2x S&P fund held only in its 200-day uptrend, as the core) and T47 (half that, half the same rule on the Nasdaq-100 with QLD) beat the SPY core (T30b) on the sealed 2022-2025 window. Claude offered Nick T47, T44 or neither; Nick: "do whatever you think is best for my portfolio". Claude chose T47 and logs each half separately, so the SSO half is also T44's core forward record. **Paper only. Not promoted.** `core_spy` keeps running beside it for comparison.
+
+**Labels.** Forward results: **PAPER (simulated fills)** on live Schwab quotes. Backtest numbers: **BACKTEST** (T44 research window in-sample for the band choice; T47 research window SEEN before it was registered; both sealed windows out-of-sample, run once). Notes: Nick's TradingVault `Research/2026-11-11-t44-*`, `2026-11-12-t46-*`, `2026-11-12-t47-*`.
+
+**The T47 account (on paper).** $3,000 at the first trend-core fill (START), plus the P/L since START of `core_trend`, `nbs_spy_ls` and `etf10_rsi2`, minus margin interest. A separate what-if view from `core_spy`'s T30b account (both count the same satellites). `GET /api/v4/tcore` and the Research page show it.
+
+**Rules (frozen).**
+- **Halves:** S = SSO (2x S&P 500), switched by SPY; Q = QLD (2x Nasdaq-100), switched by QQQ.
+- **Signal:** finished daily bars only (Schwab's 2-year history). The state starts IN when SMA(200) first exists; IN -> OUT when a close < 0.97 x SMA200; OUT -> IN when a close > 1.04 x SMA200 (Gayed & Bilello 2016 rule, T5 V2 band).
+- **Timing:** decided from the previous session's close, traded from 10 to 2 minutes before today's close (a signal at close t is held from close t+1, as in the backtest). No fill by then = MISSED, retried the next session.
+- **Target:** each half = 0.5 x account equity while IN, 0 while OUT. Below $2,000 equity the halves split equity minus the swing book (no borrowing).
+- **Trades:** IN and flat: buy at ask + $0.01. OUT and holding: sell all at bid - $0.01. IN and holding: on the first session of each month, rebalance only if more than 5% off target.
+- **Exit:** only the trend rule and the kill switch. No stop.
+- **Margin:** as `core_spy` (6.5% / 360 per calendar day on the overnight debit, own log).
+- **Margin warning:** equity / overnight gross < 0.40, or maintenance need (50% of SSO + QLD, 30% of swing) > 80% of equity (backtest high 75%).
+
+| BACKTEST ($3k start) | T47 | T44 (SSO half alone) | T30b (`core_spy`) | SPY alone |
+|---|---|---|---|---|
+| 2003-09..2021 CAGR / worst drop | 25.7% / -36.1% (seen) | 24.6% / -32.4% | 18.2% / -37.6% | 10.9% / -55.2% |
+| 2022-2025 sealed CAGR / worst drop | **27.5% / -28.1%** | 22.9% / -28.2% | 20.6% / -26.3% | 11.1% / -24.5% |
+
+T47's sealed lead over T44 came mostly from 2023 (+60% vs +38%). The QLD half alone (T46) fell 46% in three weeks in 2020, failing its own drawdown check; the 50/50 split capped that at -36% in 2003-21.
+
+**The core rule (Claude's call, delegated 2026-11-12).** As for `core_spy`: exempt from the multi-day size rule, the account throttle and the daily stop, within paper only. Expect worst drops near -30% to -36%, and days of -7% to -11% (2x funds). Isolated `tcore` book (`v4risk.py` risk8), two positions.
+
+**Deviations from the backtest.** SPY's close instead of the S&P 500 index level for the S signal (checked: a 500-bar window gave the same state as full history on all 756 days of 2023-2026); near-close quotes instead of official closes; monthly instead of daily rebalancing; no interest on idle cash while OUT (the backtest credited T-bills); dividends not credited; satellites at fixed sizes.
+
+**What the forward test measures.** The T47 account view against `core_spy`'s T30b view and SPY alone over the same days, each half separately (S = T44's core), fills near the close against the quote, and margin interest charged. Review after 40 weeks; real money needs CLAUDE.md step 5 and Nick asking for it.

@@ -392,3 +392,29 @@ curl -s "$B/api/v4/pead?k=$K" | python3 -c 'import json,sys; d=json.load(sys.std
 ```
 
 Evening: `edgar_fresh_today` 503/503 and `ears_stored` climbing past 200 (a full year of S&P 500 reports is about 2,000). Next morning: `ears_usable` 200 or more, a numeric `cutoff`, `n_window` 200 or more, `edgar_time_zone` "UTC", no `last_error`. Every number is PAPER (simulated fills), not real money.
+
+## 18. Trend core ledger: update on Chart (added 2026-11-12)
+
+**What's new.** One PAPER (simulated fills) ledger, `core_trend`, in a new isolated `tcore` book: the T47 trend core (`docs/STRATEGY_PLAN.md` section 12). Half SSO while SPY is in its 200-day uptrend, half QLD while QQQ is, sized to the T47 account (trend core + `nbs_spy_ls` + `etf10_rsi2`, minus 6.5% margin interest). It trades only near the close (from 10 to 2 minutes before), the session after a finished daily close changes a trend state, plus a monthly rebalance. `core_spy` is unchanged and keeps running.
+- **Code:**
+  - `core_trend.py`: own worker thread `v4tcore`, started by `server.py`. Market data only (Schwab daily bars for SPY and QQQ, quotes for SSO and QLD).
+  - `v4risk.py` risk8 (the `tcore` book: isolated, multi-day, 2 positions, no daily stop), `v4report.py` (tcore row + `trend_core_account` in the overview), `v4api.py` (`GET /api/v4/tcore`), `index.html`, `health.py`.
+  - `release.py`: release `2026-11-12.v4-core-trend`.
+  - `config/v4.json`: the `core_trend` switch, on.
+  - `CLAUDE.md`: the trend core under the core exception (paper only).
+- **Tests:** `tests/test_core_trend.py` (18). The book lists in four existing tests now include `tcore`.
+- **Unchanged:** every existing ledger's rules (including `core_spy`), the frozen files, every Chart-only file.
+
+**Update.** Once the pull request is merged, after 4:15 PM ET: "Update the desk: run ~/desk/deploy/update.sh and show me the whole output."
+
+**First session.** Nothing happens at the open. From 08:00 the ledger reads yesterday's finished daily bars for SPY and QQQ and stores today's trend states. At about 15:50 ET it buys about $1,500 of SSO and $1,500 of QLD if both states are IN (SPY was IN on 2026-11-11 in Claude's data; QQQ is read live). That day is START for the T47 account view. Margin interest is recorded after each close.
+
+**First-session checks** (Chart, after 15:55 ET):
+
+```
+K=$(cat ~/desk/DESK_TOKEN.txt); B=http://127.0.0.1:8765
+curl -s "$B/api/v4/tcore?k=$K" | python3 -m json.tool | head -70        # signals: S and Q state, close, sma200, asof = yesterday; open: SSO/QLD positions; account: start, equity about 3000, targets; no last_error
+curl -s "$B/api/v4/decisions?k=$K&ledger=core_trend" | python3 -m json.tool | head -30   # per half: ORDER near the close (or OUT / MISSED / NO DATA with the reason)
+```
+
+What to send Nick: each half's state and decision (fill and size, or the reason), the account view (equity, targets, overnight gross, maintenance need, margin warning), and any `last_error`. Every number is PAPER (simulated fills), not real money.

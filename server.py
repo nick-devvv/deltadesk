@@ -898,6 +898,11 @@ if __name__ == "__main__":
         print("v4 SPY core (core_spy, paper, held):", "started" if core_spy.start() else "off", flush=True)
     except Exception as e:
         print("SPY core ledger not started:", e, flush=True)
+    try:                                           # the T47 trend core (paper, multi-day; own thread and risk book)
+        import core_trend
+        print("v4 trend core (core_trend, paper, held):", "started" if core_trend.start() else "off", flush=True)
+    except Exception as e:
+        print("Trend core ledger not started:", e, flush=True)
     try:                                           # v3.5: journal/learning tables + the preregistered hypotheses
         import learning
         learning.migrate()
