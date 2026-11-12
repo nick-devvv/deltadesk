@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 RELEASE = "4.0"
-RELEASE_ID = "2026-11-12.v4-core-pead-prep"   # pead data prep runs overnight and seeds while refreshing; v4-core added core_spy
+RELEASE_ID = "2026-11-12.v4-core-trend"   # adds core_trend (T47 trend core + account view, paper); v4-core-pead-prep fixed pead data prep
 HERE = Path(__file__).resolve().parent
 SOURCE_GLOBS = ("*.py", "index.html", "config/*.json", "grok/*.md", "grok/*.json")
 
@@ -45,7 +45,7 @@ def component_versions():
                        ("orb_credit", ("VERSION",)), ("ic_20d", ("VERSION",)), ("sip_orb", ("VERSION",)),
                        ("news_drift", ("VERSION",)), ("chain_logger", ("VERSION",)), ("v4risk", ("VERSION",)),
                        ("sprint_paper", ("VERSION", "SPRINT_VERSION")), ("etf10_rsi2", ("VERSION",)), ("nb_shares", ("VERSION",)), ("pead_t21", ("VERSION", "TP_VERSION")),
-                       ("core_spy", ("VERSION",))):
+                       ("core_spy", ("VERSION",)), ("core_trend", ("VERSION",))):
         try:
             m = __import__(mod)
             for a in attrs:
