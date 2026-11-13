@@ -183,7 +183,7 @@ def test_wiring_report_api_release_health_page_config(env):
     assert row["backtest"]["t44_2022_2025"]["label"].startswith("BACKTEST") and d["sso_core_account"]["start"] == str(D1)
     st = v4api.get("/api/v4/score", {})
     assert st["version"] == K.VERSION and st["signals"]["S"]["state"] == 1 and st["signals"]["P"]["state"] == 0
-    assert release.component_versions()["core_sso.VERSION"] == K.VERSION and "v4-core-sso" in release.RELEASE_ID
+    assert release.component_versions()["core_sso.VERSION"] == K.VERSION
     assert "v4score" in health.WORKERS and 'score: "SSO trend core"' in (ROOT / "index.html").read_text()
     cfg = json.loads((ROOT / "config" / "v4.json").read_text())
     assert cfg["core_sso"] is True and cfg["core_trend"] is False

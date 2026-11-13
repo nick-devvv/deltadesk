@@ -24,6 +24,10 @@ GET  /api/v4/tcore            the T47 trend core (core_trend, held): PAPER (simu
 GET  /api/v4/score            the T44 SSO trend core (core_sso, held, SGOV while out): PAPER (simulated fills), today's SPY trend
                               signal, the T44 account view, interest log, switch
 GET  /api/v4/killfile         B7: the KILL file watcher (touch KILL in the desk folder = v4 kill switch, once per file)
+GET  /api/v4/copilot?day=     B8/B5/B9: today's co-pilot alerts (pattern, level, checklist, stop/target, event flags, lag; CONTEXT,
+                              not tested edges), switches (watch-only = alerts without paper shadows), open PAPER shadows
+GET  /api/v4/copilot/score    B4: the report card: every labeled alert by pattern, checklist score, Nick's answer and ticker
+POST /api/v4/copilot/feedback {"id", "took": true|false}: Nick's answer for one alert (feeds the report card)
 GET  /api/v4/sprint           the sprint forward-test ledgers (fb_or, otm_put, otm_bounce, otm_h): PAPER (simulated fills), their
                               source backtest runs and numbers (in-sample), the rules read from the pinned specs, switches,
                               deviations from the backtest
@@ -66,6 +70,12 @@ def get(path, q):
     if path == "/api/v4/killfile":
         import killfile
         return killfile.status()
+    if path == "/api/v4/copilot":
+        import copilot
+        return copilot.status(_one(q, "day"))
+    if path == "/api/v4/copilot/score":
+        import copilot
+        return copilot.scorecard()
     if path == "/api/v4/score":
         import core_sso
         return core_sso.status()
@@ -129,4 +139,8 @@ def post(path, body):
         return v4risk.kill(str((body or {}).get("reason") or "kill switch (API)")[:120])
     if path == "/api/v4/enable":
         return v4risk.enable(bool((body or {}).get("on", True)))
+    if path == "/api/v4/copilot/feedback":
+        import copilot
+        b = body or {}
+        return copilot.feedback(str(b.get("id") or "")[:200], bool(b.get("took")))
     return None

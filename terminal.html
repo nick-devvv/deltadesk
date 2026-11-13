@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<!-- DeltaDesk terminal view (build item B6, 2026-11-13). Layout idea (MON / EVAL / TRADES / NEWS panels, decision
+     blotter) from zadescoxp/calibrain-harness (MIT License); no code copied. Read-only views of the desk's own APIs:
+     every number comes from code. The one write is Nick's took/skipped answer on a co-pilot alert (B4). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DeltaDesk terminal</title>
+<style>
+  :root { --bg:#0b0d0f; --panel:#111417; --line:#22272c; --ink:#d7dde2; --dim:#7d8790; --amber:#f2b33d; --green:#46c37b;
+          --red:#e5534b; --blue:#6cb6ff; --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:13px/1.45 var(--mono); }
+  header { display:flex; flex-wrap:wrap; gap:8px 16px; align-items:center; padding:10px 14px; border-bottom:1px solid var(--line); }
+  header b { color:var(--amber); letter-spacing:.08em; }
+  header a { color:var(--dim); margin-left:auto; }
+  .pill { padding:1px 8px; border:1px solid var(--line); border-radius:3px; }
+  .on { color:var(--green); border-color:#24543a; } .off { color:var(--red); border-color:#5a2724; }
+  nav { display:none; border-bottom:1px solid var(--line); }
+  nav button { flex:1; background:none; border:0; color:var(--dim); font:inherit; padding:10px 0; letter-spacing:.08em; }
+  nav button.sel { color:var(--amber); border-bottom:2px solid var(--amber); }
+  main { display:grid; grid-template-columns:1fr 1fr; gap:1px; background:var(--line); }
+  section { background:var(--panel); padding:10px 12px 14px; min-height:40vh; overflow:auto; }
+  h2 { margin:0 0 8px; font-size:12px; color:var(--amber); letter-spacing:.12em; }
+  h2 span { color:var(--dim); font-weight:normal; letter-spacing:0; }
+  h3 { margin:12px 0 4px; font-size:12px; color:var(--blue); font-weight:normal; }
+  table { width:100%; border-collapse:collapse; }
+  td, th { padding:3px 6px 3px 0; text-align:left; white-space:nowrap; border-bottom:1px solid #1a1e22; }
+  th { color:var(--dim); font-weight:normal; }
+  td.n, th.n { text-align:right; }
+  .pos { color:var(--green); } .neg { color:var(--red); } .dim { color:var(--dim); }
+  .alert { border-left:2px solid var(--line); padding:4px 0 6px 8px; margin:0 0 8px; white-space:pre-wrap; }
+  .alert.hi { border-color:var(--amber); }
+  .alert button { background:none; border:1px solid var(--line); color:var(--ink); font:inherit; padding:2px 10px; margin:4px 6px 0 0; }
+  .tag { font-size:11px; color:var(--dim); }
+  @media (max-width: 900px) {
+    nav { display:flex; }
+    main { display:block; }
+    section { display:none; min-height:80vh; }
+    section.sel { display:block; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <b>DELTADESK // TERMINAL</b>
+  <span id="clock" class="dim">--:--:-- ET</span>
+  <span id="v4" class="pill">v4 ...</span>
+  <span id="cp" class="pill">co-pilot ...</span>
+  <a href="/">main page</a>
+</header>
+<nav>
+  <button data-p="mon" class="sel">MON</button><button data-p="eval">EVAL</button>
+  <button data-p="trades">TRADES</button><button data-p="news">NEWS</button>
+</nav>
+<main>
+  <section id="mon" class="sel"><h2>MON <span>risk, books, workers</span></h2><div id="monBody" class="dim">loading</div></section>
+  <section id="eval"><h2>EVAL <span>PAPER ledgers since the fresh start; co-pilot report card</span></h2><div id="evalBody" class="dim">loading</div></section>
+  <section id="trades"><h2>TRADES <span>open PAPER positions (simulated fills)</span></h2><div id="tradesBody" class="dim">loading</div></section>
+  <section id="news"><h2>NEWS <span>co-pilot alerts (CONTEXT, not tested edges), event flags, headlines</span></h2><div id="newsBody" class="dim">loading</div></section>
+</main>
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const num = (v, d = 2) => (v == null || v === "" || isNaN(v)) ? "-" : Number(v).toFixed(d);
+const sgn = v => v == null ? "" : (v > 0 ? "pos" : (v < 0 ? "neg" : ""));
+const money = v => v == null ? "-" : (v < 0 ? "-$" : "$") + Math.abs(Number(v)).toFixed(2);
+async function get(path) {
+  try { const r = await fetch(path, {credentials: "same-origin"}); return r.ok ? await r.json() : null; } catch (e) { return null; }
+}
+function table(cols, rows) {
+  if (!rows.length) return '<div class="dim">none</div>';
+  return "<table><tr>" + cols.map(c => `<th class="${c.n ? "n" : ""}">${esc(c.h)}</th>`).join("") + "</tr>" +
+    rows.map(r => "<tr>" + cols.map(c => { const v = c.f(r); return `<td class="${c.n ? "n " : ""}${c.cls ? c.cls(r) : ""}">${v}</td>`; }).join("") + "</tr>").join("") + "</table>";
+}
+document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
+  document.querySelectorAll("nav button, section").forEach(x => x.classList.remove("sel"));
+  b.classList.add("sel"); $(b.dataset.p).classList.add("sel");
+});
+function tick() {
+  $("clock").textContent = new Date().toLocaleTimeString("en-US", {timeZone: "America/New_York", hour12: false}) + " ET";
+}
+
+async function mon() {
+  const [risk, health] = await Promise.all([get("api/v4/risk"), get("api/health")]);
+  if (!risk) { $("monBody").textContent = "risk API unavailable"; return; }
+  const blk = risk.entries_blocked;
+  $("v4").textContent = blk ? "v4 entries BLOCKED" : "v4 entries ON";
+  $("v4").className = "pill " + (blk ? "off" : "on");
+  let h = blk ? `<div class="neg">${esc(blk)}</div>` : "";
+  const cal = risk.calendar || {};
+  const flags = ["fomc", "cpi", "jobs"].filter(k => cal[k] === true).map(k => k.toUpperCase());
+  h += `<div class="dim">today: ${flags.length ? '<span class="neg">' + flags.join(", ") + "</span>" : "no FOMC/CPI/jobs flag"}${cal.known ? "" : " (calendar not loaded)"}</div>`;
+  const by = (risk.open || {}).by_book || {}, caps = (risk.limits || {}).book_max_open || {}, pl = risk.pnl_today || {},
+        stops = (risk.limits || {}).book_daily_loss_usd || {};
+  const books = Object.keys(caps).filter(b => by[b] || pl[b]);
+  h += "<h3>books with open positions or P/L today (PAPER)</h3>" + table([
+    {h: "book", f: r => esc(r)}, {h: "open", n: 1, f: r => `${by[r] || 0}/${caps[r]}`},
+    {h: "P/L today", n: 1, f: r => money(pl[r]), cls: r => sgn(pl[r])},
+    {h: "daily stop", n: 1, f: r => stops[r] != null ? "-$" + stops[r] : "none"}], books);
+  h += `<div class="dim">desk open: ${(risk.open || {}).desk || 0} / ${(risk.limits || {}).desk_max_open || "-"}</div>`;
+  if (health && health.workers) {
+    const ws = Object.entries(health.workers);
+    const ok = ws.filter(([k, w]) => w.state === "ok"), bad = ws.filter(([k, w]) => w.state === "stale" || w.state === "error");
+    h += "<h3>workers</h3>" + `<div class="${bad.length ? "" : "pos"}">${ok.length} running, ${ws.length - ok.length - bad.length} not started (off or outside hours)</div>` +
+         bad.map(([k, w]) => `<div class="neg">${esc(k)}: ${esc(w.state)}${w.note ? " - " + esc(w.note) : ""}</div>`).join("");
+  }
+  $("monBody").innerHTML = h;
+}
+
+async function evalp() {
+  const [trk, sc] = await Promise.all([get("api/v4/tracking"), get("api/v4/copilot/score")]);
+  let h = "";
+  if (trk && trk.ledgers) {
+    h += `<div class="dim">since ${esc(trk.start)}, each ledger as its own $${esc(trk.account_usd)} PAPER account</div>`;
+    const rows = trk.ledgers.filter(r => r.trades || r.open);
+    h += table([
+      {h: "ledger", f: r => esc(r.ledger)}, {h: "trades", n: 1, f: r => r.trades},
+      {h: "win%", n: 1, f: r => num(r.win_rate, 1)}, {h: "PF", n: 1, f: r => num(r.profit_factor)},
+      {h: "exp $", n: 1, f: r => num(r.expectancy), cls: r => sgn(r.expectancy)},
+      {h: "net $", n: 1, f: r => num(r.net), cls: r => sgn(r.net)}, {h: "today", n: 1, f: r => num(r.today), cls: r => sgn(r.today)}], rows);
+    h += '<div class="tag">small samples are noise: judge on expectancy after 40+ trades</div>';
+  } else h += '<div class="dim">tracking API unavailable</div>';
+  if (sc) {
+    h += `<h3>co-pilot report card: ${sc.n} labeled alerts</h3><div class="tag">${esc(sc.label)}</div>`;
+    const pats = Object.entries(sc.by_pattern || {});
+    h += table([{h: "pattern", f: r => esc(r[0])}, {h: "n", n: 1, f: r => r[1].n},
+                {h: "target 1st", n: 1, f: r => num(r[1].target_first_pct, 1) + "%"},
+                {h: "avg R", n: 1, f: r => num(r[1].avg_r, 3), cls: r => sgn(r[1].avg_r)}], pats);
+    const ans = Object.entries(sc.by_answer || {});
+    if (ans.length) h += "<h3>by your answer</h3>" + table([{h: "answer", f: r => esc(r[0])}, {h: "n", n: 1, f: r => r[1].n},
+                {h: "avg R", n: 1, f: r => num(r[1].avg_r, 3), cls: r => sgn(r[1].avg_r)}], ans);
+  }
+  $("evalBody").innerHTML = h;
+}
+
+async function trades() {
+  const ps = await get("api/v4/positions?status=OPEN");
+  if (!ps) { $("tradesBody").textContent = "positions API unavailable"; return; }
+  $("tradesBody").innerHTML = table([
+    {h: "ledger", f: r => esc(r.ledger)}, {h: "ticker", f: r => esc(r.ticker)}, {h: "position", f: r => esc(r.desc)},
+    {h: "entry", n: 1, f: r => num(r.entry_px)}, {h: "mark $", n: 1, f: r => num(r.mtm), cls: r => sgn(r.mtm)},
+    {h: "next", f: r => `<span class="dim">${esc(r.next)}</span>`}], ps) + `<div class="tag">${ps.length} open</div>`;
+}
+
+async function answer(id, took) {
+  await fetch("api/v4/copilot/feedback", {method: "POST", credentials: "same-origin", headers: {"Content-Type": "application/json"},
+                                           body: JSON.stringify({id: id, took: took})});
+  news();
+}
+
+async function news() {
+  const [cp, nw] = await Promise.all([get("api/v4/copilot"), get("api/news?limit=15")]);
+  let h = "";
+  if (cp) {
+    $("cp").textContent = !cp.switch ? "co-pilot OFF" : (cp.watch_only ? "co-pilot WATCH-ONLY" : "co-pilot ON + paper");
+    $("cp").className = "pill " + (cp.switch ? "on" : "off");
+    h += `<div class="dim">${esc(cp.status)} | push at ${esc(cp.push_min)}+ of 7 boxes</div>`;
+    const al = (cp.alerts || []).slice().reverse();
+    const ev = al.length ? (al[0].events || {}) : {};
+    if ((ev.notes || []).length) h += `<div class="neg">${ev.notes.map(esc).join("<br>")}</div>`;
+    h += al.slice(0, 40).map(a => {
+      const t = esc((a.at || "").slice(11, 19));
+      const ans = a.answer ? `<span class="tag">you: ${esc(a.answer)}</span>`
+        : `<button onclick='answer(${JSON.stringify(a.id)}, true)'>took</button><button onclick='answer(${JSON.stringify(a.id)}, false)'>skipped</button>`;
+      const lab = a.label ? ` <span class="${a.label.outcome === "TARGET" ? "pos" : (a.label.outcome === "STOP" ? "neg" : "dim")}">${esc(a.label.outcome)} ${num(a.label.r)}R</span>` : "";
+      return `<div class="alert ${a.pushed ? "hi" : ""}">${t} ${esc(a.title)}${lab}\n<span class="dim">${esc(a.body)}</span>\n${ans}</div>`;
+    }).join("") || '<div class="dim">no co-pilot alerts today</div>';
+  }
+  if (nw && nw.length) {
+    h += "<h3>headlines (Chart's news scan)</h3>" + nw.map(n => `<div>${esc((n.at || n.ts || "").slice(11, 16))} ${esc(n.headline)} <span class="tag">${esc(n.source)} ${esc(n.tickers)} ${esc(n.impact)}</span></div>`).join("");
+  }
+  $("newsBody").innerHTML = h || '<div class="dim">nothing yet</div>';
+}
+
+function refresh() { mon(); evalp(); trades(); news(); }
+tick(); setInterval(tick, 1000);
+refresh(); setInterval(refresh, 15000);
+</script>
+</body>
+</html>

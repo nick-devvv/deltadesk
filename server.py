@@ -35,6 +35,7 @@ Main endpoints:
   GET  /api/research         every paper ledger side by side: expectancy, avg win/loss, drawdown, stock move vs option
   GET  /api/diagnostics      the latest diagnostics report from backtest.py
   GET  /legacy               the old desk page (custom indicator chart)
+  GET  /terminal             B6 terminal view: MON / EVAL / TRADES / NEWS panels over the read-only v4 APIs
   GET  /api/v4/news_drift?day=&since=  v4 news-drift event study (research only, never trades)
   GET  /api/v4/...           v4 ledgers, risk and chain logger (see v4api.py for the list)
   GET  /api/lab[/report?by=&cond=&exits=|/signals|/contracts]  v3.4 strategy lab: signal tape, lab paper ledgers, what works
@@ -358,6 +359,9 @@ class H(BaseHTTPRequestHandler):
         if u.path == "/vendor/lwc.js":            # TradingView Lightweight Charts 5.2.1 (Apache-2.0), served locally: no CDN needed
             with open(os.path.join(HERE, "vendor", "lightweight-charts-5.2.1.js"), "rb") as f:
                 return self._send(200, f.read(), "application/javascript; charset=utf-8")
+        if u.path in ("/terminal", "/terminal.html"):      # B6: terminal view (MON / EVAL / TRADES / NEWS), read-only APIs
+            with open(os.path.join(HERE, "terminal.html"), "rb") as f:
+                return self._send(200, f.read(), "text/html; charset=utf-8")
         if u.path in ("/legacy", "/legacy.html"):
             with open(os.path.join(HERE, "index_legacy.html"), "rb") as f:
                 return self._send(200, f.read(), "text/html; charset=utf-8")
@@ -908,6 +912,11 @@ if __name__ == "__main__":
         print("v4 SSO trend core (core_sso, paper, held):", "started" if core_sso.start() else "off", flush=True)
     except Exception as e:
         print("SSO trend core ledger not started:", e, flush=True)
+    try:                                           # B8/B9: co-pilot pattern alerts + paper shadows (own thread and risk book)
+        import copilot
+        print("Co-pilot alerts (copilot, SPY/QQQ):", "started" if copilot.start() else "off", flush=True)
+    except Exception as e:
+        print("Co-pilot not started:", e, flush=True)
     try:                                           # B7: `touch KILL` in the desk folder halts v4 paper entries
         import killfile
         print("KILL file watcher:", "started" if killfile.start() else "off", flush=True)

@@ -1035,7 +1035,7 @@ dl.dd dt.h,dl.dd dd.h{grid-column:1/-1;text-align:left;color:var(--ink);font-wei
         <div class="box"><div class="ph"><h2>Kronos test<span class="chip dim">SHADOW</span><small>shadow forecasts only, never trades</small></h2><div class="r"><span class="pill dim" id="kxStatus">—</span></div></div><div class="bd" id="kronos"></div></div>
         <div class="box"><div class="ph"><h2>Knowledge cards</h2></div><div class="bd" id="cards" style="max-height:420px;overflow:auto"></div></div>
       </div>
-      <p class="m" style="margin-top:16px">The old page is still here: <a href="legacy" style="color:var(--ink-2)">open the legacy page</a>.</p>
+      <p class="m" style="margin-top:16px">The old page is still here: <a href="legacy" style="color:var(--ink-2)">open the legacy page</a>. Terminal view (MON / EVAL / TRADES / NEWS): <a href="terminal" style="color:var(--ink-2)">open the terminal</a>.</p>
     </section>
   </main>
   <div class="jarvis" id="jarvis" hidden role="dialog" aria-modal="true" aria-label="Voice mode">
@@ -2344,7 +2344,7 @@ const V4SINCE = "2026-11-02";
 const v4num = x => x != null ? money(x) : "—";
 const chipP = '<span class="chip paper">PAPER</span>';
 const fmtDay = s => { if (!s) return "—"; const d = new Date(String(s).slice(0, 10) + "T12:00:00"); return isNaN(d) ? String(s) : d.toLocaleDateString("en-US", {month: "short", day: "numeric"}); };
-const BOOK_SHORT = {index: "Index 0DTE", premium: "Premium selling", stocks: "Stocks in play", catalyst: "Catalysts", sprint: "Sprint tests", swing: "ETF swing", trend: "SPY trend", pead: "Earnings drift", core: "SPY core", tcore: "Trend core", score: "SSO trend core"};
+const BOOK_SHORT = {index: "Index 0DTE", premium: "Premium selling", stocks: "Stocks in play", catalyst: "Catalysts", sprint: "Sprint tests", swing: "ETF swing", trend: "SPY trend", pead: "Earnings drift", core: "SPY core", tcore: "Trend core", score: "SSO trend core", copilot: "Co-pilot shadows"};
 const bookName = b => BOOK_SHORT[b] || b;
 function v4cells(m, rnd){
   m = m || {};

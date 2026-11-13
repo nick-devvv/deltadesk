@@ -22,6 +22,8 @@ market through a bad day is the tested rule. The kill switch and pauses still ap
 The multi-day "tcore" book (core_trend.py, added 2026-11-12) is isolated too: the T47 trend core, SSO and QLD (2
 positions) switched by 200-day trend rules. The core rule applies (Nick: "do whatever you think is best for my
 portfolio", 2026-11-12, paper only): no daily loss stop; the kill switch and pauses still apply.
+The intraday "copilot" book (copilot.py, B9, added 2026-11-13) is isolated: one $1,000 paper share shadow per co-pilot
+alert ticker (SPY, QQQ), flat by 15:55, $150 daily paper stop; it never counts against or blocks another book.
 The multi-day "score" book (core_sso.py, added 2026-11-13) is isolated too: the T44 SSO trend core, SSO while SPY is in
 its 200-day uptrend and SGOV while it is not (2 positions). Same core rule (Nick: "build it", 2026-11-13, paper only).
 Multi-day books (the "swing" book of etf10_rsi2.py, added 2026-11-10, isolated too): positions are held across sessions,
@@ -38,16 +40,16 @@ import store
 import v4common as C
 import v4store as S
 
-VERSION = "2026-11-13.v4-risk9"   # risk9: isolated multi-day "score" book (core_sso, 2 positions, no daily stop); risk8: isolated multi-day "tcore" book (core_trend, 2 positions, no daily stop); risk7: isolated multi-day "core" book (core_spy, no daily stop); risk6: "pead"; risk5: "trend"; risk4: "swing"
+VERSION = "2026-11-13.v4-risk10"   # risk10: isolated intraday "copilot" book (co-pilot shadow trades, SPY+QQQ, $150 daily stop); risk9: isolated multi-day "score" book (core_sso, 2 positions, no daily stop); risk8: isolated multi-day "tcore" book (core_trend, 2 positions, no daily stop); risk7: isolated multi-day "core" book (core_spy, no daily stop); risk6: "pead"; risk5: "trend"; risk4: "swing"
 LIMITS = {
     "desk_max_open": 50,
-    "book_max_open": {"index": 4, "premium": 6, "stocks": 40, "catalyst": 8, "sprint": 8, "swing": 10, "trend": 2, "pead": 10, "core": 1, "tcore": 2, "score": 2},
+    "book_max_open": {"index": 4, "premium": 6, "stocks": 40, "catalyst": 8, "sprint": 8, "swing": 10, "trend": 2, "pead": 10, "core": 1, "tcore": 2, "score": 2, "copilot": 2},
     "symbol_max_open": 4,
-    "book_max_same_direction": {"index": 4, "premium": 4, "stocks": 25, "catalyst": 6, "sprint": 8, "swing": 10, "trend": 2, "pead": 10, "core": 1, "tcore": 2, "score": 2},
+    "book_max_same_direction": {"index": 4, "premium": 4, "stocks": 25, "catalyst": 6, "sprint": 8, "swing": 10, "trend": 2, "pead": 10, "core": 1, "tcore": 2, "score": 2, "copilot": 2},
     "book_daily_loss_usd": {"index": 600.0, "premium": 800.0, "stocks": 2000.0, "catalyst": 800.0, "sprint": 600.0,
-                            "swing": 90.0, "trend": 90.0, "pead": 90.0},   # swing/trend/pead: the risk framework's daily stop (-3% of $3,000)
+                            "swing": 90.0, "trend": 90.0, "pead": 90.0, "copilot": 150.0},   # swing/trend/pead: the risk framework's daily stop (-3% of $3,000)
     "selling_ledgers": ("orb_credit", "ic_20d"),
-    "isolated_books": ("sprint", "swing", "trend", "pead", "core", "tcore", "score"),
+    "isolated_books": ("sprint", "swing", "trend", "pead", "core", "tcore", "score", "copilot"),
     "multi_day_books": ("swing", "pead", "core", "tcore", "score"),
 }
 

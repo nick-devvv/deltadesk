@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 RELEASE = "4.0"
-RELEASE_ID = "2026-11-13.v4-core-sso"   # adds core_sso (T44 SSO core + SGOV park, paper); core_trend new buys off; v4-core-trend added core_trend
+RELEASE_ID = "2026-11-13.v4-copilot"   # adds copilot (B8 pattern alerts + B5 event flags + B9 paper shadows + B4 report card); v4-core-sso adds core_sso (T44 SSO core + SGOV park, paper); core_trend new buys off; v4-core-trend added core_trend
 HERE = Path(__file__).resolve().parent
 SOURCE_GLOBS = ("*.py", "index.html", "config/*.json", "grok/*.md", "grok/*.json")
 
@@ -45,7 +45,7 @@ def component_versions():
                        ("orb_credit", ("VERSION",)), ("ic_20d", ("VERSION",)), ("sip_orb", ("VERSION",)),
                        ("news_drift", ("VERSION",)), ("chain_logger", ("VERSION",)), ("v4risk", ("VERSION",)),
                        ("sprint_paper", ("VERSION", "SPRINT_VERSION")), ("etf10_rsi2", ("VERSION",)), ("nb_shares", ("VERSION",)), ("pead_t21", ("VERSION", "TP_VERSION")),
-                       ("core_spy", ("VERSION",)), ("core_trend", ("VERSION",)), ("core_sso", ("VERSION",)), ("killfile", ("VERSION",))):
+                       ("core_spy", ("VERSION",)), ("core_trend", ("VERSION",)), ("core_sso", ("VERSION",)), ("killfile", ("VERSION",)), ("copilot", ("VERSION",))):
         try:
             m = __import__(mod)
             for a in attrs:
