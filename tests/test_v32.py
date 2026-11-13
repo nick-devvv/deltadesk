@@ -403,7 +403,7 @@ def test_chart_timeframes_align_without_duplicates(chart_env):
     clock, fk = chart_env
     _go(clock, 11, 7, 30)
     one = chartfeed.build("SPY", 1)
-    for tf in (1, 2, 5, 15):
+    for tf in (1, 2, 5, 10, 15):
         d = chartfeed.build("SPY", tf)
         ts = [c["time"] for c in d["candles"]]
         assert ts == sorted(set(ts)), "candle times must be unique and increasing"

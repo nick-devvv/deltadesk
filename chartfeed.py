@@ -1,7 +1,7 @@
 """chartfeed.py - data for the desk's own chart, built from the SAME snapshot the engine decides on.
 
 Any ticker Schwab supports (SPY/QQQ, a scanner name, a searched symbol). Candles are Schwab 1m bars aggregated to
-1/2/5/15 minutes on the 09:30 grid. Two sessions are sent (the previous one and today) so you can pan back.
+1/2/5/10/15 minutes on the 09:30 grid. Two sessions are sent (the previous one and today) so you can pan back.
 
 What is real and what is provisional:
   * final candles: Schwab bars (stream CHART_EQUITY or REST pricehistory) whose minutes have ended;
@@ -21,7 +21,7 @@ import indicators as I
 import marketdata
 import store
 
-TFS = (1, 2, 5, 15)
+TFS = (1, 2, 5, 10, 15)          # 10m added 2026-11-13: Nick's after-11:00 chart
 LIVE_STATES = ("ORB FORMING", "OPEN", "NO NEW ENTRIES", "ALL OUT")
 
 
