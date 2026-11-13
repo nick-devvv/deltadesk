@@ -903,6 +903,16 @@ if __name__ == "__main__":
         print("v4 trend core (core_trend, paper, held):", "started" if core_trend.start() else "off", flush=True)
     except Exception as e:
         print("Trend core ledger not started:", e, flush=True)
+    try:                                           # the T44 SSO trend core (paper, multi-day; own thread and risk book)
+        import core_sso
+        print("v4 SSO trend core (core_sso, paper, held):", "started" if core_sso.start() else "off", flush=True)
+    except Exception as e:
+        print("SSO trend core ledger not started:", e, flush=True)
+    try:                                           # B7: `touch KILL` in the desk folder halts v4 paper entries
+        import killfile
+        print("KILL file watcher:", "started" if killfile.start() else "off", flush=True)
+    except Exception as e:
+        print("KILL file watcher not started:", e, flush=True)
     try:                                           # v3.5: journal/learning tables + the preregistered hypotheses
         import learning
         learning.migrate()

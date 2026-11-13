@@ -21,6 +21,9 @@ GET  /api/v4/core             the T30b SPY core (core_spy, held): PAPER (simulat
                               P/L by ledger, margin interest, overnight gross, margin warning), the interest log, switch
 GET  /api/v4/tcore            the T47 trend core (core_trend, held): PAPER (simulated fills), today's SPY/QQQ trend signals,
                               the T47 account view (equity, P/L by ledger, margin interest, maintenance need), interest log, switch
+GET  /api/v4/score            the T44 SSO trend core (core_sso, held, SGOV while out): PAPER (simulated fills), today's SPY trend
+                              signal, the T44 account view, interest log, switch
+GET  /api/v4/killfile         B7: the KILL file watcher (touch KILL in the desk folder = v4 kill switch, once per file)
 GET  /api/v4/sprint           the sprint forward-test ledgers (fb_or, otm_put, otm_bounce, otm_h): PAPER (simulated fills), their
                               source backtest runs and numbers (in-sample), the rules read from the pinned specs, switches,
                               deviations from the backtest
@@ -60,6 +63,12 @@ def get(path, q):
     if path == "/api/v4/tcore":
         import core_trend
         return core_trend.status()
+    if path == "/api/v4/killfile":
+        import killfile
+        return killfile.status()
+    if path == "/api/v4/score":
+        import core_sso
+        return core_sso.status()
     if path == "/api/v4/core":
         import core_spy
         return core_spy.status()
