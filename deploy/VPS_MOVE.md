@@ -1,5 +1,7 @@
 # Moving the desk to the InterServer server (2026-11-13)
 
+**Done 2026-11-13, 04:10 AM PT.** Tests 644 passed / 0 failed, database `ok`, freeze test restarted the desk in about 2.5 minutes, funnel back on the same address. What differed from the plan: Chart's Tailscale runs in userspace mode, so SSH goes through `-o ProxyCommand='tailscale nc %h %p'` to the server's Tailscale IP; Chart's computer had no `rsync`, so files went over the same SSH with `tar`; the machine names had been set by hand, so Nick renamed them in the admin (`chart-box`, `nicks-desk`).
+
 **Why:** Chart's computer sleeps whenever Chart is idle (it slept through most of Nov 11-12), so the desk missed the market. The new server never sleeps.
 
 **Server:** InterServer, 1 slice (1 core, 2 GB, 40 GB SSD), New Jersey, Ubuntu 24.04, $3/month, Nick's account. Tailscale name `deltadesk-cloud`, then `nicks-desk` after the cutover. User `box`, desk in `~/desk`, same layout as Chart's computer.
