@@ -27,3 +27,4 @@ webhook.env
 *.bak_*
 .deploy_prev
 trader/
+KILL

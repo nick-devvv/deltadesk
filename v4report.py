@@ -46,7 +46,10 @@ BOOKS = [
      ["core_spy"]),
     ("tcore", "Trend core (T47, held, 2026-11-12): PAPER (simulated fills) half SSO while SPY is in its 200-day uptrend, half QLD "
               "while QQQ is, sized to the T47 account (trend core + noise band + ETF swing, minus 6.5% margin interest); BACKTEST "
-              "sealed 2022-2025 passed (research window seen); forward test, not promoted", ["core_trend"]),
+              "sealed 2022-2025 passed (research window seen); forward test, not promoted; new buys off since 2026-11-13", ["core_trend"]),
+    ("score", "SSO trend core (T44, held, 2026-11-13): PAPER (simulated fills) SSO while SPY is in its 200-day uptrend, SGOV "
+              "(T-bills) while it is not, sized to the T44 account (core + noise band + ETF swing, minus 6.5% margin interest); "
+              "BACKTEST research and sealed 2022-2025 passed, T48 dot-com stress passed; forward test, not promoted", ["core_sso"]),
 ]
 SPRINT_LEDGERS = ("fb_or", "otm_put", "otm_bounce", "otm_h")
 LEGACY_TABLE = ("noise", "old")             # ledgers kept in the v3 positions table, read-only here
@@ -65,7 +68,8 @@ LABELS = {"old": "Old rules (Oct 28): legacy forward test (not from a published 
           "pead_t21": "Post-earnings drift, S&P 500 shares, 5 x $600, 20 sessions (forward test of T21)",
           "pead_t21_tp": "Post-earnings drift + take-profit, S&P 500 shares, 5 x $600 (forward test of T23a)",
           "core_spy": "SPY core = T30b account equity, held, monthly rebalance (forward test of T30b)",
-          "core_trend": "Trend core: half SSO / half QLD by 200-day trend, held, traded near the close (forward test of T47; SSO half = T44)"}
+          "core_trend": "Trend core: half SSO / half QLD by 200-day trend, held, traded near the close (forward test of T47; SSO half = T44)",
+          "core_sso": "SSO trend core: SSO by SPY's 200-day trend, SGOV while out, held, traded near the close (forward test of T44)"}
 SHARE_LEDGERS = ("sip_orb5", "sip_orb5_x", "sip_orb15", "earn_day")
 
 
@@ -164,6 +168,12 @@ def ledger_row(ledger, book, since):
             row.update({k: v for k, v in core_trend.report_meta(tr).items() if k != "label"}, evidence=core_trend.LABEL)
         except Exception as e:
             row["tcore_error"] = type(e).__name__
+    if book == "score":                             # evidence label, the T44/T48 backtest numbers and the T44 account view
+        try:
+            import core_sso
+            row.update({k: v for k, v in core_sso.report_meta(tr).items() if k != "label"}, evidence=core_sso.LABEL)
+        except Exception as e:
+            row["score_error"] = type(e).__name__
     if book == "trend":                             # evidence labels + the T12 backtest numbers (bp per trade day)
         try:
             import nb_shares
@@ -262,8 +272,13 @@ def overview(since="2026-11-02"):
         tcore_acct = core_trend.account()
     except Exception as e:
         tcore_acct = {"error": type(e).__name__}
+    try:
+        import core_sso
+        score_acct = core_sso.account()
+    except Exception as e:
+        score_acct = {"error": type(e).__name__}
     return {"since": since, "books": books, "tracking": trk, "risk": v4risk.status(), "news_drift": nd, "chains": ch, "stocks_worker": sip,
-            "index_engine": idx, "swing_worker": swing, "core_account": core_acct, "trend_core_account": tcore_acct,
+            "index_engine": idx, "swing_worker": swing, "core_account": core_acct, "trend_core_account": tcore_acct, "sso_core_account": score_acct,
             "retired": {"list": retire.retired_list(), "ledgers": retired_rows("2000-01-01")},
             "void": [{k: p[k] for k in ("id", "ledger", "date", "exit_reason")} for p in S.positions(status="VOID")],
             "note": ("Paper only: simulated fills on live Schwab quotes, never real money. Under 30 trades is not evidence. "

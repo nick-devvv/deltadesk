@@ -357,13 +357,13 @@ def test_report_api_release_health_page_and_switch(env):
     v = v4api.view(opens("SSO")[0])
     assert "200-day average" in v["next"]
     import release
-    assert release.component_versions()["core_trend.VERSION"] == K.VERSION and "v4-core-trend" in release.RELEASE_ID
+    assert release.component_versions()["core_trend.VERSION"] == K.VERSION
     import health
     assert "v4tcore" in health.WORKERS
     assert 'tcore: "Trend core"' in (ROOT / "index.html").read_text()
     import json
     cfg = json.loads((ROOT / "config" / "v4.json").read_text())
-    assert cfg["core_trend"] is True and cfg["core_spy"] is True
+    assert cfg["core_trend"] is False and cfg["core_spy"] is True and cfg["core_sso"] is True   # B2 (2026-11-13): no new buys
 
 
 def test_no_order_path_and_no_overnight_sweep_in_the_module():
