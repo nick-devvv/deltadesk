@@ -306,6 +306,64 @@ def test_flat_by_1555_and_overnight_leftover(env):
     assert p["status"] == "CLOSED" and p["exit_reason"] == "flat by 15:55"
 
 
+def test_indicator_math_and_readout():
+    up = list(range(1, 40))
+    assert P.rsi_s(up)[-1] == 100.0 and P.rsi_s(up[::-1])[-1] == 0.0
+    idx = pd.date_range(_ts(DAY, 9, 30), periods=40, freq="5min")
+    c = [100 + 0.1 * k for k in range(40)]
+    b = pd.DataFrame({"o": c, "h": [x + 0.05 for x in c], "l": [x - 0.05 for x in c], "c": c, "v": [1000.0] * 39 + [3000.0]}, index=idx)
+    ind = P.indicators(b, 40, 103.0, 102.9)
+    assert ind["ema9"] > ind["ema21"] and ind["rsi"] == 100.0 and ind["rvol"] == 3.0 and ind["hist"] is not None
+    line = P.readout(ind)
+    assert "EMA9 > EMA21 (up)" in line and "RSI 100 overbought" in line and "volume 3.0x" in line and "VWAP +" in line
+    assert P.readout({}) == "warming up"
+
+
+def test_indicator_alerts_on_hand_made_candles():
+    def bars(rows):
+        idx = pd.date_range(_ts(DAY, 10, 0), periods=len(rows), freq="5min")
+        return pd.DataFrame(rows, columns=["o", "h", "l", "c", "v"], index=idx)
+    b = bars([[100.6, 100.7, 100.5, 100.6, 1], [100.40, 100.55, 100.30, 100.50, 1]])     # pulls back to VWAP 100.32, closes green
+    got = {(h["pattern"], h["side"]) for h in P.detect_ind(b, {"vwap": 100.32, "vwap_prev": 100.30})}
+    assert ("vwap_bounce", "long") in got
+    b2 = bars([[100.2, 100.3, 100.1, 100.2, 1], [100.2, 100.6, 100.18, 100.55, 1]])     # closes back above VWAP 100.30
+    assert ("vwap_cross", "long") in {(h["pattern"], h["side"]) for h in P.detect_ind(b2, {"vwap": 100.30, "vwap_prev": 100.30})}
+    ind = {"ema9": 100.2, "ema21": 100.1, "ema9_prev": 100.0, "ema21_prev": 100.1, "rsi": 31.0, "rsi_prev": 28.0}
+    got = {(h["pattern"], h["side"]) for h in P.detect_ind(b2, ind)}
+    assert {("ema_cross", "long"), ("rsi_turn", "long")} <= got
+
+
+def test_alerts_carry_the_indicator_line_and_warm_up_uses_the_prior_session(env):
+    run(env["clock"], (10, 5, 5), (10, 5, 5))
+    a = P.alerts_for(DAY)[0]
+    assert "\nIndicators: " in a["body"] and "VWAP" in a["body"] and a["indicators"]["vwap"] is not None
+
+    class W:
+        calls = []
+
+        def m1(self, t, s, e):
+            self.calls.append(s.date())
+            return day_bars(s.date()) if s.date().weekday() == 0 else pd.DataFrame()     # only Monday has bars
+    P._warm.clear()
+    m, d = P.warmup("SPY", date(2026, 11, 25), W())
+    assert d == date(2026, 11, 23) and len(m) == 390 and W.calls == [date(2026, 11, 24), date(2026, 11, 23)]
+    P.warmup("SPY", date(2026, 11, 25), W())
+    assert len(W.calls) == 2                                          # fetched once a day
+
+
+def test_tested_noise_band_entry_and_exit_push_once(env):
+    S.open_position({"id": "nbs_spy_ls:2026-11-24:10:00", "ledger": "nbs_spy_ls", "book": "trend", "kind": "shares", "date": "2026-11-24",
+                     "ticker": "SPY", "direction": "long", "side": "long", "qty": 29.0, "entry_px": 100.5, "entry_t": "2026-11-24T10:00:02",
+                     "legs": [], "plan": {}})
+    run(env["clock"], (10, 1), (10, 2))
+    band = [x for x in env["pushed"] if x[0].startswith("TESTED")]
+    assert len(band) == 1 and band[0][0] == "TESTED SPY noise band LONG (paper)" and "T12a" in band[0][1] and band[0][2] == "high"
+    S.close_position("nbs_spy_ls:2026-11-24:10:00", 100.9, "back inside the band")
+    run(env["clock"], (10, 3), (10, 4))
+    band = [x for x in env["pushed"] if x[0].startswith("TESTED")]
+    assert len(band) == 2 and "EXIT" in band[1][0] and "PAPER" in band[1][1]
+
+
 def test_wiring_and_no_order_path():
     import json
     import alerts

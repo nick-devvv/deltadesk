@@ -5,6 +5,11 @@ builds 5- and 15-minute candles, maps the day's levels, and runs the pattern lib
 library.md (123 YouTube transcripts, Monid, 2026-11-13). Each pattern that fires sends a phone alert (alerts.py, ntfy)
 with the level, the checklist, a price-level stop and first target computed here, a 0DTE strike idea, the news/event
 flags of the day (B5) and the alert lag. Nick decides and places any real trade himself.
+Indicators (copilot-3): every alert carries one line of what the indicators say on that candle - distance from VWAP, EMA
+9 vs 21, RSI(14), MACD(12,26,9) histogram and volume vs the last 20 candles - warmed up with the prior session's candles.
+Indicator alerts: VWAP bounce, VWAP reclaim/loss, EMA 9/21 cross, RSI turning back from over 70 / under 30 (all CONTEXT).
+TESTED tier: a separate push when the noise band (nbs_spy_ls, T12a: the one intraday signal that passed, in shares) opens
+or closes a PAPER position.
 Pushes: one per ticker per candle (the best alert, the rest listed under it, "MIXED" when long and short patterns fire
 together), only when the best alert ticks at least 5 of the 7 checklist boxes (config "copilot_push_min"); the rest go
 to the desk feed and the report card. On a FOMC / CPI / jobs / monthly-OPEX day one RISK push after 09:35 (B5).
@@ -39,7 +44,8 @@ import v4exec
 import v4risk
 import v4store as S
 
-VERSION = "2026-11-13.copilot-2"   # copilot-2: evidence labels after T72/T73 (detection unchanged from copilot-1)
+VERSION = "2026-11-13.copilot-3"   # copilot-3: indicator readout (VWAP, EMA 9/21, RSI 14, MACD, volume) + VWAP bounce/cross,
+#   EMA 9/21 cross, RSI turn alerts + TESTED noise-band pushes; copilot-2: evidence labels after T72/T73
 LEDGER, BOOK = "copilot", "copilot"
 TICKERS = ("SPY", "QQQ")
 TOL = 0.0005                      # "at a level": within 0.05%
@@ -52,12 +58,18 @@ EVIDENCE = {
     "wick_reject": "TESTED-FAIL (T73: -1.1 bp/trade on SPY 2016-21)", "engulfing": "TESTED-FAIL (part of T43's inputs)", "hammer": "UNTESTED",
     "shooting_star": "UNTESTED", "inside_break": "UNTESTED", "momentum": "UNTESTED", "star": "UNTESTED",
     "break_retest": "TESTED-FAIL (T40, T41)", "sweep": "TESTED-FAIL (T72: -1.2 bp/trade on SPY 2016-21)", "bos": "UNTESTED",
-    "fvg": "TESTED-FAIL (T66)", "double": "UNTESTED", "flag": "UNTESTED"}
+    "fvg": "TESTED-FAIL (T66)", "double": "UNTESTED", "flag": "UNTESTED",
+    "vwap_bounce": "TESTED-FAIL (T64 VWAP retest: -0.96 bp/trade on SPY 2016-21)",
+    "vwap_cross": "TESTED-FAIL (T39: VWAP side has an edge before costs, loses after)",
+    "ema_cross": "TESTED-FAIL (T43: EMAs and MACD in the chart model = coin flip)", "rsi_turn": "UNTESTED intraday"}
 NAMES = {"wick_reject": "rejection wick", "engulfing": "engulfing candle", "hammer": "hammer", "shooting_star": "shooting star",
          "inside_break": "inside-bar break", "momentum": "momentum candle", "star": "morning/evening star",
          "break_retest": "break and retest", "sweep": "liquidity sweep", "bos": "break of structure", "fvg": "fair value gap",
-         "double": "double top/bottom", "flag": "bull/bear flag"}
+         "double": "double top/bottom", "flag": "bull/bear flag", "vwap_bounce": "VWAP bounce", "vwap_cross": "VWAP reclaim/loss",
+         "ema_cross": "EMA 9/21 cross", "rsi_turn": "RSI turn from extreme"}
 _state = {"status": "idle", "thread": None, "stop": False, "last_error": None, "step_s": None}
+_warm = {}                        # (ticker, day) -> the prior session's 1-minute bars (indicator warm-up), fetched once a day
+BAND_LEDGER = "nbs_spy_ls"        # the noise band on SPY shares: the one intraday signal that passed (T12a)
 _lock = threading.RLock()
 
 
@@ -271,6 +283,117 @@ def detect(b, lv):
     return hits
 
 
+# ================================================================ indicators (pure; finished candles only)
+def ema_s(x, n):
+    return pd.Series(x, dtype=float).ewm(span=n, adjust=False).mean().to_numpy()
+
+
+def rsi_s(c, n=14):
+    """Wilder RSI on closes."""
+    d = np.diff(np.asarray(c, dtype=float), prepend=np.nan)
+    up = pd.Series(np.where(d > 0, d, 0.0)).ewm(alpha=1 / n, adjust=False).mean().to_numpy()
+    dn = pd.Series(np.where(d < 0, -d, 0.0)).ewm(alpha=1 / n, adjust=False).mean().to_numpy()
+    with np.errstate(divide="ignore", invalid="ignore"):
+        r = 100 - 100 / (1 + up / dn)
+    r = np.where(dn == 0, np.where(up == 0, 50.0, 100.0), r)
+    r[: n] = np.nan
+    return r
+
+
+def _align(ts, idx):
+    ts = pd.Timestamp(ts)
+    if idx.tz is not None:
+        return ts.tz_localize(idx.tz) if ts.tzinfo is None else ts.tz_convert(idx.tz)
+    return ts.tz_localize(None) if ts.tzinfo is not None else ts
+
+
+def vwap_at(rth, ends):
+    """Session VWAP as of each candle end time (the 1-minute bars that started before it)."""
+    r = norm(rth)
+    if not len(r) or r["v"].sum() <= 0:
+        return [None] * len(ends)
+    tp = ((r["h"] + r["l"] + r["c"]) / 3 * r["v"]).cumsum().to_numpy()
+    vv = r["v"].cumsum().to_numpy()
+    out = []
+    for e in ends:
+        k = int(r.index.searchsorted(_align(e, r.index), side="left"))
+        out.append(float(tp[k - 1] / vv[k - 1]) if k > 0 and vv[k - 1] > 0 else None)
+    return out
+
+
+def indicators(b_all, n_today, vw, vw_prev):
+    """Readout for the last finished candle of `b_all` (prior session + today, o/h/l/c/v). None where too few candles."""
+    c = b_all["c"].to_numpy()
+    v = b_all["v"].to_numpy()
+    out = {"vwap": vw, "vwap_prev": vw_prev, "vwap_pct": None if not vw else round(100 * (c[-1] - vw) / vw, 3)}
+    if len(c) >= 22:
+        e9, e21 = ema_s(c, 9), ema_s(c, 21)
+        out.update(ema9=round(e9[-1], 3), ema21=round(e21[-1], 3), ema9_prev=round(e9[-2], 3), ema21_prev=round(e21[-2], 3))
+    if len(c) >= 16:
+        r = rsi_s(c)
+        out.update(rsi=None if np.isnan(r[-1]) else round(float(r[-1]), 1), rsi_prev=None if np.isnan(r[-2]) else round(float(r[-2]), 1))
+    if len(c) >= 35:
+        m = ema_s(c, 12) - ema_s(c, 26)
+        sig = ema_s(m, 9)
+        h = m - sig
+        out.update(macd=round(float(m[-1]), 4), macd_signal=round(float(sig[-1]), 4), hist=round(float(h[-1]), 4), hist_prev=round(float(h[-2]), 4))
+    if len(v) >= 6:
+        base = float(np.mean(v[-21:-1])) if len(v) > 1 else 0.0
+        out["rvol"] = round(float(v[-1]) / base, 2) if base > 0 else None
+    out["n_today"] = n_today
+    return out
+
+
+def readout(ind):
+    """One phone line: what the indicators are saying on this candle."""
+    parts = []
+    if ind.get("vwap_pct") is not None:
+        parts.append(f"VWAP {ind['vwap_pct']:+.2f}%")
+    if ind.get("ema9") is not None:
+        parts.append(f"EMA9 {'>' if ind['ema9'] > ind['ema21'] else '<'} EMA21 ({'up' if ind['ema9'] > ind['ema21'] else 'down'})")
+    if ind.get("rsi") is not None:
+        parts.append(f"RSI {ind['rsi']:.0f}" + (" overbought" if ind["rsi"] >= 70 else " oversold" if ind["rsi"] <= 30 else ""))
+    if ind.get("hist") is not None:
+        parts.append(f"MACD hist {ind['hist']:+.3f} {'rising' if ind['hist'] > ind['hist_prev'] else 'falling'}")
+    if ind.get("rvol") is not None:
+        parts.append(f"volume {ind['rvol']:.1f}x")
+    return " | ".join(parts) if parts else "warming up"
+
+
+def detect_ind(b, ind):
+    """Indicator alerts on the LAST finished candle of today's candles `b` (o/h/l/c)."""
+    hits = []
+    if len(b) < 2:
+        return hits
+    o, h, l, c = (b[k].to_numpy() for k in ("o", "h", "l", "c"))
+    i = len(b) - 1
+    rng, body = h[i] - l[i], abs(c[i] - o[i])
+    vw, vwp = ind.get("vwap"), ind.get("vwap_prev")
+    lo5, hi5 = float(l[max(0, i - 4):i + 1].min()), float(h[max(0, i - 4):i + 1].max())
+    if vw and vwp:
+        L = {"name": "VWAP", "px": round(vw, 2)}
+        if c[i - 1] > vwp and l[i] <= vw * (1 + TOL) and c[i] > vw and c[i] > o[i]:
+            hits.append(_hit("vwap_bounce", "long", L, min(l[i], vw) - 0.01, "pulled back to VWAP from above and closed green above it"))
+        elif c[i - 1] < vwp and h[i] >= vw * (1 - TOL) and c[i] < vw and c[i] < o[i]:
+            hits.append(_hit("vwap_bounce", "short", L, max(h[i], vw) + 0.01, "rallied to VWAP from below and closed red under it"))
+        if rng > 0 and body >= 0.5 * rng:
+            if c[i - 1] <= vwp and c[i] > vw * (1 + TOL):
+                hits.append(_hit("vwap_cross", "long", L, l[i] - 0.01, "closed back above VWAP (reclaim)"))
+            elif c[i - 1] >= vwp and c[i] < vw * (1 - TOL):
+                hits.append(_hit("vwap_cross", "short", L, h[i] + 0.01, "closed below VWAP (lost it)"))
+    if ind.get("ema9") is not None:
+        if ind["ema9_prev"] <= ind["ema21_prev"] and ind["ema9"] > ind["ema21"]:
+            hits.append(_hit("ema_cross", "long", None, lo5 - 0.01, "EMA 9 crossed above EMA 21"))
+        elif ind["ema9_prev"] >= ind["ema21_prev"] and ind["ema9"] < ind["ema21"]:
+            hits.append(_hit("ema_cross", "short", None, hi5 + 0.01, "EMA 9 crossed below EMA 21"))
+    if ind.get("rsi") is not None and ind.get("rsi_prev") is not None:
+        if ind["rsi_prev"] < 30 <= ind["rsi"]:
+            hits.append(_hit("rsi_turn", "long", None, lo5 - 0.01, f"RSI back above 30 ({ind['rsi_prev']:.0f} -> {ind['rsi']:.0f})"))
+        elif ind["rsi_prev"] > 70 >= ind["rsi"]:
+            hits.append(_hit("rsi_turn", "short", None, hi5 + 0.01, f"RSI back below 70 ({ind['rsi_prev']:.0f} -> {ind['rsi']:.0f})"))
+    return hits
+
+
 # ================================================================ checklist, events (B5) and the plan (pure)
 def opex_day(d):
     """Monthly options expiration: the third Friday."""
@@ -325,7 +448,7 @@ def plan(hit, price, lv):
             "option": f"0DTE {strike}{'C' if side == 'long' else 'P'} (1 strike out of the money)"}
 
 
-def text(t, tf, hit, pl, chk, ev, lag_s):
+def text(t, tf, hit, pl, chk, ev, lag_s, ind_line=None):
     yn = lambda v: "?" if v is None else ("Y" if v else "N")  # noqa: E731
     boxes = (f"bias {yn(chk['bias_1h'])} | level {yn(chk['at_level'])} | 5m close Y | volume {yn(chk['volume'])} | "
              f"VWAP {yn(chk['vwap_side'])} | time {yn(chk['time_ok'])} | news {yn(chk['news_clear'])}")
@@ -333,7 +456,8 @@ def text(t, tf, hit, pl, chk, ev, lag_s):
     lvl = f" @ {hit['level']['name']} {hit['level']['px']:.2f}" if hit.get("level") else ""
     title = f"COPILOT {t} {hit['side'].upper()}: {NAMES[hit['pattern']]}{lvl} ({tf})"
     body = "\n".join([f"Close {pl['entry_ref']:.2f} | stop {pl['stop']:.2f} | target {pl['target']:.2f} ({pl['target_name']}, {pl['r_to_target']}R)",
-                      f"Checklist {score}/7: {boxes}", f"Why: {hit['why']}", f"Option idea: {t} {pl['option']}",
+                      f"Checklist {score}/7: {boxes}", f"Why: {hit['why']}"]
+                     + ([f"Indicators: {ind_line}"] if ind_line else []) + [f"Option idea: {t} {pl['option']}",
                       f"Evidence: {EVIDENCE[hit['pattern']]} - context, not a tested edge"]
                      + ([f"Today: {'; '.join(ev['notes'])}"] if ev["notes"] else []) + [f"lag {lag_s:.1f}s"])
     return title, body, score
@@ -478,6 +602,52 @@ def _ema20_daily(daily, price, day):
     return float(s.ewm(span=20, adjust=False).mean().iloc[-1])
 
 
+def warmup(t, day, f):
+    """The prior session's regular-hours 1-minute bars for indicator warm-up: (bars, date) or (None, None). Fetched once a
+    day per ticker; a failed fetch is retried after 5 minutes."""
+    k = (t, str(day))
+    got = _warm.get(k)
+    if got and (got[0] is not None or time.time() - got[2] < 300):
+        return got[0], got[1]
+    fn = getattr(f, "m1", None)
+    res = (None, None)
+    if callable(fn):
+        d = day
+        for _ in range(7):
+            d -= timedelta(days=1)
+            if d.weekday() >= 5:
+                continue
+            s0 = datetime.combine(d, datetime.min.time(), core.ET).replace(hour=9, minute=30)
+            try:
+                m = fn(t, s0, s0.replace(hour=16))
+            except Exception:
+                m = None
+            if m is not None and len(m):
+                res = (m, d)
+                break
+    if len(_warm) > 40:
+        _warm.clear()
+    _warm[k] = (res[0], res[1], time.time())
+    return res
+
+
+def band_pushes(day):
+    """TESTED tier: one push when the noise band (T12a, SPY shares) opens or closes a PAPER position today."""
+    import alerts
+    n = 0
+    for p in S.positions(ledger=BAND_LEDGER, day=str(day)):
+        d, px = p["direction"].upper(), p["entry_px"]
+        n += alerts.alert("copilot", f"TESTED {p['ticker']} noise band {d} (paper)",
+                          f"Paper entry {px} at {str(p['entry_t'])[11:16]}. The one intraday signal that passed the desk's tests "
+                          "(T12a, SPY shares; BACKTEST +1.76 bp/day 2003-21, +2.18 sealed 2022-25; it lost in 0DTE options, T42). "
+                          "Exit: next check back inside the band or the VWAP stop; flat by the close.", f"band:{p['id']}:open", "high")
+        if p["status"] == "CLOSED":
+            n += alerts.alert("copilot", f"TESTED {p['ticker']} noise band EXIT (paper)",
+                              f"Paper exit {p['exit_px']} ({p['exit_reason']}); P/L ${float(p['realized'] or 0):.2f} PAPER.",
+                              f"band:{p['id']}:close", "high")
+    return n
+
+
 def scan(t, day, now, f, ev):
     """Run the library on the last finished 5- and 15-minute candles of `t`. Returns new alert records."""
     m1 = C.finished(f.m1_today(t, day), now)
@@ -492,6 +662,8 @@ def scan(t, day, now, f, ev):
     lv = levels(daily, ext, rth, day)
     vw = vwap(rth[rth.index.date == day].between_time("09:30", "15:59"))
     seen = {a["id"] for a in alerts_for(day)}
+    warm, wday = warmup(t, day, f)
+    rth_today = rth[rth.index.date == day].between_time("09:30", "15:59")
     out = []
     for tf in (5, 15):
         b = resample(m1, tf, day)
@@ -503,7 +675,12 @@ def scan(t, day, now, f, ev):
             continue
         price = float(b["c"].iloc[-1])
         ema = _ema20_daily(daily, price, day)
-        for hit in detect(b, lv):
+        bw = resample(warm, tf, wday) if warm is not None else None
+        b_all = pd.concat([bw, b]) if bw is not None and len(bw) else b
+        v_now, v_prev = vwap_at(rth_today, [bar_end, bar_t])
+        ind = indicators(b_all, len(b), v_now, v_prev)
+        line = readout(ind)
+        for hit in detect(b, lv) + detect_ind(b, ind):
             aid = f"{t}|{day}|{bar_t.strftime('%H:%M')}|{tf}m|{hit['pattern']}|{hit['side']}"
             if aid in seen:
                 continue
@@ -512,11 +689,12 @@ def scan(t, day, now, f, ev):
                 continue
             chk = checklist(hit, b, ema, price, vw, now, ev)
             lag = (pd.Timestamp(now) - bar_end).total_seconds()
-            title, body, score = text(t, f"{tf}m", hit, pl, chk, ev, lag)
+            title, body, score = text(t, f"{tf}m", hit, pl, chk, ev, lag, line)
             out.append({"id": aid, "ticker": t, "tf": f"{tf}m", "bar_t": bar_t.isoformat(), "pattern": hit["pattern"],
                         "side": hit["side"], "level": hit.get("level"), "why": hit["why"], "plan": pl, "checklist": chk,
                         "checklist_score": score, "events": ev, "lag_s": round(lag, 1), "title": title, "body": body,
-                        "evidence": EVIDENCE[hit["pattern"]], "at": now.isoformat(timespec="seconds"), "version": VERSION})
+                        "evidence": EVIDENCE[hit["pattern"]], "indicators": ind, "at": now.isoformat(timespec="seconds"),
+                        "version": VERSION})
     return out
 
 
@@ -650,6 +828,10 @@ def step(now=None):
             return
         ev = events(now)
         briefing(now, ev)
+        try:
+            band_pushes(day)
+        except Exception as e:
+            _state["last_error"] = f"band: {type(e).__name__}: {e}"[:200]
         new = []
         for t in TICKERS:
             try:
