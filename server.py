@@ -6,7 +6,8 @@
 Env: DESK_TOKEN (link secret), CHAT_WEBHOOK + CHAT_WEBHOOK_KEY (Chart's Grok webhook),
      ALPACA_KEY + ALPACA_SECRET (PAPER keys only), PORT (default 8765), QUIVER_KEY (optional, Quiver data),
      SCHWAB_APP_KEY + SCHWAB_APP_SECRET (+ SCHWAB_CALLBACK, default https://127.0.0.1) optional live market data,
-     NTFY_TOPIC (optional: phone alerts through the free ntfy app).
+     NTFY_TOPIC (optional: phone alerts through the free ntfy app),
+     TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID (optional: Telegram alerts with Took / Skipped buttons; telegram_alerts.py).
 
 Main endpoints:
   GET  /api/state?since=N    everything the page shows + new events (poll every 2 s)
@@ -917,6 +918,11 @@ if __name__ == "__main__":
         print("Co-pilot alerts (copilot, SPY/QQQ):", "started" if copilot.start() else "off", flush=True)
     except Exception as e:
         print("Co-pilot not started:", e, flush=True)
+    try:                                           # Telegram alerts: button taps + /status (only if both env values are set)
+        import telegram_alerts
+        print("Telegram alerts:", "on" if telegram_alerts.start() else "off (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID not set)", flush=True)
+    except Exception as e:
+        print("Telegram alerts not started:", e, flush=True)
     try:                                           # B7: `touch KILL` in the desk folder halts v4 paper entries
         import killfile
         print("KILL file watcher:", "started" if killfile.start() else "off", flush=True)

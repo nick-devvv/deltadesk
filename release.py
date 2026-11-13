@@ -45,7 +45,7 @@ def component_versions():
                        ("orb_credit", ("VERSION",)), ("ic_20d", ("VERSION",)), ("sip_orb", ("VERSION",)),
                        ("news_drift", ("VERSION",)), ("chain_logger", ("VERSION",)), ("v4risk", ("VERSION",)),
                        ("sprint_paper", ("VERSION", "SPRINT_VERSION")), ("etf10_rsi2", ("VERSION",)), ("nb_shares", ("VERSION",)), ("pead_t21", ("VERSION", "TP_VERSION")),
-                       ("core_spy", ("VERSION",)), ("core_trend", ("VERSION",)), ("core_sso", ("VERSION",)), ("killfile", ("VERSION",)), ("copilot", ("VERSION",))):
+                       ("core_spy", ("VERSION",)), ("core_trend", ("VERSION",)), ("core_sso", ("VERSION",)), ("killfile", ("VERSION",)), ("copilot", ("VERSION",)), ("telegram_alerts", ("VERSION",))):
         try:
             m = __import__(mod)
             for a in attrs:

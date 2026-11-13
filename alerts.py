@@ -1,7 +1,8 @@
 """alerts.py - live notifications: setups and move alerts (code, free) + news from Chart's news-scan routine.
 
 Every alert becomes an 'alert' event (desk feed + browser pop-up + sound) and, if NTFY_TOPIC is set, a phone push
-through the free ntfy app. Alerts are heads-ups only: they never trade and never change a plan.
+through the free ntfy app; if TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID are set, also a Telegram message (telegram_alerts.py,
+with Took / Skipped buttons on co-pilot alerts). Alerts are heads-ups only: they never trade and never change a plan.
 """
 from datetime import datetime
 import hashlib
@@ -21,7 +22,10 @@ NEWS_SCHEMA = """CREATE TABLE IF NOT EXISTS news(id TEXT PRIMARY KEY, ts TEXT, a
 
 def settings():
     s = store.kv_get("alert_settings") or {}
-    return {k: s.get(k, True) for k in KINDS} | {"phone": bool(os.environ.get("NTFY_TOPIC"))}
+    import telegram_alerts
+    tg = telegram_alerts.configured()
+    nt = bool(re.match(r"^[A-Za-z0-9_-]{8,64}$", os.environ.get("NTFY_TOPIC", "")))
+    return {k: s.get(k, True) for k in KINDS} | {"phone": nt or tg, "ntfy": nt, "telegram": tg}
 
 
 def set_settings(d):
@@ -57,6 +61,11 @@ def alert(kind, title, body, ref, level="normal"):
     store.kv_set(k, True)
     store.event("alert", f"{title} | {body}", "", ref, {"kind": kind, "level": level})
     _push(title, body, "high" if level == "high" else "default")
+    try:
+        import telegram_alerts
+        telegram_alerts.send(title, body, level, kind, ref)
+    except Exception:
+        pass
     return True
 
 
