@@ -28,3 +28,13 @@ webhook.env
 .deploy_prev
 trader/
 KILL
+# Files that live only on Chart's computer (CLAUDE.md). watchdog.sh carries the phone-alert settings, including the
+# Telegram bot token (2026-11-12), so none of these may ever be committed from the desk folder.
+/watchdog.sh
+/start.sh
+/bot.py
+/shadow.py
+/review.py
+/variants.py
+/config/events.json
+/config/variants.json
