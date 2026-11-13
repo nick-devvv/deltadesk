@@ -15,8 +15,8 @@ sweep, T73 rejection wick; in T72/T73 more checklist boxes did not mean better t
 not yet tested alone. A pattern moves to a TRADE alert only after a pre-registered test passes (CLAUDE.md steps 2-5).
 
 B9 (paper shadow): when config/v4.json "copilot_paper" is true, every alert also opens a $1,000 paper share position in
-the "copilot" ledger at the next fresh quote (simulated fill, ask + $0.01 / bid - $0.01), managed to the alert's stop or
-target on live quotes, flat by 15:55. "copilot_paper": false = watch-only (alerts, no paper trades). The v4 kill switch,
+the "copilot" ledger at the next fresh quote, within 60 s of the candle (else skipped and recorded), as a simulated fill
+(ask + $0.01 / bid - $0.01), managed to the alert's stop or target on live quotes, flat by 15:55. "copilot_paper": false = watch-only (alerts, no paper trades). The v4 kill switch,
 the KILL file and the pauses block new shadow entries; exits always run. Isolated "copilot" risk book; one open shadow
 per ticker at a time (the best alert of the candle first), so overlapping alerts are graded by B4 labels only.
 B4 (report card): after the close every alert of the day is labeled from the 1-minute bars (target first, stop first or
@@ -46,6 +46,7 @@ TOL = 0.0005                      # "at a level": within 0.05%
 VOL_MULT, WICK_FRAC, ATR_N = 1.5, 0.6, 14
 STEP_S, SHADOW_USD, FLAT_HM, LAST_ENTRY_HM = 15, 1000.0, "15:55", "15:30"
 QUOTE_MAX_AGE_S = 20
+SHADOW_WINDOW_S = 60              # a shadow waits up to 60 s after the candle for a fresh quote, then gives up (recorded)
 PUSH_MIN = 5                      # phone push when the candle's best alert ticks >= 5 of the 7 boxes (config "copilot_push_min")
 EVIDENCE = {
     "wick_reject": "TESTED-FAIL (T73: -1.1 bp/trade on SPY 2016-21)", "engulfing": "TESTED-FAIL (part of T43's inputs)", "hammer": "UNTESTED",
@@ -546,6 +547,23 @@ def _shadow(a, now, quotes):
     return pid, err or f"opened at {fill} (paper, simulated fill)"
 
 
+def shadows(now, quotes, day):
+    """B9: open the paper shadows still owed (restart-safe: the decision row is the state). The best alert of each candle
+    goes first; one waits up to SHADOW_WINDOW_S after its candle for a fresh quote."""
+    todo = [a for a in alerts_for(day) if not S.decided(f"{LEDGER}:{a['id']}")]
+    for a in sorted(todo, key=lambda a: (a["bar_t"], a["tf"], tuple(-int(x) for x in rank(a)))):
+        did = f"{LEDGER}:{a['id']}"
+        end = pd.Timestamp(a["bar_t"]) + pd.Timedelta(minutes=int(a["tf"][:-1]))
+        age = (pd.Timestamp(now) - end).total_seconds()
+        if age > SHADOW_WINDOW_S:                 # too late (desk down, switch flipped later): never a stale fill
+            S.decide(did, LEDGER, a["ticker"], "NO SHADOW", [f"no fresh quote within {SHADOW_WINDOW_S} s of the candle"],
+                     {"alert": a["id"]}, "entry", VERSION)
+            continue
+        got, why = _shadow(a, now, quotes)
+        if got or not why.startswith("no fresh quote"):
+            S.decide(did, LEDGER, a["ticker"], "SHADOW" if got else "NO SHADOW", [why], {"alert": a["id"]}, "entry", VERSION)
+
+
 def manage(now, quotes):
     """Shadow exits on live quotes: stop, target or the flat time. Exits always run."""
     for p in S.positions(ledger=LEDGER, status="OPEN"):
@@ -656,11 +674,8 @@ def step(now=None):
                     alerts.alert("copilot", title, body, top["id"], "high" if top["checklist_score"] >= 6 else "normal")
                 else:
                     store.event("copilot", f"{title} | {top['checklist_score']}/7 boxes, below the push bar ({pmin})", "", top["id"])
-                for a in grp:
-                    if paper:
-                        got, why = _shadow(a, now, quotes)
-                        S.decide(f"{LEDGER}:{a['id']}", LEDGER, a["ticker"], "SHADOW" if got else "NO SHADOW", [why],
-                                 {"alert": a["id"]}, "entry", VERSION)
+        if paper:
+            shadows(now, quotes or {}, day)
     _state["status"] = f"watching {', '.join(TICKERS)} ({len(alerts_for(day))} alerts today)"
     _state["step_s"] = round(time.time() - t0, 2)
 

@@ -256,6 +256,25 @@ def test_no_look_ahead_changing_future_bars_never_changes_earlier_alerts(env, tm
     assert [a["id"] for a in P.alerts_for(DAY) if a["at"] >= "2026-11-24T10:21"]   # the changed bars do produce alerts later
 
 
+def test_shadow_waits_for_a_fresh_quote_then_gives_up_after_60_s(env):
+    run(env["clock"], (10, 5, 0), (10, 5, 0))                         # the step lands on the candle close: quote too old
+    assert P.alerts_for(DAY) and S.positions(ledger="copilot") == []
+    assert store.q("SELECT id FROM v4_decisions WHERE ledger='copilot'") == []     # still owed, not given up
+    run(env["clock"], (10, 5, 15), (10, 5, 15))
+    p = S.positions(ledger="copilot")
+    assert len(p) == 1 and p[0]["plan"]["alert"] == max(P.alerts_for(DAY), key=P.rank)["id"]
+
+
+def test_shadow_switched_on_late_never_fills_an_old_alert(env):
+    env["sw"]["paper"] = False
+    run(env["clock"], (10, 5, 5), (10, 5, 5))
+    env["sw"]["paper"] = True
+    run(env["clock"], (10, 7, 0), (10, 7, 0))
+    assert S.positions(ledger="copilot") == []
+    d = store.q("SELECT decision, reasons FROM v4_decisions WHERE ledger='copilot'")
+    assert d and all(x["decision"] == "NO SHADOW" and "within 60 s" in x["reasons"] for x in d)
+
+
 def test_watch_only_alerts_without_paper_trades(env):
     env["sw"]["paper"] = False
     run(env["clock"], (10, 5, 5), (10, 5, 5))
