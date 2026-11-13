@@ -9,7 +9,8 @@ Indicators (copilot-3): every alert carries one line of what the indicators say 
 9 vs 21, RSI(14), MACD(12,26,9) histogram and volume vs the last 20 candles - warmed up with the prior session's candles.
 Indicator alerts: VWAP bounce, VWAP reclaim/loss, EMA 9/21 cross, RSI turning back from over 70 / under 30 (all CONTEXT).
 TESTED tier: a separate push when the noise band (nbs_spy_ls, T12a: the one intraday signal that passed, in shares) opens
-or closes a PAPER position.
+or closes a PAPER position - only when config/v4.json "copilot_band_push" is true (off since 2026-11-12: Nick wants the
+tested strategies to paper-trade without notifications; only 0DTE alerts go to his phone).
 Pushes: one per ticker per candle (the best alert, the rest listed under it, "MIXED" when long and short patterns fire
 together), only when the best alert ticks at least 5 of the 7 checklist boxes (config "copilot_push_min"); the rest go
 to the desk feed and the report card. On a FOMC / CPI / jobs / monthly-OPEX day one RISK push after 09:35 (B5).
@@ -631,6 +632,13 @@ def warmup(t, day, f):
     return res
 
 
+def band_push_on():
+    """config/v4.json "copilot_band_push" (default off: Nick, 2026-11-12, the tested strategies paper-trade without
+    notifications)."""
+    import retire
+    return bool(retire.cfg().get("copilot_band_push", False))
+
+
 def band_pushes(day):
     """TESTED tier: one push when the noise band (T12a, SPY shares) opens or closes a PAPER position today."""
     import alerts
@@ -829,7 +837,8 @@ def step(now=None):
         ev = events(now)
         briefing(now, ev)
         try:
-            band_pushes(day)
+            if band_push_on():
+                band_pushes(day)
         except Exception as e:
             _state["last_error"] = f"band: {type(e).__name__}: {e}"[:200]
         new = []

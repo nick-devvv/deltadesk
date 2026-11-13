@@ -20,12 +20,23 @@ NEWS_SCHEMA = """CREATE TABLE IF NOT EXISTS news(id TEXT PRIMARY KEY, ts TEXT, a
   url TEXT, tickers TEXT, impact TEXT, direction TEXT, why TEXT)"""
 
 
+def phone_kinds():
+    """Alert kinds that go to the phone (ntfy + Telegram). config/v4.json "phone_alert_kinds"; missing = every kind.
+    The desk feed and browser pop-ups still get every kind that is switched on."""
+    try:
+        import retire
+        k = retire.cfg().get("phone_alert_kinds")
+        return tuple(k) if isinstance(k, list) else KINDS
+    except Exception:
+        return KINDS
+
+
 def settings():
     s = store.kv_get("alert_settings") or {}
     import telegram_alerts
     tg = telegram_alerts.configured()
     nt = bool(re.match(r"^[A-Za-z0-9_-]{8,64}$", os.environ.get("NTFY_TOPIC", "")))
-    return {k: s.get(k, True) for k in KINDS} | {"phone": nt or tg, "ntfy": nt, "telegram": tg}
+    return {k: s.get(k, True) for k in KINDS} | {"phone": nt or tg, "ntfy": nt, "telegram": tg, "phone_kinds": list(phone_kinds())}
 
 
 def set_settings(d):
@@ -60,6 +71,8 @@ def alert(kind, title, body, ref, level="normal"):
         return False
     store.kv_set(k, True)
     store.event("alert", f"{title} | {body}", "", ref, {"kind": kind, "level": level})
+    if kind not in phone_kinds():                  # desk feed only (Nick, 2026-11-12: only 0DTE alerts to the phone)
+        return True
     _push(title, body, "high" if level == "high" else "default")
     try:
         import telegram_alerts
