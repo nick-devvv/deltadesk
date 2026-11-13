@@ -58,9 +58,26 @@ def test_alert_goes_to_telegram_with_buttons_only_on_copilot_alerts(env):
     assert p["text"].startswith("<b>COPILOT SPY SHORT: &lt;wick&gt;</b>") and "&amp;" in p["text"]
     btn = p["reply_markup"]["inline_keyboard"][0]
     assert [b["callback_data"] for b in btn] == [f"t:{AID}", f"s:{AID}"] and all(len(b["callback_data"]) <= 64 for b in btn)
-    assert alerts.alert("news", "Fed", "headline", "n1")
-    assert "reply_markup" not in calls[-1][1]
+    assert alerts.alert("mytrades", "YOUR SPY 600C: take profit", "plan changed", "m1")
+    assert calls[-1][1]["text"].startswith("<b>YOUR SPY 600C") and "reply_markup" not in calls[-1][1]
+    n = len(calls)
+    assert alerts.alert("news", "Fed", "headline", "n1")                        # desk feed only: not a 0DTE alert
+    assert len(calls) == n and store.q("SELECT ref FROM events WHERE ref='n1'")
     assert not alerts.alert("copilot", "dup", "dup", AID)                     # alerts.alert still de-duplicates
+
+
+def test_only_0dte_kinds_reach_the_phone(env):
+    mp, calls, _ = env
+    on(mp)
+    pushed = []
+    mp.setattr(alerts, "_push", lambda t, b, p: pushed.append(t))
+    assert alerts.phone_kinds() == ("copilot", "mytrades") and alerts.settings()["phone_kinds"] == ["copilot", "mytrades"]
+    for k in ("setups", "moves", "news", "scanner", "movers"):
+        assert alerts.alert(k, f"{k} title", "body", f"ref-{k}")
+    assert pushed == [] and calls == []
+    assert len(store.q("SELECT ref FROM events WHERE kind='alert'")) == 5          # still on the desk feed
+    alerts.alert("copilot", "COPILOT QQQ LONG", "body", "QQQ|2026-11-24|10:00|5m|vwap_bounce|long")
+    assert pushed == ["COPILOT QQQ LONG"] and calls[-1][0] == "sendMessage"
 
 
 def test_button_tap_from_nick_saves_the_answer_and_others_are_ignored(env):

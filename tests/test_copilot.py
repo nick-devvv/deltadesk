@@ -351,7 +351,17 @@ def test_alerts_carry_the_indicator_line_and_warm_up_uses_the_prior_session(env)
     assert len(W.calls) == 2                                          # fetched once a day
 
 
-def test_tested_noise_band_entry_and_exit_push_once(env):
+def test_noise_band_pushes_are_off_by_default(env):
+    S.open_position({"id": "nbs_spy_ls:2026-11-24:10:00", "ledger": "nbs_spy_ls", "book": "trend", "kind": "shares", "date": "2026-11-24",
+                     "ticker": "SPY", "direction": "long", "side": "long", "qty": 29.0, "entry_px": 100.5, "entry_t": "2026-11-24T10:00:02",
+                     "legs": [], "plan": {}})
+    assert P.band_push_on() is False                                  # config/v4.json: paper-trades silently
+    run(env["clock"], (10, 1), (10, 2))
+    assert not [x for x in env["pushed"] if x[0].startswith("TESTED")]
+
+
+def test_tested_noise_band_entry_and_exit_push_once(env, monkeypatch):
+    monkeypatch.setattr(P, "band_push_on", lambda: True)
     S.open_position({"id": "nbs_spy_ls:2026-11-24:10:00", "ledger": "nbs_spy_ls", "book": "trend", "kind": "shares", "date": "2026-11-24",
                      "ticker": "SPY", "direction": "long", "side": "long", "qty": 29.0, "entry_px": 100.5, "entry_t": "2026-11-24T10:00:02",
                      "legs": [], "plan": {}})
@@ -372,6 +382,7 @@ def test_wiring_and_no_order_path():
     import v4api
     c = json.loads((ROOT / "config/v4.json").read_text())
     assert c["copilot"] is True and c["copilot_paper"] is True
+    assert c["phone_alert_kinds"] == ["copilot", "mytrades"] and c["copilot_band_push"] is False
     lim = v4risk.LIMITS
     assert "copilot" in lim["isolated_books"] and "copilot" not in lim["multi_day_books"]
     assert lim["book_max_open"]["copilot"] == 2 and lim["book_daily_loss_usd"]["copilot"] == 150.0
