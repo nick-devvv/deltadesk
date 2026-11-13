@@ -111,6 +111,26 @@ def test_status_and_help_are_read_only_and_poll_offset_survives_a_restart(env, m
     assert [p for m, p in calls if m == "getUpdates"][-1]["offset"] == 43
 
 
+def test_link_goes_only_to_nicks_chat_without_a_preview(env, monkeypatch):
+    mp, calls, fake = env
+    on(mp)
+    mp.setenv("DESK_TOKEN", "k" * 32)
+    mp.delenv("DESK_PUBLIC_URL", raising=False)
+    assert TG.handle({"update_id": 50, "message": {"chat": {"id": 111}, "text": "/link"}}) == "ignored: other chat"
+    assert not [p for m, p in calls if m == "sendMessage"]
+    assert TG.handle({"update_id": 51, "message": {"chat": {"id": int(CHAT)}, "text": "/link"}}) == "link"
+    m, p = [c for c in calls if c[0] == "sendMessage"][-1]
+    assert p["chat_id"] == CHAT and p["disable_web_page_preview"] is True
+    assert "https://nicks-desk.tail5aa056.ts.net/?k=" + "k" * 32 in p["text"] and "private" in p["text"]
+    mp.setenv("DESK_PUBLIC_URL", "https://example.ts.net/")
+    assert TG.desk_link() == "https://example.ts.net/?k=" + "k" * 32
+    mp.delenv("DESK_TOKEN")
+    mp.delenv("CREDENTIALS_DIRECTORY", raising=False)
+    assert TG.desk_link() is None
+    TG.handle({"update_id": 52, "message": {"chat": {"id": int(CHAT)}, "text": "/link"}})
+    assert "no access key" in [p for m, p in calls if m == "sendMessage"][-1]["text"]
+
+
 def test_token_never_reaches_the_error_log(tmp_path, monkeypatch):
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", TOKEN)
     monkeypatch.setenv("TELEGRAM_CHAT_ID", CHAT)

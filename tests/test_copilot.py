@@ -93,8 +93,9 @@ def env(tmp_path, monkeypatch):
     import health
     monkeypatch.setitem(health._feed, "ok", None)
     P._state.update(status="idle", last_error=None, step_s=None)
-    sw = {"on": True, "paper": True}
+    sw = {"on": True, "paper": True, "tf": "classic"}                 # the copilot-1..3 tests run the 5/15-minute schedule
     monkeypatch.setattr(P, "switches", lambda: (sw["on"], sw["paper"]))
+    monkeypatch.setattr(P, "tf_mode", lambda: sw["tf"])
     pushed = []
     import alerts
     monkeypatch.setattr(alerts, "_push", lambda title, body, pr: pushed.append((title, body, pr)))
@@ -393,3 +394,64 @@ def test_wiring_and_no_order_path():
     code = (ROOT / "copilot.py").read_text().split('"""', 2)[2]
     assert "import broker" not in code and "place_order" not in code and "/trader" not in code
     assert set(P.EVIDENCE) == set(P.NAMES)
+
+
+# ---------------------------------------------------------------- copilot-4: Nick's chart schedule
+
+def test_schedule_windows_and_the_default_is_nicks():
+    assert P.tf_window("nick", 2) == ("09:30", "09:59") and P.tf_window("nick", 5) == ("10:00", "10:59")
+    assert P.tf_window("nick", 10) == ("11:00", "15:59") and P.tf_window("nick", 15) is None
+    assert P.tf_window("classic", 15) == ("09:30", "15:59") and P.tf_window("classic", 2) is None
+    import json
+    assert json.loads((ROOT / "config" / "v4.json").read_text())["copilot_tf_mode"] == "nick"
+
+
+def test_ten_minute_candles_align_to_the_open_and_start_at_11():
+    b = P.resample(P.norm(day_bars(DAY)), 10, DAY)
+    assert b.index[0] == _ts(DAY, 9, 30) and _ts(DAY, 11, 0) in b.index and len(b) == 39
+    b2 = P.resample(P.norm(day_bars(DAY)), 2, DAY)
+    assert b2.index[0] == _ts(DAY, 9, 30) and _ts(DAY, 9, 58) in b2.index
+
+
+def test_five_minute_confluence_box():
+    up = pd.DataFrame({"c": [100.0] * 9 + [100.5]}, index=pd.date_range(_ts(DAY, 9, 30), periods=10, freq="5min"))
+    assert P.conf_5m(up, 1, "long") is True and P.conf_5m(up, 1, "short") is False
+    assert P.conf_5m(up, 0, "long") is None and P.conf_5m(None, 3, "long") is None
+    chk = P.checklist({"side": "long", "level": None}, pd.DataFrame({"v": [1.0] * 3}), None, 100.0, None,
+                      _ts(DAY, 9, 50), {"news_window": False}, None)
+    assert chk["close_5m"] is None
+
+
+def test_nick_schedule_alerts_on_5m_from_10_to_11_and_never_on_15m(env):
+    env["sw"]["tf"] = "nick"
+    run(env["clock"], (9, 31), (10, 5, 5))
+    al = P.alerts_for(DAY)
+    assert "SPY|2026-11-24|10:00|5m|wick_reject|short" in [a["id"] for a in al]
+    assert all(a["tf"] in ("2m", "5m") for a in al)
+    assert all(a["tf"] == "2m" for a in al if a["bar_t"] < "2026-11-24T10:00")
+    run(env["clock"], (10, 5, 30), (11, 31))
+    al = P.alerts_for(DAY)
+    assert not [a for a in al if a["tf"] == "15m"]
+    assert all(a["tf"] == "5m" for a in al if "2026-11-24T10:00" <= a["bar_t"] < "2026-11-24T11:00")
+    assert all(a["tf"] == "10m" for a in al if a["bar_t"] >= "2026-11-24T11:00")
+    assert all("| 5m " in a["body"] for a in al)
+    for a in al:
+        if a["tf"] in ("2m", "10m") and a["bar_t"] >= "2026-11-24T09:35":
+            assert a["checklist"]["close_5m"] in (True, False)
+
+
+def test_nick_schedule_no_look_ahead(env, tmp_path, monkeypatch):
+    env["sw"]["tf"] = "nick"
+
+    def early(rows):
+        return [(a["id"], a["plan"], a["checklist"], a["why"]) for a in rows if a["at"] < "2026-11-24T11:21"]
+    run(env["clock"], (9, 31), (11, 40), step_s=60)
+    a1 = early(P.alerts_for(DAY))
+    monkeypatch.setattr(store, "DB", tmp_path / "desk3.db")
+    monkeypatch.setattr(store, "_conn", None)
+    base = day_bars(DAY)
+    alt = day_bars(DAY, after_px=lambda k: 101.5 - 0.3 * ((k // 2) % 3))
+    alt[alt.index < _ts(DAY, 11, 21)] = base[base.index < _ts(DAY, 11, 21)]
+    env["f"].m1 = alt
+    run(env["clock"], (9, 31), (11, 40), step_s=60)
+    assert a1 == early(P.alerts_for(DAY))

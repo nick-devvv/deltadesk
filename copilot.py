@@ -45,7 +45,8 @@ import v4exec
 import v4risk
 import v4store as S
 
-VERSION = "2026-11-13.copilot-3"   # copilot-3: indicator readout (VWAP, EMA 9/21, RSI 14, MACD, volume) + VWAP bounce/cross,
+VERSION = "2026-11-13.copilot-4"   # copilot-4: Nick's chart schedule (2m to 10:00, 5m to 11:00, 10m after, 5m confluence);
+#   copilot-3: indicator readout (VWAP, EMA 9/21, RSI 14, MACD, volume) + VWAP bounce/cross,
 #   EMA 9/21 cross, RSI turn alerts + TESTED noise-band pushes; copilot-2: evidence labels after T72/T73
 LEDGER, BOOK = "copilot", "copilot"
 TICKERS = ("SPY", "QQQ")
@@ -54,6 +55,12 @@ VOL_MULT, WICK_FRAC, ATR_N = 1.5, 0.6, 14
 STEP_S, SHADOW_USD, FLAT_HM, LAST_ENTRY_HM = 15, 1000.0, "15:55", "15:30"
 QUOTE_MAX_AGE_S = 20
 SHADOW_WINDOW_S = 60              # a shadow waits up to 60 s after the candle for a fresh quote, then gives up (recorded)
+TF_SCHEDULES = {                  # which candle size alerts at which time of day (config "copilot_tf_mode")
+    "classic": ((5, "09:30", "15:59"), (15, "09:30", "15:59")),             # copilot-1..3: 5- and 15-minute candles all day
+    # Nick, 2026-11-13: "i usually trade on these time frames": 2-minute chart for the first 30 minutes, 5-minute 10:00-11:00,
+    # 10-minute after 11:00, with the 5-minute chart kept for confluence (schedule as posted by Kay Capitals).
+    "nick": ((2, "09:30", "09:59"), (5, "10:00", "10:59"), (10, "11:00", "15:59")),
+}
 PUSH_MIN = 5                      # phone push when the candle's best alert ticks >= 5 of the 7 boxes (config "copilot_push_min")
 EVIDENCE = {
     "wick_reject": "TESTED-FAIL (T73: -1.1 bp/trade on SPY 2016-21)", "engulfing": "TESTED-FAIL (part of T43's inputs)", "hammer": "UNTESTED",
@@ -419,14 +426,15 @@ def events(now, cal=None):
             "known": cal.get("known"), "notes": notes, "news_window": window}
 
 
-def checklist(hit, b5, daily_close_ema20, price, vw, now, ev):
-    """The boxes on each alert. Each is True/False (None = unknown)."""
+def checklist(hit, b5, daily_close_ema20, price, vw, now, ev, conf5=True):
+    """The boxes on each alert. Each is True/False (None = unknown). `close_5m` is the 5-minute box: True on a 5-minute
+    alert (it IS the 5-minute close); on 2- and 10-minute alerts it says whether the 5-minute chart agrees (conf5)."""
     side = hit["side"]
     vol = b5["v"].to_numpy()
     vol_ok = bool(len(vol) > 5 and vol[-1] >= VOL_MULT * float(np.mean(vol[-21:-1]))) if len(vol) > 5 else None
     hm = now.strftime("%H:%M")
     bias = None if daily_close_ema20 is None else ((price > daily_close_ema20) == (side == "long"))
-    return {"bias_1h": bias, "at_level": hit.get("level") is not None, "close_5m": True, "volume": vol_ok,
+    return {"bias_1h": bias, "at_level": hit.get("level") is not None, "close_5m": conf5, "volume": vol_ok,
             "vwap_side": None if vw is None else ((price > vw) == (side == "long")),
             "time_ok": ("09:45" <= hm <= "11:30") or ("13:30" <= hm <= "15:30"), "news_clear": not ev["news_window"]}
 
@@ -451,7 +459,7 @@ def plan(hit, price, lv):
 
 def text(t, tf, hit, pl, chk, ev, lag_s, ind_line=None):
     yn = lambda v: "?" if v is None else ("Y" if v else "N")  # noqa: E731
-    boxes = (f"bias {yn(chk['bias_1h'])} | level {yn(chk['at_level'])} | 5m close Y | volume {yn(chk['volume'])} | "
+    boxes = (f"bias {yn(chk['bias_1h'])} | level {yn(chk['at_level'])} | 5m {yn(chk['close_5m'])} | volume {yn(chk['volume'])} | "
              f"VWAP {yn(chk['vwap_side'])} | time {yn(chk['time_ok'])} | news {yn(chk['news_clear'])}")
     score = sum(1 for v in chk.values() if v)
     lvl = f" @ {hit['level']['name']} {hit['level']['px']:.2f}" if hit.get("level") else ""
@@ -542,6 +550,31 @@ def switches():
     import retire
     c = retire.cfg()
     return bool(c.get("copilot", False)), bool(c.get("copilot_paper", False))
+
+
+def tf_mode():
+    """"nick" (default since copilot-4) or "classic"; an unknown value falls back to "nick"."""
+    import retire
+    m = str(retire.cfg().get("copilot_tf_mode", "nick"))
+    return m if m in TF_SCHEDULES else "nick"
+
+
+def tf_window(mode, tf):
+    """(start, end) HH:MM of the candle STARTS that may alert on `tf`-minute candles, or None."""
+    for m, a, b in TF_SCHEDULES[mode]:
+        if m == tf:
+            return a, b
+    return None
+
+
+def conf_5m(b5_all, n_today, side):
+    """5-minute confluence: the last finished 5-minute candle of TODAY closed on the alert's side of the 5-minute EMA 9
+    (EMA warmed up with the prior session). None before the first 5-minute candle of the day has finished."""
+    if b5_all is None or n_today < 1:
+        return None
+    c = b5_all["c"].to_numpy(dtype=float)
+    e = ema_s(c, 9)[-1]
+    return bool((c[-1] > e) if side == "long" else (c[-1] < e))
 
 
 def push_min():
@@ -657,7 +690,8 @@ def band_pushes(day):
 
 
 def scan(t, day, now, f, ev):
-    """Run the library on the last finished 5- and 15-minute candles of `t`. Returns new alert records."""
+    """Run the library on the candle of `t` that just finished, on the candle sizes the schedule (tf_mode) allows at that
+    time of day. Returns new alert records."""
     m1 = C.finished(f.m1_today(t, day), now)
     if m1 is None or not len(m1):
         return []
@@ -673,13 +707,20 @@ def scan(t, day, now, f, ev):
     warm, wday = warmup(t, day, f)
     rth_today = rth[rth.index.date == day].between_time("09:30", "15:59")
     out = []
-    for tf in (5, 15):
+    mode = tf_mode()
+    b5 = resample(m1, 5, day)                                          # the 5-minute chart, for confluence
+    bw5 = resample(warm, 5, wday) if warm is not None else None
+    b5_all = pd.concat([bw5, b5]) if bw5 is not None and len(bw5) else b5
+    for tf, _a, _b in TF_SCHEDULES[mode]:
         b = resample(m1, tf, day)
         if len(b) < 3:
             continue
         bar_t = b.index[-1]
         bar_end = bar_t + pd.Timedelta(minutes=tf)
         if (pd.Timestamp(now) - bar_end).total_seconds() > 120:          # only the candle that just finished
+            continue
+        win = tf_window(mode, tf)
+        if not (win[0] <= bar_t.strftime("%H:%M") <= win[1]):          # this candle size isn't the chart at this time
             continue
         price = float(b["c"].iloc[-1])
         ema = _ema20_daily(daily, price, day)
@@ -695,7 +736,12 @@ def scan(t, day, now, f, ev):
             pl = plan(hit, price, lv)
             if pl is None:
                 continue
-            chk = checklist(hit, b, ema, price, vw, now, ev)
+            if tf == 5:
+                conf = True
+            else:                                                      # only 5-minute candles finished by this candle's close
+                done5 = b5_all[b5_all.index + pd.Timedelta(minutes=5) <= bar_end]
+                conf = conf_5m(done5, int((b5.index + pd.Timedelta(minutes=5) <= bar_end).sum()), hit["side"])
+            chk = checklist(hit, b, ema, price, vw, now, ev, conf)
             lag = (pd.Timestamp(now) - bar_end).total_seconds()
             title, body, score = text(t, f"{tf}m", hit, pl, chk, ev, lag, line)
             out.append({"id": aid, "ticker": t, "tf": f"{tf}m", "bar_t": bar_t.isoformat(), "pattern": hit["pattern"],
@@ -899,7 +945,7 @@ def start():
 def status(day=None):
     day = day or str(core.now_et().date())
     on, paper = switches()
-    return {"version": VERSION, "status": _state["status"], "last_error": _state["last_error"], "step_s": _state["step_s"],
+    return {"version": VERSION, "tf_mode": tf_mode(), "status": _state["status"], "last_error": _state["last_error"], "step_s": _state["step_s"],
             "switch": on, "paper_shadow": paper, "watch_only": on and not paper, "tickers": list(TICKERS), "push_min": push_min(),
             "alerts": alerts_for(day), "open": [p["id"] for p in S.positions(ledger=LEDGER, status="OPEN")],
             "evidence": EVIDENCE, "label": "CONTEXT alerts (not tested edges); shadow trades are PAPER (simulated fills)"}

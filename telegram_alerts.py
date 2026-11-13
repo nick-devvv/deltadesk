@@ -8,7 +8,7 @@ Setup (both values live only in the desk's environment on Chart's computer, neve
   TELEGRAM_BOT_TOKEN  from @BotFather (/newbot)
   TELEGRAM_CHAT_ID    Nick's own chat id (send the bot any message, then read it from getUpdates)
 Off when either is missing or malformed. Every alert that reaches alerts.alert() is also sent here (ntfy keeps working
-beside it). A background long-poll reads only button taps and two read-only commands (/status, /help) from that one chat
+beside it). A background long-poll reads only button taps and three read-only commands (/status, /help, /link) from that one chat
 id; anything from any other chat is ignored. Nothing here can trade, change a plan, flip a switch or reveal the desk link.
 """
 import html
@@ -21,7 +21,7 @@ import urllib.request
 
 import store
 
-VERSION = "2026-11-13.telegram-1"
+VERSION = "2026-11-13.telegram-2"   # telegram-2: /link sends Nick his desk link (with the key) in his chat only
 API = "https://api.telegram.org"
 _ASYNC = True                       # tests set False to send inline
 _state = {"thread": None, "stop": False, "last_error": None, "sent": 0, "taps": 0}
@@ -95,6 +95,22 @@ def _status_text():
                       "Read-only. The desk page has the full view."])
 
 
+PUBLIC_URL = "https://nicks-desk.tail5aa056.ts.net"   # the funnel address; override with DESK_PUBLIC_URL
+
+
+def desk_link():
+    """Nick's desk link with the access key, or None when the desk has no key set. Only ever sent to Nick's chat."""
+    tok = os.environ.get("DESK_TOKEN", "").strip()
+    if not tok and os.environ.get("CREDENTIALS_DIRECTORY"):          # same sources as server.py (systemd LoadCredential)
+        try:
+            with open(os.path.join(os.environ["CREDENTIALS_DIRECTORY"], "deltadesk-token")) as f:
+                tok = f.read().strip()
+        except OSError:
+            pass
+    base = os.environ.get("DESK_PUBLIC_URL", PUBLIC_URL).strip().rstrip("/")
+    return f"{base}/?k={tok}" if tok else None
+
+
 def handle(update):
     """One getUpdates item. Only Nick's chat counts. Returns what was done (for tests and the log)."""
     _, chat = config()
@@ -125,9 +141,16 @@ def handle(update):
     if cmd == "/status":
         _post("sendMessage", {"chat_id": chat, "text": _status_text()})
         return "status"
+    if cmd == "/link":
+        link = desk_link()
+        _post("sendMessage", {"chat_id": chat, "disable_web_page_preview": True,     # no preview: Telegram never fetches it
+                              "text": (f"Your desk: {link}\nKeep it private: anyone with this link can open your desk."
+                                       if link else "This desk has no access key set, so there is no link to send. Ask Chart.")})
+        return "link"
     if cmd in ("/help", "/start"):
         _post("sendMessage", {"chat_id": chat, "text": "DeltaDesk alerts. Tap Took it / Skipped on co-pilot alerts so the report "
-                                                       "card learns which ones you trade. /status = desk status (read-only)."})
+                                                       "card learns which ones you trade. /status = desk status (read-only). "
+                                                       "/link = your desk link."})
         return "help"
     return "ignored: text"
 
