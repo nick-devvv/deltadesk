@@ -1,5 +1,7 @@
 # Moving the desk to an Oracle Cloud "Always Free" server (2026-11-13)
 
+**Superseded:** Nick chose an InterServer server instead. Use `deploy/VPS_MOVE.md`.
+
 **Why:** Chart's computer sleeps whenever Chart is idle. On Nov 11 and 12 it slept through about 380 of 390 market minutes, so the desk wasn't watching the market, paper trading or sending alerts. There is no setting to keep it awake. An Oracle Always Free server (Ampere A1, 2 OCPUs, 12 GB) never sleeps, costs $0 inside the free limits, and has normal internet, so Tailscale Funnel and the Schwab stream stay up.
 
 **Who does what:**
