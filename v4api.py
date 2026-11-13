@@ -26,6 +26,7 @@ GET  /api/v4/score            the T44 SSO trend core (core_sso, held, SGOV while
 GET  /api/v4/killfile         B7: the KILL file watcher (touch KILL in the desk folder = v4 kill switch, once per file)
 GET  /api/v4/copilot?day=     B8/B5/B9: today's co-pilot alerts (pattern, level, checklist, stop/target, event flags, lag; CONTEXT,
                               not tested edges), switches (watch-only = alerts without paper shadows), open PAPER shadows
+GET  /api/v4/telegram         Telegram alerts: configured or not, messages sent, button taps, last error (never the token)
 GET  /api/v4/copilot/score    B4: the report card: every labeled alert by pattern, checklist score, Nick's answer and ticker
 POST /api/v4/copilot/feedback {"id", "took": true|false}: Nick's answer for one alert (feeds the report card)
 GET  /api/v4/sprint           the sprint forward-test ledgers (fb_or, otm_put, otm_bounce, otm_h): PAPER (simulated fills), their
@@ -73,6 +74,9 @@ def get(path, q):
     if path == "/api/v4/copilot":
         import copilot
         return copilot.status(_one(q, "day"))
+    if path == "/api/v4/telegram":
+        import telegram_alerts
+        return telegram_alerts.status()
     if path == "/api/v4/copilot/score":
         import copilot
         return copilot.scorecard()

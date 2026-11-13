@@ -3280,7 +3280,8 @@ async function loadAlerts(){
     row("mytrades", "My trades", "when the desk's guidance on a trade you logged changes: exit, take profit, tighten the stop (free, in code)") +
     row("movers", "Movers", "stocks in play at 9:35 and a top-movers digest through the day, with a possible play (free, in code)") +
     row("scanner", "Scanner trades", "when the scanner's research ledger takes a stocks-in-play trade on paper (free, in code)") +
-    `<p class="m" style="margin-top:6px">On this computer: press <b>Alerts</b> in the top bar to allow pop-ups. On your phone: ${a.phone ? '<span class="u">phone alerts are on (ntfy)</span>' : 'install the free <b>ntfy</b> app, subscribe to a private topic name you make up (e.g. nick-desk-7h3k2q), and have Chart add <span class="mono">NTFY_TOPIC</span> with that name to the desk server'}.</p>`;
+    row("copilot", "Co-pilot", "SPY/QQQ chart patterns and indicators at each 5/15-minute close, event-day warnings and TESTED noise-band entries (free, in code)") +
+    `<p class="m" style="margin-top:6px">On this computer: press <b>Alerts</b> in the top bar to allow pop-ups. On your phone: ${a.phone ? '<span class="u">phone alerts are on (' + [a.ntfy ? 'ntfy' : '', a.telegram ? 'Telegram' : ''].filter(Boolean).join(' + ') + ')</span>' : 'install the free <b>ntfy</b> app, subscribe to a private topic name you make up (e.g. nick-desk-7h3k2q), and have Chart add <span class="mono">NTFY_TOPIC</span> with that name to the desk server'}.</p>`;
   $("#alertBox").querySelectorAll("[data-al]").forEach(c => c.onchange = () => api("api/alerts", {[c.dataset.al]: c.checked}));
 }
 

@@ -27,7 +27,8 @@ def _v4_retirement(request, monkeypatch):
 @pytest.fixture(autouse=True)
 def _hermetic(monkeypatch, tmp_path):
     for k in ("NTFY_TOPIC", "CHAT_WEBHOOK", "GROK_WEBHOOK", "SCHWAB_APP_KEY", "SCHWAB_APP_SECRET",
-              "ALPACA_KEY", "ALPACA_SECRET", "QUIVER_KEY", "XAI_API_KEY", "SEC_USER_AGENT"):
+              "ALPACA_KEY", "ALPACA_SECRET", "QUIVER_KEY", "XAI_API_KEY", "SEC_USER_AGENT",
+              "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"):
         monkeypatch.delenv(k, raising=False)
     import schwab
     import schwab_stream
