@@ -50,6 +50,8 @@ BOOKS = [
     ("score", "SSO trend core (T44, held, 2026-11-13): PAPER (simulated fills) SSO while SPY is in its 200-day uptrend, SGOV "
               "(T-bills) while it is not, sized to the T44 account (core + noise band + ETF swing, minus 6.5% margin interest); "
               "BACKTEST research and sealed 2022-2025 passed, T48 dot-com stress passed; forward test, not promoted", ["core_sso"]),
+    ("copilot", "Co-pilot shadows (B9, 2026-11-13): PAPER (simulated fills) $1,000 SPY / QQQ share shadows of the co-pilot's pattern "
+                "alerts, to the alert's stop or target, flat 15:55; CONTEXT patterns, NOT tested edges (the report card measures them)", ["copilot"]),
 ]
 SPRINT_LEDGERS = ("fb_or", "otm_put", "otm_bounce", "otm_h")
 LEGACY_TABLE = ("noise", "old")             # ledgers kept in the v3 positions table, read-only here
@@ -69,7 +71,8 @@ LABELS = {"old": "Old rules (Oct 28): legacy forward test (not from a published 
           "pead_t21_tp": "Post-earnings drift + take-profit, S&P 500 shares, 5 x $600 (forward test of T23a)",
           "core_spy": "SPY core = T30b account equity, held, monthly rebalance (forward test of T30b)",
           "core_trend": "Trend core: half SSO / half QLD by 200-day trend, held, traded near the close (forward test of T47; SSO half = T44)",
-          "core_sso": "SSO trend core: SSO by SPY's 200-day trend, SGOV while out, held, traded near the close (forward test of T44)"}
+          "core_sso": "SSO trend core: SSO by SPY's 200-day trend, SGOV while out, held, traded near the close (forward test of T44)",
+          "copilot": "Co-pilot alert shadows: SPY / QQQ shares, $1,000 each, alert stop / target, flat 15:55 (untested patterns)"}
 SHARE_LEDGERS = ("sip_orb5", "sip_orb5_x", "sip_orb15", "earn_day")
 
 

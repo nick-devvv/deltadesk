@@ -20,7 +20,7 @@ STARTED = time.time()
 # how long a worker may go quiet before it counts as stale (seconds), and whether readiness needs it in market hours
 WORKERS = {"engine": (30, True), "lab": (90, False), "catalysts": (120, False), "contracts": (120, False),
            "v4stocks": (60, False), "chains": (180, False), "v4swing": (60, False), "v4trend": (60, False), "v4pead": (60, False),
-           "v4core": (60, False), "v4tcore": (60, False), "v4score": (60, False)}
+           "v4core": (60, False), "v4tcore": (60, False), "v4score": (60, False), "copilot": (60, False)}
 _feed = {"ok": None, "t": None, "why": None}
 
 

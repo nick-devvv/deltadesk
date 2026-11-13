@@ -908,6 +908,11 @@ if __name__ == "__main__":
         print("v4 SSO trend core (core_sso, paper, held):", "started" if core_sso.start() else "off", flush=True)
     except Exception as e:
         print("SSO trend core ledger not started:", e, flush=True)
+    try:                                           # B8/B9: co-pilot pattern alerts + paper shadows (own thread and risk book)
+        import copilot
+        print("Co-pilot alerts (copilot, SPY/QQQ):", "started" if copilot.start() else "off", flush=True)
+    except Exception as e:
+        print("Co-pilot not started:", e, flush=True)
     try:                                           # B7: `touch KILL` in the desk folder halts v4 paper entries
         import killfile
         print("KILL file watcher:", "started" if killfile.start() else "off", flush=True)
