@@ -199,7 +199,7 @@ def test_alert_push_shadow_target_label_and_report_card(env):
     assert "SPY|2026-11-24|10:00|5m|wick_reject|short" in ids
     w = next(a for a in al if a["pattern"] == "wick_reject")
     assert w["plan"]["stop"] == 101.06 and w["level"]["name"] == "PDH" and w["lag_s"] == 5.0
-    assert w["evidence"] == "UNTESTED" and "context, not a tested edge" in w["body"]
+    assert w["evidence"].startswith("TESTED-FAIL (T73") and "context, not a tested edge" in w["body"]
     assert len(env["pushed"]) == 1                                    # one push per ticker per candle
     title, body, _ = env["pushed"][0]
     best = max(al, key=P.rank)

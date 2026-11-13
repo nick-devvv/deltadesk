@@ -10,7 +10,8 @@ together), only when the best alert ticks at least 5 of the 7 checklist boxes (c
 to the desk feed and the report card. On a FOMC / CPI / jobs / monthly-OPEX day one RISK push after 09:35 (B5).
 
 Evidence labels: every pattern here is CONTEXT, not a tested edge. TESTED-FAIL = lost on SPY after costs in the desk's
-own tests (T40 break-and-retest, T41 confluence, T43 chart-input model, T64 VWAP retest, T66 fair value gap); UNTESTED =
+own tests (T40 break-and-retest, T41 confluence, T43 chart-input model, T64 VWAP retest, T66 fair value gap, T72 liquidity
+sweep, T73 rejection wick; in T72/T73 more checklist boxes did not mean better trades); UNTESTED =
 not yet tested alone. A pattern moves to a TRADE alert only after a pre-registered test passes (CLAUDE.md steps 2-5).
 
 B9 (paper shadow): when config/v4.json "copilot_paper" is true, every alert also opens a $1,000 paper share position in
@@ -38,7 +39,7 @@ import v4exec
 import v4risk
 import v4store as S
 
-VERSION = "2026-11-13.copilot-1"
+VERSION = "2026-11-13.copilot-2"   # copilot-2: evidence labels after T72/T73 (detection unchanged from copilot-1)
 LEDGER, BOOK = "copilot", "copilot"
 TICKERS = ("SPY", "QQQ")
 TOL = 0.0005                      # "at a level": within 0.05%
@@ -47,9 +48,9 @@ STEP_S, SHADOW_USD, FLAT_HM, LAST_ENTRY_HM = 15, 1000.0, "15:55", "15:30"
 QUOTE_MAX_AGE_S = 20
 PUSH_MIN = 5                      # phone push when the candle's best alert ticks >= 5 of the 7 boxes (config "copilot_push_min")
 EVIDENCE = {
-    "wick_reject": "UNTESTED", "engulfing": "TESTED-FAIL (part of T43's inputs)", "hammer": "UNTESTED",
+    "wick_reject": "TESTED-FAIL (T73: -1.1 bp/trade on SPY 2016-21)", "engulfing": "TESTED-FAIL (part of T43's inputs)", "hammer": "UNTESTED",
     "shooting_star": "UNTESTED", "inside_break": "UNTESTED", "momentum": "UNTESTED", "star": "UNTESTED",
-    "break_retest": "TESTED-FAIL (T40, T41)", "sweep": "UNTESTED (T72 planned)", "bos": "UNTESTED",
+    "break_retest": "TESTED-FAIL (T40, T41)", "sweep": "TESTED-FAIL (T72: -1.2 bp/trade on SPY 2016-21)", "bos": "UNTESTED",
     "fvg": "TESTED-FAIL (T66)", "double": "UNTESTED", "flag": "UNTESTED"}
 NAMES = {"wick_reject": "rejection wick", "engulfing": "engulfing candle", "hammer": "hammer", "shooting_star": "shooting star",
          "inside_break": "inside-bar break", "momentum": "momentum candle", "star": "morning/evening star",
