@@ -103,7 +103,17 @@ header{display:flex;align-items:center;gap:20px;padding:0 20px;min-width:0;posit
 .seg button[aria-pressed=true]:after{content:"";position:absolute;left:8px;right:8px;bottom:0;height:2px;border-radius:2px;background:var(--brand)}
 .seg .other{border:0}
 .grow{flex:1;min-width:0}
-nav{display:flex;gap:2px}
+nav{display:flex;gap:2px;align-items:center}
+.navmore{position:relative}
+.navmore>summary{list-style:none;cursor:pointer;position:relative;padding:8px 12px;font:600 14px var(--disp);letter-spacing:.02em;color:var(--ink-3);white-space:nowrap;border-radius:8px;display:flex;align-items:center;gap:6px}
+.navmore>summary::-webkit-details-marker{display:none}
+.navmore>summary:after{content:"";width:5px;height:5px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(45deg) translateY(-2px)}
+.navmore>summary:hover,.navmore.cur>summary,.navmore[open]>summary{color:var(--ink)}
+.navmore.cur>summary:before{content:"";position:absolute;left:12px;right:12px;bottom:-11px;height:2px;border-radius:2px;background:var(--brand)}
+.navmenu{position:absolute;top:calc(100% + 8px);left:0;z-index:60;min-width:160px;display:flex;flex-direction:column;padding:6px;background:var(--glass);border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 30px var(--raise)}
+.navmenu a{padding:9px 12px}
+.navmenu a[aria-current=page]{color:var(--ink);background:var(--hover)}
+.navmenu a[aria-current=page]:after{display:none}
 nav a{position:relative;padding:8px 12px;font:600 14px var(--disp);letter-spacing:.02em;color:var(--ink-3);text-decoration:none;white-space:nowrap;border-radius:8px;transition:color .15s}
 nav a:hover{color:var(--ink)}
 nav a[aria-current=page]{color:var(--ink)}
@@ -199,6 +209,22 @@ main{min-width:0;min-height:0;overflow:hidden;display:flex;flex-direction:column
 .ev:has(.k.watch) .t{color:var(--ink)}
 .news-i .t b{color:var(--ink);font-weight:500}
 .nk{font:600 11px var(--sans);margin-right:6px}
+.newshead{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:14px}
+.newshead h1{margin:0}
+.newslist{display:flex;flex-direction:column;gap:10px;max-width:920px}
+.nitem{background:var(--glass);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px}
+.nitem .nh{display:flex;align-items:center;gap:8px;font:500 12.5px var(--sans);color:var(--ink-3)}
+.nitem .nh time{margin-left:auto}
+.nitem h3{font:600 17px/1.35 var(--sans);color:var(--ink);margin:6px 0 0;overflow-wrap:anywhere}
+.nitem p{font:400 14px/1.5 var(--sans);color:var(--ink-2);margin:6px 0 0}
+.nitem .nm{font:400 12.5px var(--sans);color:var(--ink-3);margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.nitem .nm .chip{margin-left:0}
+.nitem .nk{font-size:12.5px;margin:0}
+.nitem .hi{font:600 11.5px var(--sans);color:var(--warn);background:var(--warn-t);padding:1px 7px;border-radius:5px}
+.nitem .nk.u{color:var(--up)} .nitem .nk.d{color:var(--down)} .nitem .nk.w{color:var(--ink-3)}
+.tdsec>details.more{margin-top:0}
+.tdsec>details.more>summary h2{font:600 16px var(--disp);letter-spacing:.02em;color:var(--ink);display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
+.tdsec>details.more>summary h2 small{font:400 12px var(--sans);color:var(--ink-3)}
 @keyframes flash{from{background:var(--brand-t)}to{background:transparent}}
 .ev{animation:slidein .35s ease-out}
 @keyframes slidein{from{opacity:0;transform:translateY(-6px)}}
@@ -615,7 +641,7 @@ dl.dd dt.h,dl.dd dd.h{grid-column:1/-1;text-align:left;color:var(--ink);font-wei
 @media (max-width:1300px) and (min-width:1101px){ .brand b{display:none} .ibtn{width:32px;height:32px} }
 @media (max-width:1100px){
   body{overflow:auto}
-  .app{height:auto;min-height:100vh;grid-template-rows:auto auto 38px}
+  .app{height:auto;min-height:100vh;grid-template-rows:auto 1fr 38px}
   main{overflow:visible}
   header{flex-wrap:wrap;padding:10px 16px 0;gap:8px 14px}
   .grow{display:none}
@@ -623,6 +649,11 @@ dl.dd dt.h,dl.dd dd.h{grid-column:1/-1;text-align:left;color:var(--ink);font-wei
   nav::-webkit-scrollbar{display:none}
   nav a{padding:10px 10px}
   nav a[aria-current=page]:after{bottom:2px;left:10px;right:10px}
+  .navmore>summary{padding:10px 10px}
+  .navmore.cur>summary:before{bottom:2px;left:10px;right:10px}
+  .navmore[open]{display:contents}
+  .navmore[open] .navmenu{position:static;flex-direction:row;padding:0;border:0;background:none;box-shadow:none;min-width:0}
+  .navmenu a{padding:10px 10px}
   .trade{grid-template-columns:minmax(0,1fr);height:auto;padding:14px 16px}
   .center{order:-2} .right{order:-1}
   .frame{flex:none;height:60vh}
@@ -673,13 +704,16 @@ dl.dd dt.h,dl.dd dd.h{grid-column:1/-1;text-align:left;color:var(--ink);font-wei
     <nav aria-label="Views">
       <a href="#today" aria-current="page" data-v="today" title="Today: desk P/L, open positions, decisions, errors and health, then every v4 book and ledger (this was the Research page)">Today</a>
       <a href="#trade" data-v="trade" title="Your trades, the chart and Chart's guidance">My trades</a>
-      <a href="#scan" data-v="scan" title="Stocks in play and live movers">Scanner</a>
+      <a href="#news" data-v="news" title="Key market news, one card per story">News<span class="badge" id="newsBadge" hidden></span></a>
       <a href="#markets" data-v="markets" title="Any ticker: live chart, setups board, news and earnings">Markets</a>
-      <a href="#paper" data-v="paper" title="The retired v3 main paper ledger, its history, and the paper pause and kill switch">v3 Paper</a>
+      <a href="#scan" data-v="scan" title="Stocks in play and live movers">Scanner</a>
       <a href="#journal" data-v="journal">Journal<span class="badge" id="jBadge" hidden title="Trades waiting for a review"></span></a>
-      <a href="#review" data-v="review">Review</a>
-      <a href="#research" data-v="research">Rules</a>
-      <a href="#learning" data-v="learning" title="Every opportunity the desk evaluated, why it entered or skipped, shadow outcomes and the hypotheses under test">Learning</a>
+      <details class="navmore" id="navMore"><summary>More</summary><div class="navmenu">
+        <a href="#review" data-v="review">Review</a>
+        <a href="#research" data-v="research">Rules</a>
+        <a href="#learning" data-v="learning" title="Every opportunity the desk evaluated, why it entered or skipped, shadow outcomes and the hypotheses under test">Learning</a>
+        <a href="#paper" data-v="paper" title="The retired v3 main paper ledger, its history, and the paper pause and kill switch">v3 Paper</a>
+      </div></details>
     </nav>
     <div class="grow"></div>
     <div class="hud" aria-label="Status">
@@ -705,9 +739,6 @@ dl.dd dt.h,dl.dd dd.h{grid-column:1/-1;text-align:left;color:var(--ink);font-wei
     <section class="view page" id="v-today" aria-label="Today">
      <div class="today">
       <div class="tdh"><h1>Today</h1><span class="m" id="tdWhen">Loading…</span></div>
-      <details class="more legendline"><summary>Labels <span class="chip paper">PAPER</span><span class="chip bt">BACKTEST</span><span class="chip mod">MODELED</span><span class="chip live">LIVE</span></summary>
-        <dl class="dd" style="margin-top:6px"><dt><span class="chip paper">PAPER</span></dt><dd>simulated fills on live quotes, never real money</dd><dt><span class="chip bt">BACKTEST</span></dt><dd>past data, in-sample or out-of-sample as marked</dd>
-        <dt><span class="chip mod">MODELED</span></dt><dd>priced from a formula, not real option prices</dd><dt><span class="chip live">LIVE</span></dt><dd>your own trades, as you logged them</dd></dl></details>
       <div class="alerts" id="tdAlerts" aria-live="polite"></div>
       <div class="tiles" id="tdTiles"><div class="tile"><small>Loading the desk…</small><b>—</b></div></div>
 
@@ -718,9 +749,8 @@ dl.dd dt.h,dl.dd dd.h{grid-column:1/-1;text-align:left;color:var(--ink);font-wei
         <div id="tdTrack"></div>
         <details class="more" id="tdTrackMore"><summary>Every strategy as its own account (table)</summary><div class="box" style="margin-top:8px"><div class="bd cmp" id="v4Track"></div></div></details></section>
 
-      <section class="tdsec" id="tdBooksSec" aria-labelledby="tdBooksT"><h2 id="tdBooksT">Books and ledgers<span class="chip paper">PAPER</span><small id="tdBooksSub">every v4 strategy trades on paper in its own ledger</small></h2>
-        <p class="m">Under 30 trades is not evidence, and win rate alone never decides. Tap a ledger for its details; each book's full table is under it.</p>
-        <div class="books" id="v4Books"><div class="empty">Loading the v4 ledgers…</div></div></section>
+      <section class="tdsec" id="tdBooksSec" aria-labelledby="tdBooksT"><details class="more" id="tdBooksMore"><summary><h2 id="tdBooksT">Books and ledgers<span class="chip paper">PAPER</span><small id="tdBooksSub">every v4 strategy trades on paper in its own ledger</small></h2></summary>
+        <div class="books" id="v4Books"><div class="empty">Loading the v4 ledgers…</div></div></details></section>
 
       <div class="tdgrid">
         <section class="tdsec" aria-labelledby="tdPosT"><h2 id="tdPosT">Open positions<small id="tdPosSub"></small></h2>
@@ -732,24 +762,23 @@ dl.dd dt.h,dl.dd dd.h{grid-column:1/-1;text-align:left;color:var(--ink);font-wei
           </div></section>
         <section class="tdsec" aria-labelledby="tdDecT"><h2 id="tdDecT">Decisions today<small>every setup checked, taken or not</small></h2>
           <div class="decsum" id="tdDecSum"></div>
-          <details class="more"><summary>By ledger and the latest 60</summary><div class="box" style="margin-top:8px"><div class="bd cmp" id="tdDec"></div></div></details>
-          <p class="m" id="tdDecV3" style="margin-top:8px;font-size:12px"></p></section>
+          <details class="more"><summary>By ledger and the latest 60</summary><div class="box" style="margin-top:8px"><div class="bd cmp" id="tdDec"></div></div>
+          <p class="m" id="tdDecV3" style="margin-top:8px;font-size:12px"></p></details></section>
       </div>
 
       <div class="tdgrid">
         <section class="tdsec" aria-labelledby="tdSwT"><h2 id="tdSwT">Switches and risk</h2>
           <div class="list sw" id="tdSw">
             <div class="row"><div class="t"><b>v4 paper entries</b> <span class="chip dim" id="v4On">…</span><small id="v4Risk">Loading the v4 desk…</small></div><button type="button" id="v4Kill" class="danger">v4 kill switch</button></div>
-            <div id="tdSwRows"></div>
           </div>
-          <details class="more"><summary>Hard-coded risk limits and open counts</summary><div class="box" style="margin-top:8px"><div class="bd cmp" id="tdLimits"></div></div></details></section>
+          <details class="more"><summary>Every switch, and the hard-coded risk limits</summary><div class="list sw"><div id="tdSwRows"></div></div><div class="box" style="margin-top:8px"><div class="bd cmp" id="tdLimits"></div></div></details></section>
         <section class="tdsec" aria-labelledby="tdHT"><h2 id="tdHT">Health</h2>
-          <div class="list sw" id="tdHealth"><div class="empty">Loading…</div></div>
-          <details class="more"><summary>Background workers</summary><div class="box" style="margin-top:8px"><div class="bd cmp" id="tdWorkers"></div></div></details></section>
+          <details class="more"><summary id="tdHealthSum">Health checks and background workers</summary><div class="list sw" id="tdHealth"><div class="empty">Loading…</div></div>
+          <div class="box" style="margin-top:8px"><div class="bd cmp" id="tdWorkers"></div></div></details></section>
       </div>
 
-      <section class="tdsec" aria-labelledby="tdNewsT"><h2 id="tdNewsT">News drift<small>event study, no trades</small></h2>
-        <div class="box"><div class="bd" id="v4News"></div></div></section>
+      <section class="tdsec" aria-labelledby="tdNewsT"><details class="more"><summary><h2 id="tdNewsT">News drift<small>event study, no trades</small></h2></summary>
+        <div class="box"><div class="bd" id="v4News"></div></div></details></section>
 
       <details class="more" id="v4Archive" style="margin-top:22px"><summary>Retired ledgers (archive)</summary>
         <p class="m" style="margin:10px 0 12px">These v3 ledgers take no new trades since v4. Their history stays here, and any trade still open is managed to its exit. <span class="chip paper">PAPER</span></p>
@@ -762,7 +791,7 @@ dl.dd dt.h,dl.dd dd.h{grid-column:1/-1;text-align:left;color:var(--ink);font-wei
         </div>
         <div class="box" style="margin-top:16px"><div class="ph"><h2>Diagnostics<span class="chip bt">BACKTEST</span><span class="chip mod">MODELED</span><small>latest backtest, modeled option prices</small></h2></div><div class="bd" id="labDiag"></div></div>
       </details>
-      <p class="m" id="v4Note" style="margin-top:18px;font-size:12px"></p>
+      <p class="m" id="v4Note" hidden></p>
      </div>
     </section>
 
@@ -802,7 +831,6 @@ dl.dd dt.h,dl.dd dd.h{grid-column:1/-1;text-align:left;color:var(--ink);font-wei
           <div class="tabs" role="tablist">
             <button type="button" role="tab" class="tab" data-tab="watch" aria-selected="true">Watchlist</button>
             <button type="button" role="tab" class="tab" data-tab="feed" aria-selected="false">Feed<span class="badge" id="feedBadge" hidden></span></button>
-            <button type="button" role="tab" class="tab" data-tab="news" aria-selected="false">News<span class="badge" id="newsBadge" hidden></span></button>
           </div>
           <div class="tabpane" id="pane-watch" role="tabpanel">
             <div class="wl" id="wl"><div class="empty" style="padding:6px 8px">Loading watchlist…</div></div>
@@ -812,9 +840,6 @@ dl.dd dt.h,dl.dd dd.h{grid-column:1/-1;text-align:left;color:var(--ink);font-wei
           <div class="tabpane" id="pane-feed" role="tabpanel" hidden>
             <div style="display:flex;justify-content:flex-end;padding:0 0 6px"><button type="button" id="muteBtn" aria-pressed="false" title="Sounds for alerts" style="padding:3px 11px;font-size:11.5px">Sounds on</button></div>
             <div class="feed" id="feed" aria-live="polite"><div class="empty" id="feedEmpty">Nothing yet today.</div></div>
-          </div>
-          <div class="tabpane" id="pane-news" role="tabpanel" hidden>
-            <div class="feed" id="newsList"><div class="empty">No market-moving news yet. Chart checks every 20 minutes.</div></div>
           </div>
         </section>
       </div>
@@ -870,10 +895,17 @@ dl.dd dt.h,dl.dd dd.h{grid-column:1/-1;text-align:left;color:var(--ink);font-wei
       </aside>
     </section>
 
+    <!-- NEWS: one card per story, key stories first (Nick 2026-11-16: "the news tab is so small ... sometimes news repeats") -->
+    <section class="view page" id="v-news" hidden aria-label="News">
+      <div class="newshead"><h1>News</h1>
+        <div class="seg" role="group" aria-label="Which stories" id="newsSeg"><button type="button" data-nf="key" aria-pressed="true" title="High and medium impact only">Key</button><button type="button" data-nf="all" aria-pressed="false">All</button></div></div>
+      <div id="pane-news" role="region" aria-live="polite"><div class="newslist" id="newsList"><div class="empty">No market-moving news yet.</div></div></div>
+    </section>
+
     <!-- PAPER -->
     <section class="view page" id="v-paper" hidden aria-label="Paper engine">
       <h1>v3 paper trading <span class="chip paper">PAPER</span></h1>
-      <p class="lead">The v3 main strategy, simulated on Schwab quotes: it buys at the ask and sells at the bid, with costs. No broker and no orders. It is retired in v4 and takes no new trades; the v4 lineup is on the <a href="#today">Today</a> page. Pause and Kill switch here cover the v4 ledgers too.</p>
+      <p class="lead">Retired: no new trades. Pause and Kill switch here also cover v4.</p>
       <div class="ledgers one" id="ledgers"></div>
       <section class="box" style="margin-bottom:16px"><div class="ph"><h2>Equity<span class="chip paper">PAPER</span><small>main paper, closed trades</small></h2></div><canvas id="eq" style="width:100%;height:190px;display:block" aria-label="Paper equity curve"></canvas></section>
       <div class="toolbar"><button type="button" id="pauseBtn">Pause paper entries</button><button type="button" id="killBtn" class="danger">Kill switch</button><span class="m" id="paperBroker"></span></div>
@@ -887,7 +919,6 @@ dl.dd dt.h,dl.dd dd.h{grid-column:1/-1;text-align:left;color:var(--ink);font-wei
     <!-- SCANNER -->
     <section class="view page" id="v-scan" hidden aria-label="Market scanner">
       <h1>Market scanner</h1>
-      <p class="lead">At 9:35 ET the desk ranks liquid stocks by unusual opening volume and checks each one's options contract by contract. These are ideas, not validated setups. A day with nothing worth trading is a valid result.</p>
       <div class="scanstat" id="scanStat"></div>
       <div class="box"><div class="ph"><h2>Stocks in play<small>ranked by opening volume vs normal</small></h2></div><div class="bd scan" id="scanTable" style="overflow:auto"></div></div>
       <div class="grid2" style="margin-top:16px">
@@ -915,7 +946,7 @@ dl.dd dt.h,dl.dd dd.h{grid-column:1/-1;text-align:left;color:var(--ink);font-wei
             <button type="button" class="golive" id="mkLive" hidden title="Jump back to the newest candle">Back to live</button></div>
         </section>
         <aside class="box mkread"><div class="ph"><h2 id="mkReadT">Desk read</h2><div class="r"><button type="button" data-side="C" class="mkchk">Check calls</button><button type="button" data-side="P" class="mkchk">Check puts</button></div></div>
-          <div class="bd" id="mkRead"><p class="m">Pick a side to get the desk’s read on this ticker: the entry gate, what’s missing, the invalidation and a contract check. The desk never places an order.</p></div>
+          <div class="bd" id="mkRead"><p class="m">Pick calls or puts for the desk’s read. It never places an order.</p></div>
           <div class="ph"><h2>News for this ticker</h2></div><div class="bd" id="mkTickNews"></div>
           <div class="ph"><h2>Earnings</h2></div><div class="bd" id="mkTickEarn"></div>
         </aside>
@@ -942,6 +973,7 @@ dl.dd dt.h,dl.dd dd.h{grid-column:1/-1;text-align:left;color:var(--ink);font-wei
           <div class="bd catlist" id="catList"></div><div class="cover" id="catCover"></div></div>
         <div class="box"><div class="ph"><h2>Earnings calendar<small>dates marked confirmed or estimated</small></h2></div><div class="bd scan" id="earnList" style="overflow:auto"></div><div class="cover" id="earnCover"></div></div>
       </div>
+      <details class="more" id="mkResearch" style="margin-top:16px"><summary>Research tables</summary>
       <div class="grid2" style="margin-top:16px">
         <div class="box"><div class="ph"><h2>Paper autopilot<span class="chip paper">PAPER</span><small>simulated, no orders anywhere</small></h2><div class="r"><button type="button" id="autoPause">Pause new paper entries</button></div></div><div class="bd" id="autoList"></div></div>
         <div class="box"><div class="ph"><h2>Settings and spending</h2></div><div class="bd" id="mkSettings"></div></div>
@@ -963,6 +995,7 @@ dl.dd dt.h,dl.dd dd.h{grid-column:1/-1;text-align:left;color:var(--ink);font-wei
         <div class="bd scan" id="wwTable" style="overflow:auto"></div>
         <div class="setf"><b style="color:var(--ink)">Which option contract</b><span class="chip paper">PAPER</span><span>the same live signals, 12 contracts each, followed on real quotes (nothing filled)</span></div>
         <div class="bd scan" id="ctTable" style="overflow:auto"></div></div>
+      </details>
     </section>
 
     <!-- JOURNAL -->
@@ -1000,7 +1033,6 @@ dl.dd dt.h,dl.dd dd.h{grid-column:1/-1;text-align:left;color:var(--ink);font-wei
     <!-- REVIEW -->
     <section class="view page" id="v-review" hidden aria-label="Review">
       <h1>Review</h1>
-      <p class="lead">Your trades and the paper engine's are kept apart. They take different trades, so neither is a fair score on its own.</p>
       <div class="grid2">
         <div class="box"><div class="ph"><h2>You<span class="chip live">LIVE</span><small>last 30 days</small></h2></div><div class="bd" id="rvReal"></div></div>
         <div class="box"><div class="ph"><h2>Paper engine<span class="chip paper">PAPER</span><small>last 30 days</small></h2></div><div class="bd" id="rvPaper"></div></div>
@@ -1011,7 +1043,6 @@ dl.dd dt.h,dl.dd dd.h{grid-column:1/-1;text-align:left;color:var(--ink);font-wei
     <!-- LEARNING (v3.5, a new tab: the existing tabs are unchanged) -->
     <section class="view page" id="v-learning" hidden aria-label="Learning">
       <h1>Learning</h1>
-      <p class="lead">What the desk evaluated, why it entered, waited or skipped, and what it is testing. Facts from the desk's own records; paper, shadow and real results are never added together.</p>
       <div class="box"><div class="ph"><h2>ORB retest<span class="chip paper">PAPER</span><small>corrected ORB: break, independent candle, retest (SPY/QQQ paper research)</small></h2></div><div class="bd" id="lnOrbx"></div></div>
       <div class="box" style="margin-top:16px"><div class="ph"><h2>Opportunities today<small>repeated checks of one setup count once</small></h2><div class="r"><a class="m" id="lnExport" href="api/learning/export?what=decisions" download>Export decisions (CSV)</a></div></div><div class="bd" id="lnOpp"></div></div>
       <div class="grid2" style="margin-top:16px">
@@ -1424,15 +1455,15 @@ $("#wlAdd").onsubmit = async e => {
 let unread = 0;
 $$(".tab").forEach(b => b.onclick = () => {
   $$(".tab").forEach(x => x.setAttribute("aria-selected", String(x === b)));
-  $("#pane-watch").hidden = b.dataset.tab !== "watch"; $("#pane-feed").hidden = b.dataset.tab !== "feed"; $("#pane-news").hidden = b.dataset.tab !== "news";
+  $("#pane-watch").hidden = b.dataset.tab !== "watch"; $("#pane-feed").hidden = b.dataset.tab !== "feed";
   if (b.dataset.tab === "feed"){ unread = 0; $("#feedBadge").hidden = true; }
-  if (b.dataset.tab === "news"){ newsUnread = 0; $("#newsBadge").hidden = true; loadNews(); }
   store.set("leftTab", b.dataset.tab);
 });
 setInterval(() => { if (!$("#v-trade").hidden && !document.hidden) loadWatch(); }, 30000);
 
 /* ---------- views (the URL hash is the view) ---------- */
-const VIEWS = ["today","trade","scan","markets","paper","journal","review","research","learning"];
+const VIEWS = ["today","trade","news","scan","markets","paper","journal","review","research","learning"];
+const MORE_VIEWS = ["review","research","learning","paper"];   // under "More" in the nav
 const VIEW_ALIAS = {lab: ["today", "tdBooksSec"]};     // the old Research page (#lab) is the books section of Today now
 function show(v){
   let anchor = null;
@@ -1440,11 +1471,18 @@ function show(v){
   v = VIEWS.includes(v) ? v : "today";
   if (show.cur !== v) { try { window.scrollTo(0, 0); } catch(e){} show.cur = v; }    // a new page starts at its top (phones scroll the window)
   $$("nav a").forEach(a => a.dataset.v === v ? a.setAttribute("aria-current","page") : a.removeAttribute("aria-current"));
+  const nm = $("#navMore"); if (nm){ nm.open = false; nm.classList.toggle("cur", MORE_VIEWS.includes(v)); }
   $$(".view").forEach(s => s.hidden = s.id !== "v-" + v);
-  ({today:() => Today.load(true), trade:() => DeskChart.show(), paper:loadPaper, scan:loadScanner, markets:loadMarkets, journal:()=>loadJournal(), review:loadReview, research:loadResearch, learning:loadLearning}[v] || (()=>{}))();
+  if (anchor === "tdBooksSec") $("#tdBooksMore").open = true;
+  if (v === "news"){ newsUnread = 0; $("#newsBadge").hidden = true; }
+  ({today:() => Today.load(true), trade:() => DeskChart.show(), news:loadNews, paper:loadPaper, scan:loadScanner, markets:loadMarkets, journal:()=>loadJournal(), review:loadReview, research:loadResearch, learning:loadLearning}[v] || (()=>{}))();
   if (anchor) setTimeout(() => { const a = document.getElementById(anchor); if (a) a.scrollIntoView({block: "start"}); }, 60);
 }
 window.addEventListener("hashchange", () => show(location.hash.slice(1)));
+$("#navMore").addEventListener("toggle", e => {          // phones: the menu opens inline at the end of the nav strip, so bring it into view
+  if (e.target.open){ const n = $("nav"); if (n.scrollWidth > n.clientWidth) n.scrollTo({left: n.scrollWidth, behavior: "smooth"}); }
+});
+document.addEventListener("click", e => { const m = $("#navMore"); if (m.open && !m.contains(e.target)) m.open = false; });
 
 /* ---------- polling ---------- */
 async function poll(){
@@ -1514,7 +1552,7 @@ function beep(high){
 function notify(text, ad){
   const [title, ...rest] = text.split(" | ");
   beep(ad.level === "high");
-  if (ad.kind === "news"){ if ($("#pane-news").hidden){ newsUnread++; const b = $("#newsBadge"); b.hidden = false; b.textContent = newsUnread; } loadNews(); }
+  if (ad.kind === "news"){ if (show.cur !== "news"){ newsUnread++; const b = $("#newsBadge"); b.hidden = false; b.textContent = newsUnread; } loadNews(); }
   if (window.Voice && Voice.isOpen() && ad.level === "high") return;
   if (notifyOn && "Notification" in window && Notification.permission === "granted" && (document.hidden || !document.hasFocus())){
     const tk = (title.match(/\b(SPY|QQQ)\b/) || [])[1];
@@ -1528,11 +1566,42 @@ $("#bellBtn").onclick = async () => {
   if (notifyOn && "Notification" in window && Notification.permission === "denied") $("#sendStatus").textContent = "Pop-ups are blocked for this site in your browser settings; sounds and the feed still work.";
 };
 setBell();
+const NSTOP = new Set("the a an and or of to in on for with at by from as is are was were be its it this that after before over amid says said say report reports reported new up down than more into out about how why what will may could".split(" "));
+const NUP = new Set("beat beats top tops rise rises rose gain gains surge surges jump jumps raise raises raised upgrade upgrades upgraded above higher soar soars rally rallies record".split(" "));
+const NDOWN = new Set("miss misses missed fall falls fell drop drops plunge plunges slump slumps lower lowers downgrade downgrades downgraded below sink sinks tumble tumbles decline declines slash slashes warns".split(" "));
+function nWords(h){ const out = new Set(); for (let w of String(h).toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/)){ if (w.length < 3 || NSTOP.has(w)) continue; if (w.length > 4 && w.endsWith("s")) w = w.slice(0, -1); out.add(w); } return out; }
+function nTone(h){ const w = String(h).toLowerCase().replace(/[^a-z ]/g, " ").split(/\s+/); const u = w.filter(x => NUP.has(x)).length, d = w.filter(x => NDOWN.has(x)).length; return (u > d) - (d > u); }
+function sameStory(a, b){       // the same rule as alerts.same_story on the desk: re-worded repeats collapse into one card
+  const ta = new Set(String(a.tickers || "").split(",").filter(Boolean)), tb = String(b.tickers || "").split(",").filter(Boolean);
+  if (ta.size && tb.length && !tb.some(t => ta.has(t))) return false;
+  if (nTone(a.headline) * nTone(b.headline) < 0) return false;
+  const wa = nWords(a.headline), wb = nWords(b.headline); let c = 0; wa.forEach(w => { if (wb.has(w)) c++; });
+  return c >= 3 && c / Math.max(1, new Set([...wa, ...wb]).size) >= 0.5;
+}
+let newsFilter = store.get("newsFilter", "key"), NEWS_ALL = [];
+function newsStories(rows){
+  const out = [];
+  for (const x of rows || []){ const k = out.find(o => sameStory(o, x)); if (k){ if (x.source && !k.also.includes(x.source) && x.source !== k.source) k.also.push(x.source); } else out.push({...x, also: []}); }
+  return out;
+}
+function renderNews(){
+  const rows = NEWS_ALL.filter(x => newsFilter === "all" || x.impact === "high" || x.impact === "medium");
+  $$("#newsSeg button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.nf === newsFilter)));
+  $("#newsList").innerHTML = rows.length ? rows.map(x => {
+    const dir = x.direction === "bullish" ? ["u", "▲ Bullish"] : x.direction === "bearish" ? ["d", "▼ Bearish"] : ["w", "• Watch"];
+    const why = String(x.why || ""), tks = String(x.tickers || "").split(",").filter(Boolean);
+    return `<article class="nitem"><div class="nh"><span class="nk ${dir[0]}">${dir[1]}</span>${x.impact === "high" ? '<span class="hi">High impact</span>' : ""}<time>${esc((x.at || hhmm(x.ts)).slice(0, 5))}</time></div>
+      <h3>${esc(x.headline)}</h3>${why ? `<p>${esc(why.length > 160 ? why.slice(0, 157) + "…" : why)}</p>` : ""}
+      <div class="nm">${tks.map(t => `<span class="chip dim">${esc(t)}</span>`).join("")}<span>${esc(x.source || "")}${x.also.length ? " +" + x.also.length + " more" : ""}</span></div></article>`;
+  }).join("") : `<div class="empty">${NEWS_ALL.length ? "No high or medium impact stories. Tap All to see the rest." : "No market-moving news yet."}</div>`;
+}
+$$("#newsSeg button").forEach(b => b.onclick = () => { newsFilter = b.dataset.nf; store.set("newsFilter", newsFilter); renderNews(); });
 async function loadNews(){
   try{
-    const n = await api("api/news?limit=30"); NEWS = n || []; renderTape();
-    $("#newsList").innerHTML = n.length ? n.map(x => `<div class="ev news-i"><time>${esc((x.at || hhmm(x.ts)).slice(0, 5))}</time><span class="t"><span class="nk ${x.direction === "bullish" ? "u" : x.direction === "bearish" ? "d" : "w"}">${x.direction === "bullish" ? "▲" : x.direction === "bearish" ? "▼" : "•"}${x.impact === "high" ? " High" : ""}</span><b>${esc(x.headline)}</b>${x.why ? `<br>${esc(x.why)}` : ""}<br><span class="m">${esc(x.source || "")}${x.tickers ? ", " + esc(x.tickers) : ""}</span></span></div>`).join("")
-      : '<div class="empty">No market-moving news yet. Chart checks every 20 minutes.</div>';
+    const n = await api("api/news?limit=60");
+    NEWS_ALL = newsStories(n || []);
+    NEWS = NEWS_ALL.filter(x => x.impact !== "low").slice(0, 30); renderTape();
+    renderNews();
   }catch(e){}
 }
 /* ---------- bottom tape: watchlist prices, then the latest headlines ---------- */
@@ -2589,6 +2658,8 @@ const Today = (() => {
     row("Chart (AI)", S.chat_connected ? true : null, esc(`${S.chat_connected ? "linked" : "not linked"} · ${S.ai_calls_today ?? 0} AI calls today`));
     if (V.v4) row("v4 workers", null, esc(`chain log ${(d.chains || {}).status || "—"} (${(d.chains || {}).rows_today || 0} rows today) · stocks worker ${(d.stocks_worker || {}).status || "—"} · index engine ${(d.index_engine || {}).error ? "error " + d.index_engine.error : (d.index_engine || {}).errors ? `${d.index_engine.errors} errors: ${d.index_engine.last_error || ""}` : d.index_engine ? "ok" : "—"}`));
     put("#tdHealth", rows.join(""));
+    const bad = rows.filter(r => r.includes('class="chip bad"')).length;
+    $("#tdHealthSum").textContent = bad ? `${plural(bad, "check")} need a look: open the health checks` : "All checks OK · health checks and background workers";
   }
   function workers(){
     const w = (V.health || {}).workers; if (!w) { put("#tdWorkers", `<div class="empty">${esc(V.err.health || "Loading…")}</div>`); return; }

@@ -4,7 +4,7 @@ Every alert becomes an 'alert' event (desk feed + browser pop-up + sound) and, i
 through the free ntfy app; if TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID are set, also a Telegram message (telegram_alerts.py,
 with Took / Skipped buttons on co-pilot alerts). Alerts are heads-ups only: they never trade and never change a plan.
 """
-from datetime import datetime
+from datetime import datetime, timedelta
 import hashlib
 import json
 import os
@@ -121,6 +121,49 @@ def move_check(ticker, b5):
 
 
 # ---------------- news (posted by Chart's news-scan routine) ----------------
+_STOP = set("the a an and or of to in on for with at by from as is are was were be its it this that after before over amid "
+             "says said say report reports reported new up down than more into out about how why what will may could".split())
+SIMILAR = 0.5                       # word-overlap (Jaccard) at which two headlines are the same story
+
+
+def _words(headline):
+    """The headline's meaningful words: lower case, no punctuation, no filler, simple plurals folded, 'nvidia'='nvidia'."""
+    out = set()
+    for w in re.sub(r"[^a-z0-9 ]", " ", str(headline).lower()).split():
+        if len(w) < 3 or w in _STOP:
+            continue
+        out.add(w[:-1] if len(w) > 4 and w.endswith("s") else w)
+    return out
+
+
+_UP = set("beat beats top tops rise rises rose gain gains surge surges jump jumps raise raises raised upgrade upgrades upgraded "
+          "above higher soar soars rally rallies record".split())
+_DOWN = set("miss misses missed fall falls fell drop drops plunge plunges slump slumps lower lowers downgrade downgrades "
+            "downgraded below sink sinks tumble tumbles decline declines slash slashes warns".split())
+
+
+def _tone(headline):
+    """+1 good news, -1 bad news, 0 neither/mixed, from a few direction words. Opposite tones are never the same story."""
+    w = set(re.sub(r"[^a-z ]", " ", str(headline).lower()).split())
+    up, dn = len(w & _UP), len(w & _DOWN)
+    return (up > dn) - (dn > up)
+
+
+def same_story(a, b, tickers_a="", tickers_b=""):
+    """True when two headlines tell the same story (the same news re-worded by another source). Different tickers or
+    opposite tones never match; otherwise the meaningful words must overlap by SIMILAR or more (Jaccard), with at least 3
+    words in common."""
+    ta = {t for t in str(tickers_a or "").split(",") if t}
+    tb = {t for t in str(tickers_b or "").split(",") if t}
+    if ta and tb and not (ta & tb):
+        return False
+    if _tone(a) * _tone(b) < 0:                                      # "beats" vs "misses": two different stories
+        return False
+    wa, wb = _words(a), _words(b)
+    common = len(wa & wb)
+    return common >= 3 and common / max(1, len(wa | wb)) >= SIMILAR
+
+
 def _nid(headline):
     norm = re.sub(r"[^a-z0-9 ]", "", headline.lower())
     norm = " ".join(w for w in norm.split() if len(w) > 2)[:140]
@@ -141,6 +184,10 @@ def add_news(items):
         impact = impact if impact in ("high", "medium", "low") else "medium"
         direction = str(it.get("direction", "unclear")).lower()[:12]
         tickers = ",".join(t for t in re.findall(r"[A-Z]{1,5}", str(it.get("tickers", "")).upper()))[:60]
+        since = (core.now_et() - timedelta(hours=24)).isoformat(timespec="seconds")
+        if any(same_story(h, r["headline"], tickers, r["tickers"])                 # the same story re-worded: no new row, no alert
+               for r in store.q("SELECT headline, tickers FROM news WHERE ts >= ? ORDER BY ts DESC LIMIT 200", (since,))):
+            continue
         row = (nid, store.ts(), str(it.get("time", ""))[:20], h, str(it.get("source", ""))[:80], str(it.get("url", ""))[:300],
                tickers, impact, direction, str(it.get("why", ""))[:300])
         store.x("INSERT INTO news(id,ts,at,headline,source,url,tickers,impact,direction,why) VALUES(?,?,?,?,?,?,?,?,?,?)", row)
@@ -153,5 +200,15 @@ def add_news(items):
 
 
 def recent_news(limit=20):
+    """The newest stories, one row per story: a re-worded repeat of a newer row is dropped (rows stored before the
+    same_story check could repeat)."""
     store.x(NEWS_SCHEMA)
-    return store.q("SELECT at, ts, headline, source, url, tickers, impact, direction, why FROM news ORDER BY ts DESC LIMIT ?", (limit,))
+    rows = store.q("SELECT at, ts, headline, source, url, tickers, impact, direction, why FROM news ORDER BY ts DESC LIMIT ?",
+                   (max(1, int(limit)) * 3,))
+    out = []
+    for r in rows:
+        if not any(same_story(r["headline"], k["headline"], r["tickers"], k["tickers"]) for k in out):
+            out.append(r)
+        if len(out) >= limit:
+            break
+    return out

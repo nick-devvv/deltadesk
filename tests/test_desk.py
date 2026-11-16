@@ -531,3 +531,27 @@ def test_alerts_setups_moves_news(desk_env, monkeypatch):
     assert store.q("SELECT COUNT(*) n FROM events WHERE kind='alert'")[0]["n"] == 3   # news alerts off: stored, not pinged
 
 
+def test_news_repeats_collapse_into_one_story(desk_env):
+    """Nick, 2026-11-16: "sometimes news repeats". The same story re-worded by another source is stored once and pings
+    once; opposite news ("beats" vs "misses") and other tickers stay separate; rows stored before the rule collapse when read."""
+    import alerts
+    first = alerts.add_news([{"headline": "Nvidia beats Q3 estimates, guides revenue above consensus", "source": "Reuters",
+                              "impact": "high", "direction": "bullish", "tickers": "NVDA"}])
+    again = alerts.add_news([{"headline": "NVIDIA tops third-quarter estimates and guides revenue above consensus", "source": "CNBC",
+                              "impact": "high", "direction": "bullish", "tickers": "NVDA"}])
+    assert len(first) == 1 and again == []
+    pings = store.q("SELECT COUNT(*) n FROM events WHERE kind='alert' AND text LIKE '%NVIDIA%' OR text LIKE '%Nvidia%'")[0]["n"]
+    assert pings == 1
+    assert len(alerts.add_news([{"headline": "Oracle beats earnings estimates", "tickers": "ORCL", "impact": "high"},
+                                {"headline": "Oracle misses earnings estimates", "tickers": "ORCL", "impact": "high"}])) == 2
+    assert len(alerts.add_news([{"headline": "Apple shares fall after iPhone sales miss estimates", "tickers": "AAPL"},
+                                {"headline": "Microsoft shares fall after cloud sales miss estimates", "tickers": "MSFT"}])) == 2
+    assert not alerts.same_story("CPI rises 0.3% in October, core 0.2%", "Retail sales rise 0.3% in October")
+    import hashlib                                     # a repeat stored before the rule existed: one story when read
+    store.x("INSERT INTO news(id,ts,at,headline,source,url,tickers,impact,direction,why) VALUES(?,?,?,?,?,?,?,?,?,?)",
+            (hashlib.sha1(b"old").hexdigest()[:16], store.ts(), "", "Nvidia tops Q3 estimates; guides revenue above consensus",
+             "Blog", "", "NVDA", "high", "bullish", ""))
+    heads = [r["headline"] for r in alerts.recent_news(20)]
+    assert sum("onsensus" in h for h in heads) == 1 and len(heads) == 5
+
+
