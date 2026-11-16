@@ -75,9 +75,8 @@ def test_overview_groups_books_splits_tickers_and_pairs_shadows(env):
     books = {b["book"]: b for b in d["books"]}
     assert list(books) == ["index", "premium", "stocks", "catalyst", "sprint", "swing", "trend", "pead", "core", "tcore", "score", "copilot"]       # core: core_spy (T30b); pead: pead_t21 (held overnight); trend: nb_shares; swing: etf10_rsi2 (held overnight); sprint: paper forward tests (sprint_paper.py)
     idx = {l["ledger"]: l for l in books["index"]["ledgers"]}
-    assert set(idx) == {"noise", "noise_v2", "noise_trend", "old"}
+    assert set(idx) == {"noise", "noise_v2", "noise_trend"}                      # `old` retired 2026-11-16
     assert idx["noise_v2"]["by_ticker"]["SPY"]["net"] == 120.0 and idx["noise_v2"]["by_ticker"]["QQQ"]["net"] == -40.0
-    assert idx["old"]["legacy"] == "legacy forward test (not from a published source)" and "legacy forward test" in idx["old"]["label"]
     st = {l["ledger"]: l for l in books["stocks"]["ledgers"]}["sip_orb5"]
     assert st["trades"] == 2 and st["shadow"]["trades"] == 1 and st["shadow"]["same_entries"]["shares"]["trades"] == 1
     assert st["shadow"]["same_entries"]["shares"]["net"] == 30.0 and st["shadow"]["same_entries"]["options"]["net"] == 55.0
@@ -87,14 +86,17 @@ def test_overview_groups_books_splits_tickers_and_pairs_shadows(env):
     assert d["risk"]["limits"]["desk_max_open"] > 0
 
 
-def test_legacy_noise_and_old_rows_read_the_v3_table(env):
+def test_legacy_noise_reads_the_v3_table_and_retired_old_goes_to_the_archive(env):
     for i, (led, pnl) in enumerate((("noise", 50.0), ("old", -20.0), ("old", 10.0))):
         store.pos_save({"id": f"{led}:{i}", "ledger": led, "date": "2026-11-04", "ticker": "SPY", "contract": "600C", "symbol": "S",
                         "side": "C", "qty_init": 1, "qty_open": 0, "fill": 2.0, "opened": f"2026-11-04T10:0{i}:00-05:00",
                         "closed": f"2026-11-04T11:0{i}:00-05:00", "status": "CLOSED", "setup_id": str(i), "grade": "B", "setup": "X",
                         "plan": {}, "realized": pnl, "mfe": 0, "mae": 0, "policy_version": "v", "verified": "", "notes": ""})
-    idx = {l["ledger"]: l for l in RP.overview("2026-11-02")["books"][0]["ledgers"]}
-    assert idx["noise"]["net"] == 50.0 and idx["old"]["trades"] == 2 and idx["old"]["net"] == -10.0
+    d = RP.overview("2026-11-02")
+    idx = {l["ledger"]: l for l in d["books"][0]["ledgers"]}
+    assert idx["noise"]["net"] == 50.0 and "old" not in idx
+    old = {r["ledger"]: r for r in d["retired"]["ledgers"]}["old"]
+    assert old["retired"] and old["trades"] == 2 and old["net"] == -10.0
 
 
 def test_retired_archive_lists_retired_history(env):
@@ -104,7 +106,7 @@ def test_retired_archive_lists_retired_history(env):
                     "plan": {}, "realized": -12.0, "mfe": 0, "mae": 0, "policy_version": "v", "verified": "", "notes": ""})
     ret = RP.overview()["retired"]
     assert [r["ledger"] for r in ret["ledgers"]] == ["research"] and ret["ledgers"][0]["retired"] and ret["ledgers"][0]["net"] == -12.0
-    assert "old" not in ret["list"]["ledgers"]
+    assert "old" in ret["list"]["ledgers"]                                      # retired 2026-11-16
 
 
 def test_matched_random_scores_use_one_yardstick_and_never_touch_pl(env):

@@ -1,5 +1,6 @@
-"""v4: the `old` ledger (policy_old.py, frozen 2026-10-28.3 rules) stays ACTIVE as a legacy forward test (not from a
-published source). Its behavior must be byte-identical to the code before the v4 retirements.
+"""v4: the `old` ledger (policy_old.py, frozen 2026-10-28.3 rules) ran as a legacy forward test (not from a published
+source) and is retired since 2026-11-16. Its code path must stay byte-identical to the code before the v4 retirements
+(replayed with the retirement guard lifted), and with the production config it opens nothing new.
 
 The golden file tests/fixtures/old_golden_v35.json was generated from the v3.5 code (commit 3877798, before the v4
 retirement stage) by replaying this fixture day through engine.tick() once per minute. The test replays the same day
@@ -56,6 +57,9 @@ def run_day(monkeypatch, tmp_path):
 
 
 def test_old_ledger_still_opens_trades_exactly_as_before(monkeypatch, tmp_path):
+    import retire
+    real = retire.is_retired
+    monkeypatch.setattr(retire, "is_retired", lambda led: False if led == "old" else real(led))   # the code path, guard lifted
     got = run_day(monkeypatch, tmp_path)
     marketdata.use(None)
     if os.environ.get("REGEN_OLD_GOLDEN") == "1":
@@ -70,10 +74,12 @@ def test_old_ledger_still_opens_trades_exactly_as_before(monkeypatch, tmp_path):
     assert got["ideas"] == want["ideas"]
 
 
-def test_old_is_not_retired_and_is_labeled_a_legacy_forward_test():
+def test_old_is_retired_and_opens_nothing_new_with_the_production_config(monkeypatch, tmp_path):
     import retire
-    assert retire.active() and not retire.is_retired("old")
-    assert retire.legacy_label("old") == "legacy forward test (not from a published source)"
+    assert retire.active() and retire.is_retired("old") and retire.legacy_label("old") is None
+    got = run_day(monkeypatch, tmp_path)
+    marketdata.use(None)
+    assert got["positions"] == [] and got["orders"] == []      # the same fixture day: no old-ledger trade at all
 
 
 

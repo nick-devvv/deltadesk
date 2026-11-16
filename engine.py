@@ -1105,7 +1105,7 @@ def tick():
                     v4index.tick(t, s, chain_rows)
                 except Exception as e:
                     _state["last_error"] = f"v4 index: {type(e).__name__}: {e}"[:200]
-                if sess["entries_allowed"] and not retire.is_retired("old"):    # v4: `old` stays active (legacy forward test)
+                if sess["entries_allowed"] and not retire.is_retired("old"):    # v4: `old` retired 2026-11-16 (open trades still managed)
                     if core.policy()["v3"]["old_policy_shadow"]["enabled"]:
                         try:
                             policy_old.scan(t, s, _LazyChains(t))   # v4: chains fetched only when the scan needs them

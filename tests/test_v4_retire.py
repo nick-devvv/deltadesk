@@ -22,7 +22,7 @@ import store  # noqa: E402
 ET = core.ET
 DAY = datetime(2026, 10, 28, tzinfo=ET)
 RETIRED = ["paper", "research", "exit31", "gated", "orbx_swing", "orbx_atr", "orbx_2r", "orbx_ormid", "news_mom",
-           "inplay", "board", "earn_post", "earn_pre", "lab_orb_break", "lab_noise", "lab_v3", "spec_x_family"]
+           "inplay", "board", "earn_post", "earn_pre", "old", "lab_orb_break", "lab_noise", "lab_v3", "spec_x_family"]
 
 
 @pytest.fixture
@@ -46,7 +46,7 @@ def test_production_config_retires_exactly_the_planned_ledgers():
     for led in RETIRED:
         assert retire.is_retired(led), led
     for led in ("noise", "noise_v2", "noise_trend", "orb_credit", "ic_20d", "sip_orb5", "sip_orb5_x", "sip_orb15", "earn_day",
-                "sip_orb5_opt", "earn_day_opt", "real", "old"):
+                "sip_orb5_opt", "earn_day_opt", "real"):
         assert not retire.is_retired(led), led
     assert retire.kronos_enabled() is False
 
@@ -55,7 +55,7 @@ def test_missing_config_never_unretires(monkeypatch, tmp_path):
     monkeypatch.setattr(retire, "FILE", tmp_path / "nope.json")
     monkeypatch.setattr(retire, "_cache", {"mtime": None, "cfg": None})
     assert retire.is_retired("paper") and retire.is_retired("lab_momo") and not retire.is_retired("noise")
-    assert not retire.is_retired("old") and retire.legacy_label("old")
+    assert retire.is_retired("old") and retire.legacy_label("old") is None          # retired 2026-11-16, stays retired
 
 
 @pytest.mark.parametrize("led", RETIRED)

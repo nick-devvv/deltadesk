@@ -1,7 +1,8 @@
 """retire.py - v4: which paper ledgers take no NEW entries, and the Kronos switch. Pure code, no network, no AI.
 
-The `old` ledger (policy_old.py, frozen 2026-10-28.3 rules) is NOT retired: Nick kept it as a legacy forward test
-(not from a published source); it opens paper trades exactly as before (tests/test_v4_old_regression.py).
+The `old` ledger (policy_old.py, frozen 2026-10-28.3 rules) ran as a legacy forward test from 2026-10-31 and is
+retired since 2026-11-16 (Nick: "why is the old rules even being traded"). Its code path is unchanged
+(tests/test_v4_old_regression.py replays it with the guard lifted).
 
 A retired ledger keeps its code, its database rows and its open trades: open positions are still managed to their exit
 by the same code as before. Only new entries are refused, at every entry point (paper.buy, the lab, the scanner,
@@ -16,13 +17,13 @@ import json
 import core
 
 FILE = core.HERE / "config" / "v4.json"
-VERSION = "2026-10-31.v4-retire1"
+VERSION = "2026-11-16.v4-retire2"   # retire2: `old` retired too
 REASON = "retired in v4: no new entries (code and history kept; open trades are still managed to their exit)"
 DEFAULTS = {"retire_active": True,
             "retired": ["paper", "research", "exit31", "gated", "orbx_swing", "orbx_atr", "orbx_2r", "orbx_ormid",
-                        "news_mom", "inplay", "board", "earn_post", "earn_pre"],
+                        "news_mom", "inplay", "board", "earn_post", "earn_pre", "old"],
             "retired_prefixes": ["lab_", "spec_"],
-            "legacy_forward_tests": {"old": "legacy forward test (not from a published source)"},
+            "legacy_forward_tests": {},
             "kronos_enabled": False}
 _override = None                       # tests only: None = production setting from config/v4.json
 _cache = {"mtime": None, "cfg": None}

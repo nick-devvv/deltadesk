@@ -6,8 +6,9 @@ average R, and a 95% interval for the expectancy that resamples whole SESSIONS (
 the row says so. Index ledgers are split SPY vs QQQ (and XSP); stock ledgers sit next to their options shadow on the
 SAME entries; share ledgers also show matched random entries (same stock, day, side, stop distance and flat time,
 entered at a random bar's next open, $0.02/share, 50 paths, fixed seed), scored after the close by score_controls().
-The `noise` reference ledger and the `old` ledger (legacy forward test, not from a published source; Nick kept it
-active) live in the v3 positions table, unchanged, and are shown in the index book with the same metrics.
+The `noise` reference ledger lives in the v3 positions table, unchanged, and is shown in the index book with the same
+metrics. The `old` ledger (legacy forward test, not from a published source) was retired on 2026-11-16 and is in the
+retired archive with its history.
 The swing book (etf10_rsi2.py, held overnight) row carries its evidence label, the T6 R2 backtest numbers (research and
 sealed windows, labeled BACKTEST) and the forward mean % per trade in the same unit.
 The core book (core_spy.py, the T30b SPY core) row carries its evidence label, the T30 backtest numbers (labeled BACKTEST
@@ -28,7 +29,7 @@ import store
 import v4store as S
 
 BOOKS = [
-    ("index", "Index momentum: SPY / QQQ 0DTE options", ["noise", "noise_v2", "noise_trend", "old"]),
+    ("index", "Index momentum: SPY / QQQ 0DTE options", ["noise", "noise_v2", "noise_trend"]),   # `old` retired 2026-11-16: archive
     ("premium", "Index premium selling: paper credit spreads (SPY / QQQ / XSP)", ["orb_credit", "ic_20d"]),
     ("stocks", "Stocks in play: shares, with an options shadow on the same entries", ["sip_orb5", "sip_orb5_x", "sip_orb15"]),
     ("catalyst", "Catalysts: earnings-day breakouts and the news-drift event study", ["earn_day"]),
@@ -55,7 +56,7 @@ BOOKS = [
 ]
 SPRINT_LEDGERS = ("fb_or", "otm_put", "otm_bounce", "otm_h")
 LEGACY_TABLE = ("noise", "old")             # ledgers kept in the v3 positions table, read-only here
-LABELS = {"old": "Old rules (Oct 28): legacy forward test (not from a published source)",
+LABELS = {"old": "Old rules (Oct 28): retired 2026-11-16 (was a legacy forward test, not from a published source)",
           "noise": "Noise band (reference, unchanged)", "noise_v2": "Noise band v2 (paper exits, -50% stop)",
           "noise_trend": "Noise band on trend days", "orb_credit": "Opening-range credit spread", "ic_20d": "20-delta iron condor",
           "sip_orb5": "Stocks in play, 5-min ORB", "sip_orb5_x": "Stocks in play, RV 5x / ATR $2", "sip_orb15": "Stocks in play, 15-min ORB",
