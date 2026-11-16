@@ -39,7 +39,7 @@ All rules were frozen before any result. Each module's docstring holds the exact
   - an FOMC, CPI or jobs day.
 
   An unknown condition never counts either way. The score is recorded at every check.
-- `old`: the frozen 2026-10-28.3 rules, a **legacy forward test (not from a published source)**.
+- `old`: the frozen 2026-10-28.3 rules, a legacy forward test (not from a published source) until **2026-11-16, when Nick retired it** ("why is the old rules even being traded"). History stays in the retired archive.
 - Fills use the noise ledger's own execution model, so `noise_v2` and `noise_trend` differ from `noise` only in their rule. Each fill also needs a quote dated after the check (retried for 5 minutes).
 
 **Premium book** (SPY, QQQ, plus XSP when listed; 1 spread):
