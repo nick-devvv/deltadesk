@@ -206,6 +206,8 @@ def test_today_renders_on_a_phone_without_sideways_scroll(tmp_path, monkeypatch)
                 tiles = pg.eval_on_selector_all("#tdTiles .tile", "els => els.map(e => e.innerText)")
                 assert "PAPER" in tiles[0] and "Desk P/L today" in tiles[0] and "LIVE" in tiles[6]
                 assert pg.locator("#v-today").is_visible() and not pg.locator("#v-trade").is_visible()
+                assert not pg.locator("#v4Books").is_visible()                # the ledger list starts folded
+                pg.click("#tdBooksMore > summary")
                 sprint = pg.inner_text("section.book[aria-label='Sprint forward tests']")
                 assert "source run setups_v2-012" in sprint and "PAPER" in sprint
                 pg.click("details[data-k='l:otm_h'] > summary")
@@ -223,3 +225,23 @@ def test_today_renders_on_a_phone_without_sideways_scroll(tmp_path, monkeypatch)
         srv.shutdown()
     assert not errors, errors
     assert not posts                                                          # looking at Today sends nothing to the desk
+
+
+def test_decluttered_nav_and_the_news_page():
+    """Nick, 2026-11-16: "remove all the unnecessary things ... the news tab is so small". Six main views, the rest
+    under More (nothing removed); News is its own page; the small left box keeps Watchlist and Feed."""
+    nav = re.search(r'<nav aria-label="Views">(.*?)</nav>', HTML, re.S).group(1)
+    main_nav = nav.split('<details class="navmore"')[0]
+    assert re.findall(r'data-v="([a-z]+)"', main_nav) == ["today", "trade", "news", "markets", "scan", "journal"]
+    more = nav.split('<details class="navmore"')[1]
+    assert re.findall(r'data-v="([a-z]+)"', more) == ["review", "research", "learning", "paper"]
+    assert 'const VIEWS = ["today","trade","news",' in HTML and 'id="v-news"' in HTML
+    assert re.findall(r'data-tab="([a-z]+)"', HTML) == ["watch", "feed"]          # no tiny news tab any more
+    news = re.search(r'<section class="view page" id="v-news".*?</section>', HTML, re.S).group(0)
+    assert 'id="newsList"' in news and 'data-nf="key"' in news and 'data-nf="all"' in news
+    assert "function sameStory(a, b)" in HTML and "newsStories(n || [])" in HTML       # repeats collapse on the page too
+    assert 'x.impact === "high" || x.impact === "medium"' in HTML                    # Key = high and medium impact
+    for folded in ('id="tdBooksMore"', 'id="mkResearch"'):
+        tag = re.search(r'<details class="more" ' + folded + r'[^>]*>', HTML).group(0)
+        assert " open" not in tag
+    assert 'class="more legendline"' not in HTML
