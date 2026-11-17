@@ -68,6 +68,7 @@ from core_spy import interest, is_session, needs_rebalance, next_session, prev_s
 from etf10_rsi2 import finished_daily
 
 LEDGER, BOOK = "core_trend", "tcore"
+STOPPED = "stopped 2026-11-17 (Nick: keep only the 4 rules): sold at the next valid quote"
 VERSION = "2026-11-12.core-trend-1"
 HALVES = {"S": {"ticker": "SSO", "signal": "SPY", "name": "2x S&P 500"},
           "Q": {"ticker": "QLD", "signal": "QQQ", "name": "2x Nasdaq-100"}}
@@ -440,6 +441,12 @@ def step(now=None):
     f = fetch()
     if not f.ready():
         _state["status"] = "waiting for Schwab (no decisions on delayed data)"
+        return
+    import retire
+    if hm >= OPEN and retire.is_retired(LEDGER):   # 2026-11-17: stopped; open halves are sold, not held for months
+        for p in S.positions(ledger=LEDGER, status="OPEN"):
+            v4exec.close_now(p, STOPPED)
+        _state["status"] = "stopped 2026-11-17: no new buys; any open half is sold at the next valid quote"
         return
     first, last = window(day, close)
     plan = store.kv_get(_pkey(day))

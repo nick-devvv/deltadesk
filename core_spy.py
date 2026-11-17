@@ -57,6 +57,7 @@ import v4risk
 import v4store as S
 
 LEDGER, BOOK = "core_spy", "core"
+STOPPED = "stopped 2026-11-17 (Nick: keep only the 4 rules): sold at the next valid quote"
 VERSION = "2026-11-11.core-spy-1"
 TICKER = "SPY"
 SATELLITES = ("nbs_spy_ls", "etf10_rsi2")
@@ -336,6 +337,12 @@ def step(now=None):
         return
     if hm < OPEN:
         _state["status"] = "before the open"
+        return
+    import retire
+    if retire.is_retired(LEDGER):            # 2026-11-17: stopped; a buy-and-hold has no exit rule, so the core is sold
+        for p in S.positions(ledger=LEDGER, status="OPEN"):
+            v4exec.close_now(p, STOPPED)
+        _state["status"] = "stopped 2026-11-17: no new buys; any open core is sold at the next valid quote"
         return
     import schwab
     opens = S.positions(ledger=LEDGER, status="OPEN")

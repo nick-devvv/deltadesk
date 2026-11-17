@@ -181,8 +181,9 @@ def pos_save(p):
     d["plan"] = json.dumps(d.get("plan") or {}, default=_jd)
     cols = list(d)
     # v3.5: a stale in-memory copy can never reopen a CLOSED trade or undo its exit (status/qty/realized/closed stick)
+    # 2026-11-17: the same for VOID (expiry_void.py), so a stale copy can't bring an expired contract back to OPEN
     sticky = ("status", "qty_open", "closed", "realized")
-    sets = [f"{c}=CASE WHEN positions.status='CLOSED' THEN positions.{c} ELSE excluded.{c} END" if c in sticky else f"{c}=excluded.{c}"
+    sets = [f"{c}=CASE WHEN positions.status IN ('CLOSED','VOID') THEN positions.{c} ELSE excluded.{c} END" if c in sticky else f"{c}=excluded.{c}"
             for c in cols if c != "id"]
     x(f"INSERT INTO positions({','.join(cols)}) VALUES({','.join('?' * len(cols))}) "
       f"ON CONFLICT(id) DO UPDATE SET {','.join(sets)}", [d[c] for c in cols])

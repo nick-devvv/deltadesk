@@ -418,3 +418,27 @@ curl -s "$B/api/v4/decisions?k=$K&ledger=core_trend" | python3 -m json.tool | he
 ```
 
 What to send Nick: each half's state and decision (fill and size, or the reason), the account view (equity, targets, overnight gross, maintenance need, margin warning), and any `last_error`. Every number is PAPER (simulated fills), not real money.
+
+## 19. The 4 rules only, the 4 Rules tab, noise band alerts, expired options VOID (added 2026-11-17)
+
+**What's new.**
+- **Only the 4 rules trade on paper** (Nick: "Stop them"): `nbs_spy_ls`, `etf10_rsi2`, `pead_t21_tp`, `core_sso`, plus the reference `noise`. 17 other v4 ledgers are on the `retired` list (`docs/STRATEGY_PLAN.md` section 0). `v4store.open_position` now refuses any retired ledger, one guard for all of them. Their own switches are unchanged. Open trades close by their own rules; `core_spy` and `core_trend` sell their open positions at the next valid quote (a buy-and-hold has no exit rule).
+- **The 4 Rules tab** is the first tab and the landing page: one card per rule, built like the v3 paper page (P/L including open marks, paper trades out of 40, win rate, per trade, open and recent trades, a P/L line, and the sealed backtest line from each module's own constants), plus the noise band card with its T42 evidence and VOID trades. `four_rules.py`, `GET /api/v4/rules`. More > "Rules" is renamed "Research".
+- **Phone alerts:** `phone_alert_kinds` = `band` + `mytrades`. `band_alerts.py` sends one alert when the `noise` ledger opens a paper trade (fill, stop, all out by 15:25, the T42 line) and one when it closes it (exit, reason, P/L). Today's trades only, never twice. The co-pilot keeps running on the desk feed and its report card.
+- **Expired options stuck OPEN become VOID** (`expiry_void.py`): checked every tick in the market and every 10 minutes outside it. VOID is excluded from every result; the note gives the modeled value at that day's close for reference. `store.pos_save` treats VOID like CLOSED, so a stale copy can't reopen it.
+- **Code:** `four_rules.py`, `band_alerts.py`, `expiry_void.py` (new); `retire.py` retire3, `v4store.py`, `engine.py`, `store.py`, `alerts.py`, `core_spy.py`, `core_trend.py` (stop only, rules unchanged), `v4api.py`, `index.html`, `release.py` (`2026-11-17.v4-four-rules`), `config/v4.json`, `CLAUDE.md`.
+- **Tests:** `tests/test_v4_four_rules.py` (11) and a 4 Rules browser test in `tests/test_v4_ui_page.py`. Existing tests updated for the new phone kinds, the landing page and the stopped list.
+- **Unchanged:** `noiseband.py`, `policy_old.py`, the frozen files, every Chart-only file, every rule of the 4 rules.
+
+**Update.** Once the pull request is merged, after 4:15 PM ET: "Update the desk: run ~/desk/deploy/update.sh on the server and show me the whole output."
+
+**Checks after the update** (Chart):
+
+```
+K=$(cat ~/desk/DESK_TOKEN.txt); B=http://127.0.0.1:8765
+sleep 60; cd ~/desk && sqlite3 -header journal/desk.db "SELECT date,ledger,ticker,contract,status FROM positions WHERE status IN ('OPEN','VOID') ORDER BY opened DESC LIMIT 8;"   # the 5 expired contracts: VOID, none OPEN
+curl -s "$B/api/v4/rules?k=$K" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["since"], d["total_net"], d["total_trades"]); [print(r["n"], r["ledger"], r["trades"], r["net"], r["open_pl"], r["trading"]) for r in d["rules"]]; print("noise", d["noise"]["trades"], len(d["noise"]["void"]))'
+curl -s "$B/api/alerts?k=$K" | python3 -c 'import json,sys; print(json.load(sys.stdin)["phone_kinds"])'   # ['band', 'mytrades']
+```
+
+What to send Nick: the VOID rows, the four rules' trades and P/L, and the phone kinds. Every number is PAPER (simulated fills), not real money.

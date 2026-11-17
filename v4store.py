@@ -73,8 +73,12 @@ def positions(ledger=None, status=None, day=None, book=None, ledgers=None):
 
 
 def open_position(rec, fill_reason="open"):
-    """Insert a new position plus its opening fill and an event, atomically. Returns (id, None) or (None, why)."""
+    """Insert a new position plus its opening fill and an event, atomically. Returns (id, None) or (None, why).
+    A retired ledger (retire.py, config/v4.json "retired") opens nothing (2026-11-17): one guard for every v4 ledger."""
     schema()
+    import retire
+    if retire.is_retired(rec.get("ledger")):
+        return None, retire.REASON
     d = dict(rec)
     d.setdefault("status", "OPEN")
     d.setdefault("realized", 0.0)

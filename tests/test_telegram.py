@@ -52,6 +52,7 @@ def test_off_unless_both_values_are_valid(env):
 def test_alert_goes_to_telegram_with_buttons_only_on_copilot_alerts(env):
     mp, calls, _ = env
     on(mp)
+    mp.setattr(alerts, "phone_kinds", lambda: ("copilot", "mytrades"))   # the buttons, whatever the production phone kinds are
     assert alerts.alert("copilot", "COPILOT SPY SHORT: <wick>", "Close 1 & stop 2", AID, "high")
     m, p = calls[-1]
     assert m == "sendMessage" and p["chat_id"] == CHAT and p["parse_mode"] == "HTML"
@@ -66,18 +67,21 @@ def test_alert_goes_to_telegram_with_buttons_only_on_copilot_alerts(env):
     assert not alerts.alert("copilot", "dup", "dup", AID)                     # alerts.alert still de-duplicates
 
 
-def test_only_0dte_kinds_reach_the_phone(env):
+def test_only_noise_band_and_my_trades_reach_the_phone(env):
+    """Nick, 2026-11-17: only the noise band's trades (and alerts on trades he logs himself) go to the phone."""
     mp, calls, _ = env
     on(mp)
     pushed = []
     mp.setattr(alerts, "_push", lambda t, b, p: pushed.append(t))
-    assert alerts.phone_kinds() == ("copilot", "mytrades") and alerts.settings()["phone_kinds"] == ["copilot", "mytrades"]
-    for k in ("setups", "moves", "news", "scanner", "movers"):
+    assert alerts.phone_kinds() == ("band", "mytrades") and alerts.settings()["phone_kinds"] == ["band", "mytrades"]
+    for k in ("setups", "moves", "news", "scanner", "movers", "copilot"):
         assert alerts.alert(k, f"{k} title", "body", f"ref-{k}")
     assert pushed == [] and calls == []
-    assert len(store.q("SELECT ref FROM events WHERE kind='alert'")) == 5          # still on the desk feed
-    alerts.alert("copilot", "COPILOT QQQ LONG", "body", "QQQ|2026-11-24|10:00|5m|vwap_bounce|long")
-    assert pushed == ["COPILOT QQQ LONG"] and calls[-1][0] == "sendMessage"
+    assert len(store.q("SELECT ref FROM events WHERE kind='alert'")) == 6          # still on the desk feed
+    alerts.alert("band", "Noise band: bought SPY 600P x1 (PAPER)", "body", "band:x:open", "high")
+    assert pushed == ["Noise band: bought SPY 600P x1 (PAPER)"] and calls[-1][0] == "sendMessage"
+    alerts.alert("mytrades", "YOUR SPY 600P: take profit", "body", "mt-1")
+    assert pushed[-1] == "YOUR SPY 600P: take profit"
 
 
 def test_button_tap_from_nick_saves_the_answer_and_others_are_ignored(env):

@@ -99,6 +99,7 @@ def env(tmp_path, monkeypatch):
     pushed = []
     import alerts
     monkeypatch.setattr(alerts, "_push", lambda title, body, pr: pushed.append((title, body, pr)))
+    monkeypatch.setattr(alerts, "phone_kinds", lambda: alerts.KINDS)   # push mechanics; production sends copilot to the feed only (2026-11-17)
     clock = fakes.Clock(datetime(DAY.year, DAY.month, DAY.day, 9, 30, tzinfo=ET))
     monkeypatch.setattr(core, "now_et", clock)
     f = Fake(clock, day_bars(DAY))
@@ -383,7 +384,7 @@ def test_wiring_and_no_order_path():
     import v4api
     c = json.loads((ROOT / "config/v4.json").read_text())
     assert c["copilot"] is True and c["copilot_paper"] is True
-    assert c["phone_alert_kinds"] == ["copilot", "mytrades"] and c["copilot_band_push"] is False
+    assert c["phone_alert_kinds"] == ["band", "mytrades"] and c["copilot_band_push"] is False   # Nick, 2026-11-17
     lim = v4risk.LIMITS
     assert "copilot" in lim["isolated_books"] and "copilot" not in lim["multi_day_books"]
     assert lim["book_max_open"]["copilot"] == 2 and lim["book_daily_loss_usd"]["copilot"] == 150.0

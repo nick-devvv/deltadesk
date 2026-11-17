@@ -317,6 +317,26 @@ details.defs{padding:0 16px 14px;font-size:12px;color:var(--ink-3)} details.defs
 .ledger b.big{font:600 24px var(--disp);letter-spacing:.01em;display:block}
 .ledger dl{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;margin-top:8px;font-size:12px}
 .ledger dt{color:var(--ink-3)} .ledger dd{margin:0;text-align:right;color:var(--ink-2)}
+/* 4 Rules tab (2026-11-17): the v3 ledger card, one per rule */
+.rules h1{margin-bottom:4px} .rules .frsum{font-size:13px;color:var(--ink-2);margin:0 0 14px}
+.rules .frsum b{font:600 15px var(--disp)}
+.rules .ledgers{grid-template-columns:repeat(2,minmax(0,1fr))}
+.rcard h2 .rn{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:999px;background:var(--raise);font:600 11px var(--sans);margin-right:8px;flex:none}
+.rcard h2 .nm{flex:1;min-width:0}
+.rcard .prog{height:6px;border-radius:999px;background:var(--raise);overflow:hidden;margin:8px 0 3px}
+.rcard .prog i{display:block;height:100%;background:var(--info)}
+.rcard .progt{font-size:11.5px;color:var(--ink-3)}
+.rcard svg.spark{display:block;width:100%;height:38px;margin-top:8px}
+.rcard svg.spark line{stroke:var(--line-2);stroke-width:1;stroke-dasharray:3 3}
+.rcard svg.spark polyline{fill:none;stroke:var(--ink-3);stroke-width:1.6;vector-effect:non-scaling-stroke}
+.rcard svg.spark polyline.u{stroke:var(--up)} .rcard svg.spark polyline.d{stroke:var(--down)}
+.rcard .btl{font-size:12px;color:var(--ink-3);margin:10px 0 0;line-height:1.45}
+.rcard details.more{margin-top:8px} .rcard details.more summary{font-size:12px}
+.rcard.off{opacity:.6}
+.rules h2.frh{font:600 14px var(--disp);letter-spacing:.02em;color:var(--ink-2);margin:22px 0 10px}
+.rules .ledgers.one{grid-template-columns:minmax(0,640px)}
+@media (min-width:1300px){.rules .ledgers:not(.one){grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media (max-width:640px){.rules .ledgers{grid-template-columns:minmax(0,1fr)}}
 .cands td .tagm{font-size:11px;color:var(--warn);margin-left:6px}
 .dec{font:600 11.5px var(--sans)} .dec.ORDER{color:var(--up)} .dec.SKIP,.dec.SKIP-CONFLICT{color:var(--ink-3)} .dec.BLOCKED-LIMIT,.dec.BLOCKED-RISK{color:var(--warn)} .dec.ERROR{color:var(--down)}
 @media (max-width:1100px){.ledgers{grid-template-columns:repeat(2,minmax(0,1fr))}}
@@ -702,7 +722,8 @@ dl.dd dt.h,dl.dd dd.h{grid-column:1/-1;text-align:left;color:var(--ink);font-wei
       <button type="button" data-t="SPY" aria-pressed="true">SPY</button><button type="button" data-t="QQQ" aria-pressed="false">QQQ</button><button type="button" class="other" id="otherPill" hidden aria-pressed="true"></button>
     </div>
     <nav aria-label="Views">
-      <a href="#today" aria-current="page" data-v="today" title="Today: desk P/L, open positions, decisions, errors and health, then every v4 book and ledger (this was the Research page)">Today</a>
+      <a href="#rules" aria-current="page" data-v="rules" title="Your 4 tested rules: paper trades toward 40 each, P/L, open trades, and what the backtest expects">4 Rules</a>
+      <a href="#today" data-v="today" title="Today: desk P/L, open positions, decisions, errors and health, then every v4 book and ledger (this was the Research page)">Today</a>
       <a href="#trade" data-v="trade" title="Your trades, the chart and Chart's guidance">My trades</a>
       <a href="#news" data-v="news" title="Key market news, one card per story">News<span class="badge" id="newsBadge" hidden></span></a>
       <a href="#markets" data-v="markets" title="Any ticker: live chart, setups board, news and earnings">Markets</a>
@@ -710,7 +731,7 @@ dl.dd dt.h,dl.dd dd.h{grid-column:1/-1;text-align:left;color:var(--ink);font-wei
       <a href="#journal" data-v="journal">Journal<span class="badge" id="jBadge" hidden title="Trades waiting for a review"></span></a>
       <details class="navmore" id="navMore"><summary>More</summary><div class="navmenu">
         <a href="#review" data-v="review">Review</a>
-        <a href="#research" data-v="research">Rules</a>
+        <a href="#research" data-v="research" title="Research notes, data sources, alert settings and the Schwab login">Research</a>
         <a href="#learning" data-v="learning" title="Every opportunity the desk evaluated, why it entered or skipped, shadow outcomes and the hypotheses under test">Learning</a>
         <a href="#paper" data-v="paper" title="The retired v3 main paper ledger, its history, and the paper pause and kill switch">v3 Paper</a>
       </div></details>
@@ -735,8 +756,19 @@ dl.dd dt.h,dl.dd dd.h{grid-column:1/-1;text-align:left;color:var(--ink);font-wei
   <main id="main">
     <div class="banner" id="banner" role="alert"><span class="dot"></span><span id="bannerText">Disconnected from the desk server. Showing the last known state while it reconnects.</span></div>
 
+    <!-- 4 RULES (2026-11-17): the four rules that passed their sealed backtests, tracked like the v3 paper page -->
+    <section class="view page rules" id="v-rules" aria-label="4 Rules">
+      <h1>Your 4 rules <span class="chip paper">PAPER</span></h1>
+      <p class="lead">The four rules that passed their out-of-sample backtests. Nothing else trades on the desk.</p>
+      <p class="frsum" id="frSum">Loading…</p>
+      <div class="ledgers" id="frCards"><div class="empty">Loading the 4 rules…</div></div>
+      <h2 class="frh">What your phone alerts follow</h2>
+      <div class="ledgers one" id="frNoise"></div>
+      <p class="m" id="frNote" style="font-size:12px;margin-top:6px"></p>
+    </section>
+
     <!-- TODAY (v4 UI refresh): the summary first, then every v4 book and ledger (the old Research page lives here now) -->
-    <section class="view page" id="v-today" aria-label="Today">
+    <section class="view page" id="v-today" hidden aria-label="Today">
      <div class="today">
       <div class="tdh"><h1>Today</h1><span class="m" id="tdWhen">Loading…</span></div>
       <div class="alerts" id="tdAlerts" aria-live="polite"></div>
@@ -1462,20 +1494,20 @@ $$(".tab").forEach(b => b.onclick = () => {
 setInterval(() => { if (!$("#v-trade").hidden && !document.hidden) loadWatch(); }, 30000);
 
 /* ---------- views (the URL hash is the view) ---------- */
-const VIEWS = ["today","trade","news","scan","markets","paper","journal","review","research","learning"];
+const VIEWS = ["rules","today","trade","news","scan","markets","paper","journal","review","research","learning"];
 const MORE_VIEWS = ["review","research","learning","paper"];   // under "More" in the nav
 const VIEW_ALIAS = {lab: ["today", "tdBooksSec"]};     // the old Research page (#lab) is the books section of Today now
 function show(v){
   let anchor = null;
   if (VIEW_ALIAS[v]) [v, anchor] = VIEW_ALIAS[v];
-  v = VIEWS.includes(v) ? v : "today";
+  v = VIEWS.includes(v) ? v : "rules";            // 2026-11-17: the 4 Rules tab is the landing page
   if (show.cur !== v) { try { window.scrollTo(0, 0); } catch(e){} show.cur = v; }    // a new page starts at its top (phones scroll the window)
   $$("nav a").forEach(a => a.dataset.v === v ? a.setAttribute("aria-current","page") : a.removeAttribute("aria-current"));
   const nm = $("#navMore"); if (nm){ nm.open = false; nm.classList.toggle("cur", MORE_VIEWS.includes(v)); }
   $$(".view").forEach(s => s.hidden = s.id !== "v-" + v);
   if (anchor === "tdBooksSec") $("#tdBooksMore").open = true;
   if (v === "news"){ newsUnread = 0; $("#newsBadge").hidden = true; }
-  ({today:() => Today.load(true), trade:() => DeskChart.show(), news:loadNews, paper:loadPaper, scan:loadScanner, markets:loadMarkets, journal:()=>loadJournal(), review:loadReview, research:loadResearch, learning:loadLearning}[v] || (()=>{}))();
+  ({rules:loadFour, today:() => Today.load(true), trade:() => DeskChart.show(), news:loadNews, paper:loadPaper, scan:loadScanner, markets:loadMarkets, journal:()=>loadJournal(), review:loadReview, research:loadResearch, learning:loadLearning}[v] || (()=>{}))();
   if (anchor) setTimeout(() => { const a = document.getElementById(anchor); if (a) a.scrollIntoView({block: "start"}); }, 60);
 }
 window.addEventListener("hashchange", () => show(location.hash.slice(1)));
@@ -2065,6 +2097,49 @@ function renderCands(){
       <td class="m" style="font-size:12px">${esc(ok || why.slice(0, 2).join("; "))}</td></tr>`; }).join("")}</tbody></table>`;
 }
 
+/* ---------- 4 Rules (2026-11-17) ---------- */
+const frDay = s => { try { return new Date(s + "T12:00:00").toLocaleDateString("en-US", {month: "short", day: "numeric"}); } catch(e){ return s; } };
+function frSpark(c){
+  if (!c || c.length < 2) return "";
+  const w = 240, h = 38, mn = Math.min(0, ...c), mx = Math.max(0, ...c), sp = (mx - mn) || 1, y = v => (h - 2 - (v - mn) / sp * (h - 4)).toFixed(1);
+  const pts = c.map((v, i) => `${(i / (c.length - 1) * w).toFixed(1)},${y(v)}`).join(" ");
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="Paper P/L, trade by trade"><line x1="0" x2="${w}" y1="${y(0)}" y2="${y(0)}"/><polyline class="${tone(c[c.length - 1])}" points="${pts}"/></svg>`;
+}
+function frRows(r){
+  const open = (r.open || []).map(o => `<div class="pos"><span class="who2 paper">open</span><b>${esc(o.ticker)} ${esc(o.desc || "")}${o.entry_px != null ? ` @ ${usd(o.entry_px)}` : ""}</b><span class="pl ${tone(o.mtm)}">${o.mtm != null ? money(o.mtm) : "—"}</span>${o.next ? `<span class="next">${esc(o.next)}</span>` : ""}</div>`);
+  const done = (r.recent || []).map(t => `<div class="pos"><span class="who2">${esc(frDay(t.date))}</span><b>${esc(t.ticker)} ${esc(t.desc || "")}</b><span class="pl ${tone(t.pl)}">${money(t.pl)}</span>${t.why ? `<span class="next">${esc(t.why)}</span>` : ""}</div>`);
+  const voids = (r.void || []).map(v => `<div class="pos"><span class="who2">VOID</span><b>${esc(v.ticker)} ${esc(v.desc)} @ ${usd(v.fill)}</b><span class="pl">—</span><span class="next">${esc(frDay(v.date))}: expired while still open (the desk missed the 3:25 PM exit). Not counted.${v.value_modeled != null ? ` Worth ${usd(v.value_modeled)} at that day's close (modeled).` : ""}</span></div>`);
+  const all = [...open, ...done, ...voids];
+  return all.length ? all.join("") : '<div class="empty">No trades yet.</div>';
+}
+function frCard(r, n){
+  const won = r.trades ? Math.round((r.win_rate || 0) * r.trades / 100) : 0, need = r.needed || 40;
+  const openN = (r.open || []).length, openTxt = openN ? `${openN}${r.open_pl != null ? ` (${money(r.open_pl)})` : ""}` : "none";
+  const tot = (r.net || 0) + (r.open_pl || 0);                  // closed P/L plus the last mark of what's still open
+  return `<section class="ledger main rcard${r.trading ? "" : " off"}"><h2>${n ? `<span class="rn">${n}</span>` : ""}<span class="nm">${esc(r.name)}</span><span>${esc(r.test)}</span></h2>
+    <p>${esc(r.what)}</p>
+    <b class="big ${tone(tot)}">${money(tot)}</b>
+    ${r.open_pl != null ? `<span class="progt">${money(r.net || 0)} closed, ${money(r.open_pl)} open now</span>` : ""}
+    ${need && n ? `<div class="prog" aria-hidden="true"><i style="width:${Math.min(100, 100 * r.trades / need).toFixed(1)}%"></i></div><span class="progt">${r.trades} of ${need} paper trades</span>` : `<span class="progt">${r.trades} paper ${r.trades === 1 ? "trade" : "trades"}</span>`}
+    ${frSpark(r.curve)}
+    <dl><dt>Won</dt><dd>${r.trades ? `${won} of ${r.trades} (${r.win_rate}%)` : "—"}</dd>
+      <dt>Per trade</dt><dd class="${tone(r.expectancy)}">${r.expectancy != null ? money(r.expectancy) : "—"}</dd>
+      <dt>Avg win / loss</dt><dd>${r.avg_win != null ? money(r.avg_win) : "—"} / ${r.avg_loss != null ? money(r.avg_loss) : "—"}</dd>
+      <dt>Open now</dt><dd>${openTxt}</dd>
+      <dt>Holds</dt><dd>${esc(r.hold)} · ${esc(r.size)}</dd></dl>
+    <p class="btl"><span class="chip bt">BACKTEST</span> ${esc(String(r.backtest.label || "").replace(/^BACKTEST\s*/, ""))}: ${esc(r.backtest.line)}</p>
+    <details class="more"><summary>Trades${openN ? ` (${openN} open)` : ""}</summary>${frRows(r)}</details></section>`;
+}
+async function loadFour(){
+  let d;
+  try { d = await api("api/v4/rules"); } catch(e){ $("#frCards").innerHTML = `<div class="d">Couldn’t load the 4 rules: ${esc(e.message)}</div>`; return; }
+  $("#frSum").innerHTML = `All 4 since ${esc(frDay(d.since))}: <b class="${tone(d.total_net)}">${money(d.total_net)}</b> over ${d.total_trades} paper ${d.total_trades === 1 ? "trade" : "trades"}.`
+    + ((d.stopped_still_open || []).length ? ` <span class="m">${d.stopped_still_open.length} trade${d.stopped_still_open.length === 1 ? "" : "s"} from stopped tests still closing by their own rules.</span>` : "");
+  $("#frCards").innerHTML = (d.rules || []).map(r => frCard(r, r.n)).join("");
+  $("#frNoise").innerHTML = d.noise ? frCard(d.noise, 0) : "";
+  $("#frNote").textContent = d.note || "";
+}
+setInterval(() => { if (!document.hidden && !$("#v-rules").hidden) loadFour(); }, 60000);
 async function loadPaper(){
   renderPaperLive();
   try{
@@ -3351,8 +3426,9 @@ async function loadAlerts(){
     row("mytrades", "My trades", "when the desk's guidance on a trade you logged changes: exit, take profit, tighten the stop (free, in code)") +
     row("movers", "Movers", "stocks in play at 9:35 and a top-movers digest through the day, with a possible play (free, in code)") +
     row("scanner", "Scanner trades", "when the scanner's research ledger takes a stocks-in-play trade on paper (free, in code)") +
+    row("band", "Noise band trades", "when the noise band (SPY/QQQ 0DTE, paper) opens or closes a trade, with its fill, stop and P/L (free, in code)") +
     row("copilot", "Co-pilot", "SPY/QQQ chart patterns and indicators on your chart schedule (2-min to 10:00, 5-min to 11:00, 10-min after, 5-min confluence), event-day warnings and TESTED noise-band entries (free, in code)") +
-    `<p class="m" style="margin-top:6px">On this computer: press <b>Alerts</b> in the top bar to allow pop-ups. On your phone: ${a.phone ? '<span class="u">phone alerts are on (' + [a.ntfy ? 'ntfy' : '', a.telegram ? 'Telegram' : ''].filter(Boolean).join(' + ') + ')' + (a.phone_kinds && a.phone_kinds.length < 7 ? ' for: ' + a.phone_kinds.join(', ') + ' only' : '') + '</span>' : 'install the free <b>ntfy</b> app, subscribe to a private topic name you make up (e.g. nick-desk-7h3k2q), and have Chart add <span class="mono">NTFY_TOPIC</span> with that name to the desk server'}.</p>`;
+    `<p class="m" style="margin-top:6px">On this computer: press <b>Alerts</b> in the top bar to allow pop-ups. On your phone: ${a.phone ? '<span class="u">phone alerts are on (' + [a.ntfy ? 'ntfy' : '', a.telegram ? 'Telegram' : ''].filter(Boolean).join(' + ') + ')' + (a.phone_kinds && a.phone_kinds.length < 8 ? ' for: ' + a.phone_kinds.join(', ') + ' only' : '') + '</span>' : 'install the free <b>ntfy</b> app, subscribe to a private topic name you make up (e.g. nick-desk-7h3k2q), and have Chart add <span class="mono">NTFY_TOPIC</span> with that name to the desk server'}.</p>`;
   $("#alertBox").querySelectorAll("[data-al]").forEach(c => c.onchange = () => api("api/alerts", {[c.dataset.al]: c.checked}));
 }
 
