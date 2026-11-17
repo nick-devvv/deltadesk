@@ -30,9 +30,10 @@ Update the desk: run ~/desk/deploy/update.sh and show me the whole output.
 ```
 
 What `update.sh` does:
+0. Runs in the background and writes everything to `~/desk-update.log`, while the terminal shows the same lines live. A dropped SSH connection only stops the live view; the update keeps going. Reconnect and run `~/desk/deploy/update.sh --status` to see whether it's still running, which version is deployed, and the whole log. The log ends with `== update finished: exit 0` when it worked. Only one update runs at a time. (Added 2026-11-17, after a dropped connection stopped an update halfway. Nothing broke, but nothing deployed.)
 1. Refuses during 09:25–16:05 ET on weekdays unless `--force`.
 2. Fetches `main`, lists the new commits, and stops if any tracked file was edited locally.
-3. Runs the full test suite on the new version **in a separate folder**. If a test fails, nothing changes.
+3. Runs the full test suite on the new version **in a separate folder**, at low CPU priority so the live desk stays responsive (about 11 minutes on the server). If a test fails, nothing changes.
 4. Backs up `journal/desk.db` (SQLite backup API plus an integrity check).
 5. Switches the files and restarts the desk: systemd if `deltadesk-web` is active, otherwise it stops `server.py` and `watchdog.sh` restarts it.
 6. Checks `/healthz`.

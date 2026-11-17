@@ -1,11 +1,18 @@
 #!/usr/bin/env bash
-# deploy/update.sh - update the desk on Chart's computer straight from GitHub (replaces the zip + sha256 relay).
+# deploy/update.sh - update the desk on its server straight from GitHub (replaces the zip + sha256 relay).
 #
 #   ~/desk/deploy/update.sh            update to the latest main, if its tests pass
 #   ~/desk/deploy/update.sh --check    only show what would change
+#   ~/desk/deploy/update.sh --status   is an update running, which version is deployed, and the last update's log
 #   ~/desk/deploy/update.sh --rollback go back to the commit that ran before the last update
 #   add --force to run during market hours, or over local edits to tracked files
+#   add --foreground to run attached to this terminal (the old behavior)
 #   tests run with $PYTHON if set, else the desk's own ~/desk/.venv/bin/python if it exists, else python3
+#
+# Background run (2026-11-17): an update and a rollback run detached (setsid + nohup) and write everything to
+# ~/desk-update.log ($DESK_UPDATE_LOG), while this terminal shows the same log live. A dropped SSH connection only
+# stops the live view; the update carries on. Reconnect and run --status to see how it ended. The log ends with
+# "== update finished: exit N". Only one update runs at a time (flock on the log's .lock file).
 #
 # Safety:
 #   * Refuses 09:25-16:05 ET on weekdays (open paper trades are managed by the running server).
@@ -22,12 +29,20 @@ if [ -n "${PYTHON:-}" ]; then PY="$PYTHON"                # explicit choice wins
 elif [ -x "$DESK/.venv/bin/python" ]; then PY="$DESK/.venv/bin/python"   # the desk's own environment (has pytest)
 else PY=python3; fi
 BRANCH="${DESK_BRANCH:-main}"
-FORCE=0; MODE=update
+SERVICE="${DESK_SERVICE:-deltadesk-web}"
+RESTART="${DESK_RESTART:-1}"                  # 0 = never restart anything (the tests use this)
+LOG="${DESK_UPDATE_LOG:-$HOME/desk-update.log}"
+LOCK="$LOG.lock"
+SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"   # before any cd
+FORCE=0; MODE=update; FG=0; CHILD=0; ARGS=()
 for a in "$@"; do
   case "$a" in
-    --force) FORCE=1 ;;
+    --force) FORCE=1; ARGS+=("$a") ;;
     --check) MODE=check ;;
-    --rollback) MODE=rollback ;;
+    --status) MODE=status ;;
+    --rollback) MODE=rollback; ARGS+=("$a") ;;
+    --foreground) FG=1 ;;
+    --child) CHILD=1 ;;                       # internal: the detached copy started below
     *) echo "unknown option: $a"; exit 2 ;;
   esac
 done
@@ -36,6 +51,20 @@ cd "$DESK"
 [ -d .git ] || { echo "STOP: $DESK is not a git checkout yet. Do the one-time setup in deploy/GITHUB_DEPLOY.md."; exit 1; }
 
 say() { printf '%s\n' "$*"; }
+
+tmp=""
+cleanup() { [ -n "$tmp" ] || return 0; git worktree remove --force "$tmp" >/dev/null 2>&1 || rm -rf "$tmp"; }
+finish() {
+  local rc=$?
+  cleanup
+  [ "$CHILD" -eq 1 ] && say "== update finished: exit $rc ($(date '+%F %T %Z'))"
+  return 0
+}
+trap finish EXIT
+
+update_running() {   # true while another update holds the lock
+  command -v flock >/dev/null 2>&1 && [ -e "$LOCK" ] && ! flock -n "$LOCK" true
+}
 
 market_hours() {
   local dow hm
@@ -57,9 +86,10 @@ EOF
 }
 
 restart_desk() {
-  if command -v systemctl >/dev/null 2>&1 && systemctl --user is-active --quiet deltadesk-web 2>/dev/null; then
-    systemctl --user restart deltadesk-web
-    say "restarted with systemd (deltadesk-web)"
+  if [ "$RESTART" = 0 ]; then say "restart skipped (DESK_RESTART=0)"; return 0; fi
+  if command -v systemctl >/dev/null 2>&1 && systemctl --user is-active --quiet "$SERVICE" 2>/dev/null; then
+    systemctl --user restart "$SERVICE"
+    say "restarted with systemd ($SERVICE)"
   elif pgrep -f 'watchdog\.sh' >/dev/null 2>&1; then
     pkill -TERM -f 'server\.py' || true
     say "stopped server.py; watchdog.sh will start the new version"
@@ -76,9 +106,41 @@ restart_desk() {
   say "WARNING: the desk did not answer /healthz within 60 s. Check it, or run: deploy/update.sh --rollback --force"
 }
 
+if [ "$MODE" = status ]; then
+  if update_running; then say "An update is running now. Check again in a few minutes."; else say "No update is running."; fi
+  say "The desk folder is on: $(git log -1 --format='%h %s')"
+  if [ -f "$LOG" ]; then say "Log of the last update ($LOG):"; cat "$LOG"; else say "No update log yet ($LOG)."; fi
+  exit 0
+fi
+
 if [ "$FORCE" -eq 0 ] && [ "$MODE" != check ] && market_hours; then
   say "STOP: it's market hours (09:25-16:05 ET). Run this after the close, or add --force."
   exit 1
+fi
+
+# Run detached, so a dropped SSH connection can't stop the update halfway (it did on 2026-11-17).
+if [ "$MODE" != check ] && [ "$FG" -eq 0 ] && [ "$CHILD" -eq 0 ] \
+   && command -v setsid >/dev/null 2>&1 && command -v flock >/dev/null 2>&1; then
+  if update_running; then
+    say "STOP: an update is already running. Don't start another one."
+    say "See how it's going: $SELF --status"
+    exit 1
+  fi
+  : > "$LOG"
+  setsid nohup "$SELF" --child "${ARGS[@]+"${ARGS[@]}"}" >>"$LOG" 2>&1 </dev/null &
+  pid=$!
+  say "The update runs in the background (pid $pid), so a dropped connection can't stop it."
+  say "Log: $LOG    If you get disconnected, reconnect and run: $SELF --status"
+  tail -n +1 -f --pid="$pid" "$LOG" 2>/dev/null || true
+  rc=$(sed -n 's/^== update finished: exit \([0-9][0-9]*\).*/\1/p' "$LOG" | tail -n 1)
+  if [ -z "$rc" ]; then say "The update stopped without finishing. Check: $SELF --status"; rc=1; fi
+  exit "$rc"
+fi
+
+# One update at a time: the detached copy, or a --foreground run, holds the lock until it exits.
+if [ "$MODE" != check ] && command -v flock >/dev/null 2>&1; then
+  exec 9>"$LOCK"
+  flock -n 9 || { say "STOP: another update is already running. See: $SELF --status"; exit 1; }
 fi
 
 current=$(git rev-parse HEAD 2>/dev/null || echo none)
@@ -124,12 +186,10 @@ fi
 [ "$MODE" = check ] && exit 0
 
 tmp=$(mktemp -d)
-cleanup() { git worktree remove --force "$tmp" >/dev/null 2>&1 || rm -rf "$tmp"; }
-trap cleanup EXIT
 git worktree add -q --detach "$tmp" "$target"
-say "Testing $(git log -1 --format=%h "$target") in a separate folder..."
+say "Testing $(git log -1 --format=%h "$target") in a separate folder ($(date '+%T %Z'); about 11 minutes on the server)..."
 set +e
-out=$(cd "$tmp" && "$PY" -m pytest -q tests/ 2>&1); rc=$?
+out=$(cd "$tmp" && nice -n 10 "$PY" -m pytest -q tests/ 9>&- 2>&1); rc=$?   # nice: the live desk keeps the CPU
 set -e
 printf '%s\n' "$out" | tail -3
 if [ "$rc" -ne 0 ]; then
