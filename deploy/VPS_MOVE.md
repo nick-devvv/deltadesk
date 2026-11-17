@@ -69,7 +69,7 @@
 
 ## After the move
 
-- **Updates** (after 4:15 PM ET): `ssh -i ~/.ssh/deltadesk_vps box@nicks-desk desk/deploy/update.sh`.
+- **Updates** (after 4:15 PM ET): `ssh -i ~/.ssh/deltadesk_vps box@nicks-desk desk/deploy/update.sh`. It runs in the background on the server, so if the connection drops, reconnect and run `desk/deploy/update.sh --status`. Don't start a second copy.
 - **Logs:** `journalctl --user -u deltadesk-web -n 200`.
 - **Schwab login when it's due:** the same Connect Schwab steps on the desk page as before.
 - **Reboot:** Nick reboots from InterServer's panel (VPS → the server → Reboot). The desk, health timer and funnel come back by themselves.
