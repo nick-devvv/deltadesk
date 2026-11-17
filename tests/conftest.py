@@ -19,8 +19,12 @@ def _v4_retirement(request, monkeypatch):
     run with retirement switched off; every v4 suite (test_v4*.py) runs with the production setting from
     config/v4.json and checks that each retired ledger refuses new entries."""
     import retire
-    if not request.module.__name__.split(".")[-1].startswith("test_v4"):
+    name = request.module.__name__.split(".")[-1]
+    if not name.startswith("test_v4"):
         monkeypatch.setattr(retire, "_override", False)
+    elif name not in ("test_v4_four_rules", "test_v4_retire"):
+        # the ledgers stopped on 2026-11-17 keep their rule tests (test_v4_four_rules checks that production refuses them)
+        monkeypatch.setattr(retire, "_active_in_tests", frozenset(retire.STOPPED_2026_11_17))
     yield
 
 

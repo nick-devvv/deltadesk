@@ -45,9 +45,11 @@ def test_production_config_retires_exactly_the_planned_ledgers():
     assert retire.active()
     for led in RETIRED:
         assert retire.is_retired(led), led
-    for led in ("noise", "noise_v2", "noise_trend", "orb_credit", "ic_20d", "sip_orb5", "sip_orb5_x", "sip_orb15", "earn_day",
-                "sip_orb5_opt", "earn_day_opt", "real"):
+    for led in retire.STOPPED_2026_11_17:                       # Nick, 2026-11-17: "Stop them"
+        assert retire.is_retired(led), led
+    for led in ("noise", "nbs_spy_ls", "etf10_rsi2", "pead_t21_tp", "core_sso", "real"):   # the 4 rules + the reference
         assert not retire.is_retired(led), led
+    assert retire.cfg()["four_rules"] == ["nbs_spy_ls", "etf10_rsi2", "pead_t21_tp", "core_sso"]
     assert retire.kronos_enabled() is False
 
 
@@ -56,6 +58,8 @@ def test_missing_config_never_unretires(monkeypatch, tmp_path):
     monkeypatch.setattr(retire, "_cache", {"mtime": None, "cfg": None})
     assert retire.is_retired("paper") and retire.is_retired("lab_momo") and not retire.is_retired("noise")
     assert retire.is_retired("old") and retire.legacy_label("old") is None          # retired 2026-11-16, stays retired
+    assert all(retire.is_retired(x) for x in retire.STOPPED_2026_11_17)            # stopped 2026-11-17, stays stopped
+    assert not retire.is_retired("core_sso") and not retire.is_retired("nbs_spy_ls")
 
 
 @pytest.mark.parametrize("led", RETIRED)

@@ -4,6 +4,10 @@ The `old` ledger (policy_old.py, frozen 2026-10-28.3 rules) ran as a legacy forw
 retired since 2026-11-16 (Nick: "why is the old rules even being traded"). Its code path is unchanged
 (tests/test_v4_old_regression.py replays it with the guard lifted).
 
+Since 2026-11-17 (Nick: "Stop them") only the four rules that passed their sealed backtests trade on paper (config
+"four_rules": nbs_spy_ls, etf10_rsi2, pead_t21_tp, core_sso) plus the reference `noise` ledger. Every other v4 ledger is
+on the list too, and v4store.open_position refuses a new position for any retired ledger, whatever its own switch says.
+
 A retired ledger keeps its code, its database rows and its open trades: open positions are still managed to their exit
 by the same code as before. Only new entries are refused, at every entry point (paper.buy, the lab, the scanner,
 autopilot, news momentum, ORBX, the router; the old-policy guard stays in place, inactive while `old` is off the list). The list lives in config/v4.json; if that file is
@@ -17,15 +21,19 @@ import json
 import core
 
 FILE = core.HERE / "config" / "v4.json"
-VERSION = "2026-11-16.v4-retire2"   # retire2: `old` retired too
+VERSION = "2026-11-17.v4-retire3"   # retire3: only the 4 rules + `noise` trade (Nick: "Stop them"); v4 ledgers guarded in v4store.open_position
 REASON = "retired in v4: no new entries (code and history kept; open trades are still managed to their exit)"
 DEFAULTS = {"retire_active": True,
             "retired": ["paper", "research", "exit31", "gated", "orbx_swing", "orbx_atr", "orbx_2r", "orbx_ormid",
-                        "news_mom", "inplay", "board", "earn_post", "earn_pre", "old"],
+                        "news_mom", "inplay", "board", "earn_post", "earn_pre", "old",
+                        "noise_v2", "noise_trend", "orb_credit", "ic_20d", "sip_orb5", "sip_orb5_x", "sip_orb15", "earn_day", "fb_or", "otm_put", "otm_bounce", "otm_h", "copilot", "nbs_spy_long", "pead_t21", "core_spy", "core_trend"],
             "retired_prefixes": ["lab_", "spec_"],
             "legacy_forward_tests": {},
             "kronos_enabled": False}
+STOPPED_2026_11_17 = ("noise_v2", "noise_trend", "orb_credit", "ic_20d", "sip_orb5", "sip_orb5_x", "sip_orb15", "earn_day",
+                      "fb_or", "otm_put", "otm_bounce", "otm_h", "copilot", "nbs_spy_long", "pead_t21", "core_spy", "core_trend")
 _override = None                       # tests only: None = production setting from config/v4.json
+_active_in_tests = frozenset()         # tests only: ledgers whose own rule tests run as if not retired
 _cache = {"mtime": None, "cfg": None}
 
 
@@ -51,6 +59,8 @@ def is_retired(ledger):
     if not active():
         return False
     led = str(ledger or "")
+    if led in _active_in_tests:
+        return False
     c = cfg()
     return led in set(c.get("retired") or []) or led.startswith(tuple(c.get("retired_prefixes") or []))
 

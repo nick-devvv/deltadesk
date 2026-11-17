@@ -10,6 +10,23 @@ Written 2026-10-31. Source document: "DeltaDesk 0DTE quant rebuild" (Claude Docs
 
 **Four books, one engine, one risk layer.** Index momentum (SPY, QQQ, IWM, XSP; liquid ETFs as research candidates), index premium selling (SPX/XSP first, then SPY/QQQ), stocks in play (the day's top stocks by opening relative volume, option-liquid only), and catalysts (any stock with a verified news/earnings/filing catalyst and a measured reaction). Each strategy x instrument x timeframe x version is its own ledger. Each family runs on its published timeframe plus at most two alternates chosen before testing; every alternate counts as a trial for the deflated Sharpe.
 
+## 0. What trades now (2026-11-17)
+
+Nick, 2026-11-17: "i tought we found like 4 good rules after all of our backtesting and i want a way to track that better like how we did with v3 trading", then "Stop them" for every other paper test. **Only these trade on paper**, one ledger per rule, each tracked on the 4 Rules tab (`four_rules.py`, `GET /api/v4/rules`; forward trades count from 2026-11-13, 40 needed each):
+
+| # | Rule | Ledger | Test | Why this version |
+|---|---|---|---|---|
+| 1 | Noise band, SPY shares | `nbs_spy_ls` | T12a | Long/short beat long-only (T12b) in both windows |
+| 2 | ETF dip buying, RSI(2), 10 ETFs | `etf10_rsi2` | T6 R2 | The only version |
+| 3 | Earnings drift + take-profit | `pead_t21_tp` | T23a | More dollars than T21 in both windows, shallower worst drop |
+| 4 | SSO trend core (SGOV while out) | `core_sso` | T44 | Beat T30b (`core_spy`) in both windows; T47 (`core_trend`) failed the dot-com stress test (T48) |
+
+Plus the reference `noise` ledger (0DTE options, CLAUDE.md step 6), unchanged. Nick's phone alerts follow it (`band_alerts.py`). Its own evidence on real option prices is a FAIL (T42), and its card says so.
+
+**Stopped 2026-11-17** (on the `retired` list; `v4store.open_position` refuses them; history kept; open trades close by their own rules, the two cores sold at the next valid quote): `noise_v2`, `noise_trend`, `orb_credit`, `ic_20d`, `sip_orb5`, `sip_orb5_x`, `sip_orb15`, `earn_day`, `fb_or`, `otm_put`, `otm_bounce`, `otm_h`, `copilot` (paper shadows; the co-pilot alerts stay on the desk feed), `nbs_spy_long`, `pead_t21`, `core_spy`, `core_trend`. Sections 3-12 below describe them as they were.
+
+**Fixed the same day:** the `noise` ledger's Nov 5 0DTE puts (SPY 757P, QQQ 671P) and three `old` contracts sat OPEN for 12 days after they expired, because the 15:25 exit was missed (the desk then ran on Chart's computer) and an expired contract never gets a quote. The page showed stale marks (+$1,716 and +$1,319) that were never results. They are VOID now (`expiry_void.py`): excluded from every result, with their modeled value at that day's close shown for reference only.
+
 ## 1. What stays, what goes
 
 **Keep**

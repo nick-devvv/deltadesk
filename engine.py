@@ -1040,6 +1040,12 @@ def _manage_open():
     want = []
     with schwab.priority("risk"):
         for p in store.positions(status="OPEN"):
+            try:                                  # 2026-11-17: an expired contract can never get a quote -> VOID, not OPEN forever
+                import expiry_void
+                if expiry_void.void_if_expired(p):
+                    continue
+            except Exception as e:
+                _state["last_error"] = f"expiry void {p['id']}: {type(e).__name__}: {e}"[:200]
             want.append(p["symbol"])
             if str(p["ledger"]).startswith("lab_"):
                 continue                          # v3.4: the lab manages its own trades with one batched quote call
@@ -1131,6 +1137,18 @@ def tick():
             except Exception:
                 pass
             check_watches()
+        if time.time() - _state.get("void_sweep_t", 0) > 600:   # 2026-11-17: expired contracts -> VOID, at any hour
+            _state["void_sweep_t"] = time.time()
+            try:
+                import expiry_void
+                expiry_void.sweep()
+            except Exception as e:
+                _state["last_error"] = f"expiry void: {type(e).__name__}: {e}"[:200]
+        try:                                      # 2026-11-17: phone alerts for the noise band's paper entries and exits
+            import band_alerts
+            band_alerts.push()
+        except Exception as e:
+            _state["last_error"] = f"band alerts: {type(e).__name__}: {e}"[:200]
         if sess["time"] >= "16:10" and not sess["holiday"] and _state.get("learning_eod") != sess["date"]:
             try:                                  # v3.5: shadow outcomes, opportunity summary, consistent backup (idempotent)
                 import learning

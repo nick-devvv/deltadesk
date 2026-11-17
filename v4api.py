@@ -1,6 +1,9 @@
 """v4api.py - the /api/v4 endpoints (server.py hands every /api/v4* request here). Read-only views of the v4 paper
 ledgers plus the v4 kill switch. Nothing here can place an order anywhere.
 
+GET  /api/v4/rules            the 4 Rules tab (four_rules.py, 2026-11-17): the four rules that passed their sealed backtests,
+                               one card each (PAPER forward trades toward 40, P/L, open, recent, BACKTEST line), plus the
+                               reference noise band in 0DTE options (Nick's phone alerts follow it) and its VOID trades
 GET  /api/v4/chains           option-chain logger status (data/chains, gitignored)
 GET  /api/v4/risk             the shared v4 risk layer: hard-coded limits, open counts, book P/L today, FOMC flag
 POST /api/v4/kill             {"reason"}: v4 entries OFF and every open v4 paper position closed (pending if no quote)
@@ -42,6 +45,9 @@ def _one(q, k, default=None):
 
 
 def get(path, q):
+    if path == "/api/v4/rules":
+        import four_rules
+        return four_rules.view()
     if path == "/api/v4/chains":
         import chain_logger
         return chain_logger.status()
